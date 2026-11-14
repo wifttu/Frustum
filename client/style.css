@@ -56,6 +56,7 @@ html, body {
 }
 #menu input { border: 1px solid #33475a; background: #0c141c; color: #fff; -webkit-user-select: text; user-select: text; }
 #menu button { border: 0; background: #2f8fe6; color: #fff; font-weight: 700; }
+#menu button.alt { background: #26323e; color: #cfe0f0; }
 #menu small { color: #6f8294; line-height: 1.6; }
 #status { color: #ff6b5e; min-height: 1.2em; font-size: 14px; }
 

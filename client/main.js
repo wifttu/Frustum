@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { CFG } from '/shared/config.js';
-import { MAP_SIZE, WALLS, WALL_HEIGHT } from '/shared/map.js';
-import { stepPlayer } from '/shared/sim.js';
-import { wrapAngle } from '/shared/vision.js';
+import { CFG } from './shared/config.js';
+import { MAP_SIZE, WALLS, WALL_HEIGHT } from './shared/map.js';
+import { stepPlayer } from './shared/sim.js';
+import { wrapAngle } from './shared/vision.js';
 import { VisionMask } from './fog.js';
 import { Input } from './input.js';
 
@@ -108,6 +108,7 @@ function setKind(mesh, kind) {
 
 // ───────────────────────── 상태 ─────────────────────────
 let ws = null;
+let offline = null; // 오프라인 모드: 브라우저 안에서 서버 로직을 직접 실행 { game, player }
 let myId = 0;
 let myTeam = 0;
 let seq = 0;
@@ -132,19 +133,48 @@ scene.add(selfMesh);
 const input = new Input({ surface: canvas, stick: $('stick'), knob: $('knob'), attackBtn: $('attack') });
 
 // ───────────────────────── 네트워크 ─────────────────────────
+const SERVER_PARAM = new URLSearchParams(location.search).get('server');
+function wsUrl() {
+  if (SERVER_PARAM) {
+    const u = SERVER_PARAM.replace(/^http/, 'ws');
+    return /^wss?:\/\//.test(u) ? u.replace(/\/$/, '') + '/ws' : `wss://${u.replace(/\/$/, '')}/ws`;
+  }
+  return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
+}
+
+function showMenu(msg) {
+  $('menu').style.display = '';
+  $('hud').hidden = true;
+  $('status').textContent = msg;
+  myId = 0;
+  for (const id of [...ents.keys()]) removeEnt(id);
+}
+
 function connect(name) {
   $('status').textContent = '접속 중…';
-  ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
-  ws.onopen = () => ws.send(JSON.stringify({ t: 'j', n: name }));
+  let opened = false;
+  ws = new WebSocket(wsUrl());
+  ws.onopen = () => {
+    opened = true;
+    ws.send(JSON.stringify({ t: 'j', n: name }));
+  };
   ws.onmessage = (ev) => onMessage(JSON.parse(ev.data));
   ws.onclose = () => {
-    $('menu').hidden = false;
-    $('menu').style.display = '';
-    $('hud').hidden = true;
-    $('status').textContent = myId ? '서버와 연결이 끊겼습니다.' : '서버에 접속할 수 없습니다.';
-    myId = 0;
-    for (const id of [...ents.keys()]) removeEnt(id);
+    showMenu(
+      myId ? '서버와 연결이 끊겼습니다.' : opened ? '' : '서버에 접속할 수 없습니다. 혼자 하기(봇전)는 서버 없이 됩니다.',
+    );
   };
+}
+
+// 오프라인(혼자 하기): 서버와 같은 Game 클래스를 브라우저에서 실행한다. 메시지 형식도 같아서 아래 코드는 구분하지 않는다.
+async function startOffline(name) {
+  $('status').textContent = '불러오는 중…';
+  const { Game } = await import('./server/game.js');
+  const game = new Game();
+  const player = game.addPlayer(name, (msg) => onMessage(JSON.parse(msg)));
+  game.balanceBots();
+  offline = { game, player };
+  onMessage({ t: 'w', id: player.id, team: player.team });
 }
 
 function onMessage(m) {
@@ -244,7 +274,7 @@ function fixedStep() {
   Object.assign(prev, sim);
   localCd = Math.max(0, localCd - DT);
   localSwing = Math.max(0, localSwing - DT);
-  if (!ws || ws.readyState !== WebSocket.OPEN || !myId) return;
+  if (!myId || (!offline && (!ws || ws.readyState !== WebSocket.OPEN))) return;
   let atk = input.consumeAttack();
   if (!alive) atk = false;
   if (atk && localCd <= 0) {
@@ -252,7 +282,9 @@ function fixedStep() {
     localSwing = 0.25; // 즉시 피드백 (판정은 서버)
   }
   const inp = { seq: ++seq, mx: input.mx, mz: input.mz, yaw: wrapAngle(input.yaw), atk };
-  ws.send(JSON.stringify({ t: 'i', d: [inp.seq, +inp.mx.toFixed(3), +inp.mz.toFixed(3), +inp.yaw.toFixed(4), atk ? 1 : 0] }));
+  const d = [inp.seq, +inp.mx.toFixed(3), +inp.mz.toFixed(3), +inp.yaw.toFixed(4), atk ? 1 : 0];
+  if (offline) offline.game.queueInput(offline.player.id, d);
+  else ws.send(JSON.stringify({ t: 'i', d }));
   if (alive) {
     // 서버가 받는 것과 같은 (양자화된) 값으로 예측
     inp.mx = +inp.mx.toFixed(3);
@@ -261,6 +293,10 @@ function fixedStep() {
     pending.push(inp);
     if (pending.length > 60) pending.shift();
     stepPlayer(sim, inp, DT, WALLS);
+  }
+  if (offline) {
+    offline.game.step();
+    if (offline.game.tick % CFG.SNAPSHOT_EVERY === 0) offline.game.broadcast();
   }
 }
 
@@ -399,14 +435,23 @@ requestAnimationFrame(frame);
 // ───────────────────────── 시작 ─────────────────────────
 const params = new URLSearchParams(location.search);
 $('name').value = params.get('name') || localStorage.getItem('frustum.name') || '';
-$('play').addEventListener('click', () => {
-  const name = $('name').value.trim() || 'Player';
+function remember(name) {
   try {
     localStorage.setItem('frustum.name', name);
   } catch {}
+}
+$('play').addEventListener('click', () => {
+  const name = $('name').value.trim() || 'Player';
+  remember(name);
+  startOffline(name).catch((e) => ($('status').textContent = '시작 실패: ' + e.message));
+});
+$('online').addEventListener('click', () => {
+  const name = $('name').value.trim() || 'Player';
+  remember(name);
   connect(name);
 });
-if (params.has('auto')) connect($('name').value || 'Player');
+if (params.has('offline')) startOffline($('name').value || 'Player');
+else if (params.has('auto')) connect($('name').value || 'Player');
 
 // 디버그/자동 테스트용 핸들
 window.__frustum = { ents, roster, sim, view, stats, mask, input, get alive() { return alive; }, get myId() { return myId; } };

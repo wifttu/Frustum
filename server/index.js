@@ -12,6 +12,7 @@ const PORT = Number(process.env.PORT) || 3000;
 
 const MOUNTS = [
   ['/shared/', path.join(ROOT, 'shared')],
+  ['/server/', path.join(ROOT, 'server')], // 오프라인 모드용: game.js, bots.js 만 허용
   ['/vendor/three/', path.join(ROOT, 'node_modules/three/build')],
   ['/', path.join(ROOT, 'client')],
 ];
@@ -37,6 +38,7 @@ const server = http.createServer((req, res) => {
     if (!url.startsWith(prefix)) continue;
     const file = path.resolve(dir, url.slice(prefix.length));
     if (!file.startsWith(dir + path.sep)) break; // 디렉터리 탈출 차단
+    if (prefix === '/server/' && !['game.js', 'bots.js'].includes(path.basename(file))) break;
     fs.readFile(file, (err, data) => {
       if (err) {
         res.writeHead(404).end('Not found');
