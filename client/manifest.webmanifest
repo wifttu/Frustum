@@ -1,7 +1,7 @@
 {
   "name": "Frustum",
   "short_name": "Frustum",
-  "start_url": "/",
+  "start_url": "./",
   "display": "fullscreen",
   "orientation": "landscape",
   "background_color": "#000000",

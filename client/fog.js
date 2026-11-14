@@ -3,7 +3,7 @@
 // 모든 월드 머티리얼이 자기 월드 좌표로 이 텍스처를 샘플링해 시야 밖을 어둡게 만든다.
 // 추가 풀스크린 패스가 없어서(512² 패스 2번뿐) 모바일 GPU에서도 가볍다.
 import * as THREE from 'three';
-import { computeVisionFan, MAX_FAN_POINTS } from '/shared/vision.js';
+import { computeVisionFan, MAX_FAN_POINTS } from './shared/vision.js';
 
 const CIRCLE_SEG = 20;
 

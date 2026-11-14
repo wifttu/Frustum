@@ -6,11 +6,11 @@
     <meta name="theme-color" content="#000000" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="manifest" href="manifest.webmanifest" />
     <title>Frustum</title>
-    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="style.css" />
     <script type="importmap">
-      { "imports": { "three": "/vendor/three/three.module.min.js" } }
+      { "imports": { "three": "./vendor/three/three.module.min.js" } }
     </script>
   </head>
   <body>
@@ -29,11 +29,12 @@
       <h1>FRUSTUM</h1>
       <p>보이는 것은 내 시야뿐. 시야 밖에서 기습하세요.</p>
       <input id="name" maxlength="12" placeholder="닉네임" autocomplete="off" />
-      <button id="play">게임 시작</button>
+      <button id="play">혼자 하기 (봇전)</button>
+      <button id="online" class="alt">온라인 접속</button>
       <small>모바일: 왼쪽 드래그 이동 · 오른쪽 드래그 회전 · 공격 버튼<br />PC: WASD 이동 · 마우스 드래그/←→ 회전 · Space 공격</small>
       <div id="status"></div>
     </div>
 
-    <script type="module" src="/main.js"></script>
+    <script type="module" src="main.js"></script>
   </body>
 </html>
