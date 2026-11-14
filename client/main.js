@@ -7,6 +7,7 @@ import { VisionMask } from './fog.js';
 import { Input } from './input.js';
 import { Sfx } from './audio.js';
 import { DEFAULT_SERVER } from './settings.js';
+import { prefs, savePrefs } from './prefs.js';
 
 const DT = 1 / CFG.TICK_RATE;
 const INTERP_MS = 110; // 원격 플레이어 보간 지연
@@ -159,6 +160,10 @@ let seq = 0;
 let alive = false;
 let everAlive = false;
 let mode = 'duo';
+let rule = 'survival';
+let target = 0; // 점수제 목표 킬
+let roundTime = CFG.ROUND_TIME;
+let respawnIn = 0;
 let roundLeft = 0;
 let snapNext = false; // 새 라운드: 다음 스냅샷 위치로 순간이동
 let localCd = 0;
@@ -229,10 +234,15 @@ function showMenu(msg) {
   $('hud').hidden = true;
   $('status').textContent = msg;
   myId = 0;
+  alive = false;
+  roundEnd = 0;
+  flares = [];
+  pending.length = 0;
+  $('banner').hidden = true;
   for (const id of [...ents.keys()]) removeEnt(id);
 }
 
-function connect(name, gameMode) {
+function connect(name, gameMode, gameRule) {
   if (STATIC_HOST && !REMOTE) {
     $('status').textContent = '온라인 서버 주소가 설정되지 않았습니다. 혼자 하기는 서버 없이 됩니다.';
     return;
@@ -245,7 +255,7 @@ function connect(name, gameMode) {
     ws = new WebSocket(wsUrl());
     ws.onopen = () => {
       opened = true;
-      ws.send(JSON.stringify({ t: 'j', n: name, m: gameMode }));
+      ws.send(JSON.stringify({ t: 'j', n: name, m: gameMode, r: gameRule }));
     };
     ws.onmessage = (ev) => onMessage(JSON.parse(ev.data));
     ws.onclose = () => {
@@ -263,14 +273,14 @@ function connect(name, gameMode) {
 }
 
 // 오프라인(혼자 하기): 서버와 같은 Game 클래스를 브라우저에서 실행한다. 메시지 형식도 같아서 아래 코드는 구분하지 않는다.
-async function startOffline(name, gameMode) {
+async function startOffline(name, gameMode, gameRule) {
   $('status').textContent = '불러오는 중…';
   const { Game } = await import('./server/game.js');
-  const game = new Game({ mode: gameMode });
+  const game = new Game({ mode: gameMode, rule: gameRule });
   game.balanceBots();
   const player = game.addPlayer(name, (msg) => onMessage(JSON.parse(msg))); // 봇 한 자리를 이어받는다
   offline = { game, player };
-  onMessage({ t: 'w', id: player.id, team: player.team, m: game.mode });
+  onMessage({ t: 'w', id: player.id, team: player.team, ...game.info() });
 }
 
 function onMessage(m) {
@@ -278,6 +288,9 @@ function onMessage(m) {
     myId = m.id;
     myTeam = m.team;
     mode = m.m || 'duo';
+    rule = m.r || 'survival';
+    target = m.g || 0;
+    roundTime = m.rtm || CFG.ROUND_TIME;
     $('menu').style.display = 'none';
     $('hud').hidden = false;
   } else if (m.t === 'full') {
@@ -292,7 +305,11 @@ function onMessage(m) {
       if (v === myId) {
         killedBy = roster.get(k)?.name ?? '';
         sfx.death();
-      } else if (k === myId) sfx.kill();
+        buzz(200);
+      } else if (k === myId) {
+        sfx.kill();
+        buzz(40);
+      }
       else if (roster.get(k)?.team === myTeam) sfx.allyKill();
       else if (roster.get(v)?.team === myTeam) sfx.allyDown();
       addFeed(k, v);
@@ -318,10 +335,11 @@ function onMessage(m) {
 const kindOf = (id) => (roster.get(id)?.team === myTeam ? 'ally' : 'enemy');
 
 function onSnapshot(m) {
-  const [x, z, yaw, al, , , rollT, rollCd, rollDx, rollDz, fcd] = m.me;
+  const [x, z, yaw, al, resp, , rollT, rollCd, rollDx, rollDz, fcd] = m.me;
   const wasAlive = alive;
   alive = !!al;
   roundLeft = m.rt ?? 0;
+  respawnIn = resp;
   flareCd = fcd;
   // 서버 상태로 되돌린 뒤 미확인 입력을 다시 적용 (클라이언트 예측 보정)
   Object.assign(sim, { x, z, yaw, rollT, rollCd, rollDx, rollDz });
@@ -374,19 +392,32 @@ function removeEnt(id) {
 
 // ───────────────────────── HUD ─────────────────────────
 function drawScore() {
-  let aliveN = 0;
-  const teams = new Set();
-  for (const p of roster.values()) {
-    if (!p.alive) continue;
-    aliveN++;
-    teams.add(p.team);
-  }
   const me = roster.get(myId);
   const time = `${Math.floor(roundLeft / 60)}:${String(roundLeft % 60).padStart(2, '0')}`;
-  const left = mode === 'ffa' ? `생존 ${aliveN}명` : `생존 ${teams.size}팀 · ${aliveN}명`;
+  let left;
+  let right = `킬 ${me?.score ?? 0} · ${me?.wins ?? 0}승`;
+  if (rule === 'survival') {
+    let aliveN = 0;
+    const teams = new Set();
+    for (const p of roster.values()) {
+      if (!p.alive) continue;
+      aliveN++;
+      teams.add(p.team);
+    }
+    left = mode === 'ffa' ? `생존 ${aliveN}명` : `생존 ${teams.size}팀 · ${aliveN}명`;
+  } else {
+    // 데스매치: 내(우리 팀) 킬과 가장 앞선 상대의 킬
+    const kills = new Map();
+    for (const p of roster.values()) kills.set(p.team, (kills.get(p.team) || 0) + p.score);
+    const mine = kills.get(myTeam) || 0;
+    let top = 0;
+    for (const [t, k] of kills) if (t !== myTeam) top = Math.max(top, k);
+    left = `${mode === 'ffa' ? '나' : '우리 팀'} ${mine} : ${top} 상대 1위`;
+    if (target) left += ` · 목표 ${target}`;
+    if (mode === 'ffa') right = `${me?.wins ?? 0}승`;
+  }
   $('score').innerHTML =
-    `<span class="ally">${left}</span> <span class="enemy">${time}</span>` +
-    `<span class="me">킬 ${me?.score ?? 0} · ${me?.wins ?? 0}승</span>`;
+    `<span class="ally">${left}</span> <span class="enemy">${time}</span><span class="me">${right}</span>`;
 }
 function addFeed(k, v) {
   const row = document.createElement('div');
@@ -424,7 +455,7 @@ function fixedStep() {
   const roll = input.consume('roll') && canAct;
   let flare = input.consume('flare') && canAct;
   // 라운드 시작 직후에는 공격할 수 없다 (서버와 같은 규칙)
-  const grace = roundLeft > CFG.ROUND_TIME - CFG.START_GRACE;
+  const grace = roundLeft > roundTime - CFG.START_GRACE;
   if (!canAct || sim.rollT > 0 || grace) atk = false;
   if (atk && localCd <= 0) {
     localCd = CFG.ATTACK_COOLDOWN;
@@ -601,7 +632,7 @@ function frame(now) {
     stats.tris = renderer.info.render.triangles;
     frames = 0;
     statT = now;
-    $('stats').textContent =
+    if (prefs.showStats) $('stats').textContent =
       `${stats.fps} fps  x${resScale.toFixed(2)}\n` +
       `draw ${stats.calls}  tri ${stats.tris}\n` +
       `벽 ${nWalls}/${WALLS.length}  플레이어 ${nPlayers}/${Math.max(0, roster.size - 1)}`;
@@ -615,7 +646,7 @@ function frame(now) {
     }
     $('dead').hidden = alive || !myId || roundEnd > 0;
     $('deadBy').textContent = killedBy ? ` — ${killedBy}` : '';
-    $('respawn').textContent = '다음 라운드까지 대기';
+    $('respawn').textContent = rule === 'survival' ? '다음 라운드까지 대기' : `${Math.ceil(respawnIn)}초 후 부활`;
     if (roundEnd > 0) $('bannerSub').textContent = `${winnerText} · ${Math.ceil(roundEnd)}초 후 다음 라운드`;
     if (myId) drawScore();
   }
@@ -629,33 +660,103 @@ function remember(name) {
     localStorage.setItem('frustum.name', name);
   } catch {}
 }
-let menuMode = params.get('mode') === 'ffa' ? 'ffa' : localStorage.getItem('frustum.mode') === 'ffa' ? 'ffa' : 'duo';
-function drawMode() {
-  $('modeFfa').classList.toggle('on', menuMode === 'ffa');
-  $('modeDuo').classList.toggle('on', menuMode === 'duo');
+const stored = (k) => {
+  try {
+    return localStorage.getItem(k);
+  } catch {
+    return null;
+  }
+};
+const MODES = { ffa: 'modeFfa', duo: 'modeDuo' };
+const RULE_BTNS = { dm: 'ruleDm', score: 'ruleScore', survival: 'ruleSurvival' };
+const pick = (table, ...cands) => cands.find((c) => c && Object.hasOwn(table, c));
+let menuMode = pick(MODES, params.get('mode'), stored('frustum.mode')) || 'duo';
+let menuRule = pick(RULE_BTNS, params.get('rule'), stored('frustum.rule')) || 'dm';
+function drawPicks() {
+  for (const [m, id] of Object.entries(MODES)) $(id).classList.toggle('on', menuMode === m);
+  for (const [r, id] of Object.entries(RULE_BTNS)) $(id).classList.toggle('on', menuRule === r);
 }
-for (const [id, m] of [['modeFfa', 'ffa'], ['modeDuo', 'duo']]) {
-  $(id).addEventListener('click', () => {
-    menuMode = m;
-    try {
-      localStorage.setItem('frustum.mode', m);
-    } catch {}
-    drawMode();
-  });
+function bindPick(table, key, set) {
+  for (const [v, id] of Object.entries(table)) {
+    $(id).addEventListener('click', () => {
+      set(v);
+      try {
+        localStorage.setItem(key, v);
+      } catch {}
+      drawPicks();
+    });
+  }
 }
-drawMode();
+bindPick(MODES, 'frustum.mode', (v) => (menuMode = v));
+bindPick(RULE_BTNS, 'frustum.rule', (v) => (menuRule = v));
+drawPicks();
 $('play').addEventListener('click', () => {
   const name = $('name').value.trim() || 'Player';
   remember(name);
-  startOffline(name, menuMode).catch((e) => ($('status').textContent = '시작 실패: ' + e.message));
+  startOffline(name, menuMode, menuRule).catch((e) => ($('status').textContent = '시작 실패: ' + e.message));
 });
 $('online').addEventListener('click', () => {
   const name = $('name').value.trim() || 'Player';
   remember(name);
-  connect(name, menuMode);
+  connect(name, menuMode, menuRule);
 });
-if (params.has('offline')) startOffline($('name').value || 'Player', menuMode);
-else if (params.has('auto')) connect($('name').value || 'Player', menuMode);
+
+// ───────────────────────── 설정 ─────────────────────────
+function buzz(ms) {
+  if (prefs.vibrate && navigator.vibrate) navigator.vibrate(ms);
+}
+function applyPrefs() {
+  input.setOptions({ fixedStick: prefs.fixedStick, lefty: prefs.lefty, sens: prefs.sens });
+  sfx.setVolume(prefs.volume);
+  document.body.classList.toggle('lefty', prefs.lefty);
+  $('stats').hidden = !prefs.showStats;
+  $('sensVal').textContent = `x${prefs.sens.toFixed(1)}`;
+  $('volVal').textContent = `${Math.round(prefs.volume * 100)}%`;
+}
+const CHECKS = { setFixed: 'fixedStick', setLefty: 'lefty', setVibrate: 'vibrate', setStats: 'showStats' };
+const RANGES = { setSens: 'sens', setVol: 'volume' };
+for (const [id, key] of Object.entries(CHECKS)) {
+  $(id).checked = prefs[key];
+  $(id).addEventListener('change', () => {
+    prefs[key] = $(id).checked;
+    savePrefs();
+    applyPrefs();
+  });
+}
+for (const [id, key] of Object.entries(RANGES)) {
+  $(id).value = prefs[key];
+  $(id).addEventListener('input', () => {
+    prefs[key] = Number($(id).value);
+    savePrefs();
+    applyPrefs();
+  });
+}
+function openSettings() {
+  $('leave').hidden = !myId;
+  $('settings').hidden = false;
+}
+$('openSettings').addEventListener('click', openSettings);
+$('gear').addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  openSettings();
+});
+$('closeSettings').addEventListener('click', () => ($('settings').hidden = true));
+$('leave').addEventListener('click', () => {
+  $('settings').hidden = true;
+  if (offline) {
+    offline = null;
+    showMenu('');
+  } else if (ws) {
+    myId = 0; // onclose 가 "연결 끊김" 대신 빈 메시지를 보이도록
+    ws.close();
+    showMenu('');
+  }
+});
+applyPrefs();
+
+if (params.has('offline')) startOffline($('name').value || 'Player', menuMode, menuRule);
+else if (params.has('auto')) connect($('name').value || 'Player', menuMode, menuRule);
 
 // 디버그/자동 테스트용 핸들
 window.__frustum = {

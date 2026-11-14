@@ -20,6 +20,8 @@ export class Input {
     this.last = [0, 0];
     this.stick = stick;
     this.knob = knob;
+    this.opts = { fixedStick: false, lefty: false, sens: 1 };
+    addEventListener('resize', () => this.placeStick());
 
     surface.addEventListener('pointerdown', (e) => this.down(e));
     surface.addEventListener('pointermove', (e) => this.move(e));
@@ -47,15 +49,40 @@ export class Input {
     addEventListener('blur', () => this.keys.clear());
   }
 
+  // 설정 반영
+  setOptions(o) {
+    Object.assign(this.opts, o);
+    this.placeStick();
+  }
+
+  fixedCenter() {
+    return [this.opts.lefty ? innerWidth - 110 : 110, innerHeight - 110];
+  }
+
+  // 고정 조이스틱이면 항상 같은 자리에 보여준다
+  placeStick() {
+    if (this.moveId !== null) return;
+    this.knob.style.transform = 'translate(-50%, -50%)';
+    if (this.opts.fixedStick) {
+      const [x, y] = this.fixedCenter();
+      this.stick.style.display = 'block';
+      this.stick.style.left = `${x}px`;
+      this.stick.style.top = `${y}px`;
+    } else {
+      this.stick.style.display = 'none';
+    }
+  }
+
   down(e) {
     const touch = e.pointerType === 'touch';
-    if (touch && e.clientX < innerWidth / 2 && this.moveId === null) {
+    const moveSide = this.opts.lefty ? e.clientX > innerWidth / 2 : e.clientX < innerWidth / 2;
+    if (touch && moveSide && this.moveId === null) {
       this.moveId = e.pointerId;
-      this.origin = [e.clientX, e.clientY];
+      this.origin = this.opts.fixedStick ? this.fixedCenter() : [e.clientX, e.clientY];
       this.stick.style.display = 'block';
-      this.stick.style.left = `${e.clientX}px`;
-      this.stick.style.top = `${e.clientY}px`;
-      this.knob.style.transform = 'translate(-50%, -50%)';
+      this.stick.style.left = `${this.origin[0]}px`;
+      this.stick.style.top = `${this.origin[1]}px`;
+      this.move(e); // 고정 조이스틱은 누른 위치가 곧 방향
     } else if (this.lookId === null) {
       this.lookId = e.pointerId;
       this.last = [e.clientX, e.clientY];
@@ -77,7 +104,7 @@ export class Input {
       this.knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
     } else if (e.pointerId === this.lookId) {
       // 오른쪽으로 끌면 오른쪽으로 회전 (yaw 감소)
-      this.yaw -= (e.clientX - this.last[0]) * LOOK_SENS;
+      this.yaw -= (e.clientX - this.last[0]) * LOOK_SENS * this.opts.sens;
       this.last = [e.clientX, e.clientY];
     }
   }
@@ -86,7 +113,7 @@ export class Input {
     if (e.pointerId === this.moveId) {
       this.moveId = null;
       this.touchMx = this.touchMz = 0;
-      this.stick.style.display = 'none';
+      this.placeStick();
     } else if (e.pointerId === this.lookId) {
       this.lookId = null;
     }

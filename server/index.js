@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
-import { CFG } from '../shared/config.js';
+import { CFG, RULES } from '../shared/config.js';
 import { Game } from './game.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -60,8 +60,9 @@ const server = http.createServer((req, res) => {
   res.writeHead(404).end('Not found');
 });
 
-// 모드별로 방 하나씩
-const games = { ffa: new Game({ mode: 'ffa' }), duo: new Game({ mode: 'duo' }) };
+// 규칙 × 모드 조합마다 방 하나씩 (예: 'dm-ffa', 'survival-duo')
+const games = {};
+for (const rule of Object.keys(RULES)) for (const mode of ['ffa', 'duo']) games[`${rule}-${mode}`] = new Game({ rule, mode });
 for (const g of Object.values(games)) g.balanceBots();
 
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 512 });
@@ -81,7 +82,8 @@ wss.on('connection', (ws) => {
     }
     if (!m || typeof m !== 'object') return;
     if (m.t === 'j' && !player) {
-      game = Object.hasOwn(games, m.m) ? games[m.m] : games.duo;
+      const key = `${m.r}-${m.m}`;
+      game = Object.hasOwn(games, key) ? games[key] : games['survival-duo'];
       const wasEmpty = game.humanCount === 0;
       if (game.humanCount >= CFG.MAX_PLAYERS) {
         ws.send(JSON.stringify({ t: 'full' }));
@@ -95,7 +97,7 @@ wss.on('connection', (ws) => {
       });
       game.balanceBots();
       if (wasEmpty) game.newRound(); // 비어 있던 방은 새 라운드로 시작
-      ws.send(JSON.stringify({ t: 'w', id: player.id, team: player.team, m: game.mode }));
+      ws.send(JSON.stringify({ t: 'w', id: player.id, team: player.team, ...game.info() }));
     } else if (m.t === 'i' && player) {
       game.queueInput(player.id, m.d);
     }

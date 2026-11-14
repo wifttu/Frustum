@@ -33,7 +33,8 @@ export const CFG = Object.freeze({
   FLARE_COOLDOWN: 12,
 
   // 생존전: 부활 없음. 마지막까지 살아남은 사람/팀이 라운드 승리.
-  ROUND_TIME: 120, // 시간이 다 되면 생존자가 많은 팀(동률이면 킬이 많은 팀) 승리
+  ROUND_TIME: 120, // 기본값. 실제 값은 아래 RULES 의 time 을 쓴다
+  RESPAWN_TIME: 3, // 데스매치 부활 대기
   INTERMISSION: 6, // 라운드 종료 후 다음 라운드까지
   START_GRACE: 3, // 라운드 시작 직후 공격 금지 시간
   JOIN_GRACE: 10, // 라운드 시작 후 이 시간 안에 들어오면 바로 참가
@@ -42,6 +43,16 @@ export const CFG = Object.freeze({
   TEAMS: 4, // duo 모드의 팀 수. ffa 모드에서는 0으로 덮어쓴다
   MAX_PLAYERS: 8,
   BOT_FILL: 8, // 접속 인원이 이보다 적으면 봇으로 채운다
+});
+
+// 게임 규칙. 각 규칙은 개인전(ffa)과 2인 팀전(duo) 모두 지원한다.
+export const RULES = Object.freeze({
+  // 서바이벌: 부활 없음. 마지막 생존자/팀 승리. 시간 초과 시 생존자 수 → 킬 수.
+  survival: { respawn: false, time: 120 },
+  // 데스매치: 부활 있음. 제한 시간 동안 킬이 가장 많은 사람/팀 승리.
+  dm: { respawn: true, time: 180 },
+  // 점수제 데스매치: 부활 있음. 목표 킬을 먼저 채우면 승리. 시간 초과 시 킬 수.
+  score: { respawn: true, time: 300, target: { ffa: 10, duo: 15 } },
 });
 
 // 조명탄을 시야원으로 쓸 때의 설정: 360도, 반경 FLARE_RADIUS
