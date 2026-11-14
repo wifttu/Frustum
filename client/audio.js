@@ -4,6 +4,7 @@ export class Sfx {
   constructor() {
     this.ctx = null;
     this.muted = false;
+    this.volume = 0.8;
     try {
       this.muted = localStorage.getItem('frustum.muted') === '1';
     } catch {}
@@ -15,7 +16,7 @@ export class Sfx {
       if (!AC) return;
       this.ctx = new AC();
       this.master = this.ctx.createGain();
-      this.master.gain.value = this.muted ? 0 : 0.8;
+      this.master.gain.value = this.muted ? 0 : this.volume;
       // 큰 소리가 겹쳐도 찢어지지 않게
       const comp = this.ctx.createDynamicsCompressor();
       this.master.connect(comp).connect(this.ctx.destination);
@@ -32,7 +33,12 @@ export class Sfx {
     try {
       localStorage.setItem('frustum.muted', m ? '1' : '0');
     } catch {}
-    if (this.master) this.master.gain.value = m ? 0 : 0.8;
+    if (this.master) this.master.gain.value = m ? 0 : this.volume;
+  }
+
+  setVolume(v) {
+    this.volume = v;
+    if (this.master && !this.muted) this.master.gain.value = v;
   }
 
   get ready() {

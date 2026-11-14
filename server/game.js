@@ -1,5 +1,5 @@
 // 권위 서버 게임 로직. 네트워크와 분리되어 있어 테스트와 오프라인 모드에서 그대로 쓴다.
-import { CFG, FLARE_VIEW } from '../shared/config.js';
+import { CFG, FLARE_VIEW, RULES } from '../shared/config.js';
 import { MAP_SIZE, WALLS, isFree } from '../shared/map.js';
 import { flareLanding, stepPlayer } from '../shared/sim.js';
 import { canSee, segmentBlocked, wrapAngle } from '../shared/vision.js';
@@ -12,8 +12,13 @@ const q2 = (v) => Math.round(v * 100) / 100;
 export class Game {
   constructor(opts = {}) {
     this.mode = opts.mode === 'ffa' ? 'ffa' : 'duo';
-    this.cfg = { ...CFG, TEAMS: this.mode === 'ffa' ? 0 : CFG.TEAMS, ...opts };
+    this.rule = Object.hasOwn(RULES, opts.rule) ? opts.rule : 'survival';
+    const R = RULES[this.rule];
+    this.respawns = R.respawn;
+    this.cfg = { ...CFG, TEAMS: this.mode === 'ffa' ? 0 : CFG.TEAMS, ROUND_TIME: R.time, ...opts };
     delete this.cfg.mode;
+    delete this.cfg.rule;
+    this.target = R.target ? (opts.TARGET ?? R.target[this.mode]) : 0; // 점수제 목표 킬
     this.roundT = 0; // 현재 라운드 경과 시간
     this.walls = WALLS;
     this.players = new Map();
@@ -45,7 +50,7 @@ export class Game {
     const p = {
       id, name, team: 0, isBot, send,
       x: 0, z: 0, yaw: 0,
-      alive: false, cd: 0, beam: 0, score: 0, wins: 0,
+      alive: false, respawn: 0, cd: 0, beam: 0, score: 0, wins: 0,
       rollT: 0, rollCd: 0, rollDx: 0, rollDz: 1, flareCd: 0,
       queue: [], budget: 0, ack: 0, lastSeq: 0, ai: {},
     };
@@ -53,15 +58,15 @@ export class Game {
     const seat = bots.find((q) => q.alive) || bots[0];
     if (seat) {
       this.players.delete(seat.id);
-      Object.assign(p, { team: seat.team, x: seat.x, z: seat.z, yaw: seat.yaw, alive: seat.alive, score: seat.score });
+      Object.assign(p, { team: seat.team, x: seat.x, z: seat.z, yaw: seat.yaw, alive: seat.alive, respawn: seat.respawn, score: seat.score });
     } else {
       p.team = 1000 + id; // 개인전: 각자 고유 팀
       if (this.cfg.TEAMS > 0) {
         p.team = 1;
         for (let t = 2; t <= this.cfg.TEAMS; t++) if (this.teamSize(t) < this.teamSize(p.team)) p.team = t;
       }
-      // 라운드가 한창이면 다음 라운드부터 참가
-      if (this.endT <= 0 && this.roundT < this.cfg.JOIN_GRACE) this.spawn(p);
+      // 서바이벌은 라운드가 한창이면 다음 라운드부터 참가, 데스매치는 바로 참가
+      if (this.endT <= 0 && (this.respawns || this.roundT < this.cfg.JOIN_GRACE)) this.spawn(p);
     }
     this.players.set(id, p);
     this.rosterDirty = true;
@@ -167,6 +172,7 @@ export class Game {
       if (Math.abs(wrapAngle(Math.atan2(dx, dz) - p.yaw)) > cfg.ATTACK_ARC / 2 + slack) continue;
       if (segmentBlocked(p.x, p.z, q.x, q.z, this.walls)) continue;
       q.alive = false;
+      q.respawn = cfg.RESPAWN_TIME;
       q.queue.length = 0;
       p.score++;
       this.kills.push([p.id, q.id]);
@@ -193,15 +199,33 @@ export class Game {
     return m;
   }
 
-  // 한 팀(개인전은 한 명)만 남으면 라운드 종료
-  checkRoundEnd() {
-    if (this.endT > 0 || this.players.size < 2) return;
-    const teams = this.aliveByTeam();
-    if (teams.size <= 1) this.endRound(teams.size ? [...teams.keys()][0] : 0);
+  // 팀별 킬 합계 (개인전은 본인 킬)
+  killsByTeam() {
+    const m = new Map();
+    for (const p of this.players.values()) m.set(p.team, (m.get(p.team) || 0) + p.score);
+    return m;
   }
 
-  // 시간 초과: 생존자가 많은 팀, 동률이면 킬이 많은 팀. 그래도 같으면 무승부(0)
+  // 서바이벌: 한 팀(개인전은 한 명)만 남으면 종료. 점수제: 목표 킬 달성 시 종료.
+  checkRoundEnd() {
+    if (this.endT > 0 || this.players.size < 2) return;
+    if (!this.respawns) {
+      const teams = this.aliveByTeam();
+      if (teams.size <= 1) this.endRound(teams.size ? [...teams.keys()][0] : 0);
+    } else if (this.target) {
+      for (const [team, kills] of this.killsByTeam()) {
+        if (kills >= this.target) return this.endRound(team);
+      }
+    }
+  }
+
+  // 시간 초과. 서바이벌: 생존자가 많은 팀 → 킬이 많은 팀. 데스매치: 킬이 많은 팀. 동률이면 무승부(0)
   timeUp() {
+    if (this.respawns) {
+      const rank = [...this.killsByTeam()].sort((a, b) => b[1] - a[1]);
+      const tie = rank.length > 1 && rank[0][1] === rank[1][1];
+      return this.endRound(rank.length && !tie ? rank[0][0] : 0);
+    }
     const rank = [...this.aliveByTeam()].sort((a, b) => b[1].n - a[1].n || b[1].kills - a[1].kills);
     const tie = rank.length > 1 && rank[0][1].n === rank[1][1].n && rank[0][1].kills === rank[1][1].kills;
     this.endRound(rank.length && !tie ? rank[0][0] : 0);
@@ -262,8 +286,15 @@ export class Game {
       p.beam = Math.max(0, p.beam - DT);
       p.flareCd = Math.max(0, p.flareCd - DT);
       if (!p.alive) {
-        // 탈락: 다음 라운드까지 대기
+        // 서바이벌은 다음 라운드까지 대기, 데스매치는 잠시 후 부활
         while (p.queue.length) p.ack = p.queue.shift().seq;
+        if (this.respawns) {
+          p.respawn -= DT;
+          if (p.respawn <= 0) {
+            this.spawn(p);
+            this.rosterDirty = true;
+          }
+        }
         continue;
       }
       if (p.isBot) {
@@ -327,10 +358,15 @@ export class Game {
       a: p.ack,
       rt: Math.ceil(Math.max(0, this.cfg.ROUND_TIME - this.roundT)), // 남은 라운드 시간
       // 예측 보정에 필요한 값은 반올림하지 않는다
-      me: [p.x, p.z, p.yaw, p.alive ? 1 : 0, 0, q2(p.cd), p.rollT, p.rollCd, p.rollDx, p.rollDz, q2(p.flareCd)],
+      me: [p.x, p.z, p.yaw, p.alive ? 1 : 0, this.respawns ? q2(Math.max(0, p.respawn)) : 0, q2(p.cd), p.rollT, p.rollCd, p.rollDx, p.rollDz, q2(p.flareCd)],
       e,
       f,
     };
+  }
+
+  // 접속 시 알려주는 방 정보
+  info() {
+    return { m: this.mode, r: this.rule, g: this.target, rtm: this.cfg.ROUND_TIME };
   }
 
   // p: [id, 이름, 팀, 이번 라운드 킬, 생존 여부, 누적 승]  (위치 정보 없음)

@@ -86,10 +86,10 @@ html, body {
 #menu input { border: 1px solid #33475a; background: #0c141c; color: #fff; -webkit-user-select: text; user-select: text; }
 #menu button { border: 0; background: #2f8fe6; color: #fff; font-weight: 700; }
 #menu button.alt { background: #26323e; color: #cfe0f0; }
-#modes { display: flex; gap: 8px; width: min(260px, 80vw); }
-#menu #modes button { flex: 1; width: auto; padding: 10px 4px; background: #17212b; color: #9fb2c4; border: 2px solid transparent; }
-#menu #modes button.on { border-color: #2f8fe6; color: #fff; background: #1b2f45; }
-#modes small { display: block; font-weight: 400; font-size: 11px; }
+.pick { display: flex; gap: 8px; width: min(260px, 80vw); }
+#menu .pick button { flex: 1; width: auto; padding: 10px 4px; background: #17212b; color: #9fb2c4; border: 2px solid transparent; }
+#menu .pick button.on { border-color: #2f8fe6; color: #fff; background: #1b2f45; }
+#menu .pick small { display: block; font-weight: 400; font-size: 11px; }
 #menu small { color: #6f8294; line-height: 1.6; }
 #status { color: #ff6b5e; min-height: 1.2em; font-size: 14px; }
 
@@ -105,6 +105,41 @@ html, body {
   #menu h1 { font-size: 24px; letter-spacing: 6px; }
   #menu p { display: none; }
   #menu input, #menu button { padding: 9px 12px; font-size: 15px; }
-  #menu #modes button { padding: 6px 4px; }
+  #menu .pick button { padding: 6px 4px; }
   #menu small { font-size: 11px; line-height: 1.4; }
 }
+
+#gear {
+  pointer-events: auto; position: absolute; top: calc(6px + env(safe-area-inset-top)); right: calc(50px + env(safe-area-inset-right));
+  width: 36px; height: 36px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, .5); font-size: 17px; padding: 0;
+}
+
+/* 설정 창 */
+#settings {
+  position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: safe center;
+  background: rgba(0, 0, 0, .7); overflow-y: auto; touch-action: pan-y; padding: 12px;
+}
+#settings[hidden] { display: none; }
+#settings .panel {
+  width: min(360px, 100%); margin: auto; padding: 16px 18px; border-radius: 14px; background: #121b24;
+  display: flex; flex-direction: column; gap: 4px;
+}
+#settings h2 { margin: 0 0 6px; font-size: 18px; }
+#settings label {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0;
+  border-bottom: 1px solid #1f2c39; font-size: 15px;
+}
+#settings label small { display: block; color: #6f8294; font-size: 11px; }
+#settings label b { color: #5ab4ff; font-weight: 600; margin-left: 6px; }
+#settings input[type='checkbox'] { width: 24px; height: 24px; accent-color: #2f8fe6; flex: none; }
+#settings input[type='range'] { width: 46%; accent-color: #2f8fe6; flex: none; }
+#settings button {
+  margin-top: 10px; padding: 11px; border: 0; border-radius: 10px; background: #2f8fe6; color: #fff;
+  font-weight: 700; font-size: 15px; font-family: inherit;
+}
+#settings button.alt { background: #3a2327; color: #ff9d94; }
+
+/* 왼손 모드: 스킬 버튼을 왼쪽으로 */
+body.lefty #attack { right: auto; left: calc(22px + env(safe-area-inset-left)); }
+body.lefty #roll { right: auto; left: calc(122px + env(safe-area-inset-left)); }
+body.lefty #flare { right: auto; left: calc(34px + env(safe-area-inset-left)); }

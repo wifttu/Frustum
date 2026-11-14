@@ -21,6 +21,7 @@
       <div id="feed"></div>
       <div id="stats"></div>
       <button id="mute" aria-label="소리 켜기/끄기">🔊</button>
+      <button id="gear" aria-label="설정">⚙️</button>
       <div id="dead" hidden>탈락했습니다<span id="deadBy"></span><br /><b id="respawn"></b></div>
       <div id="banner" hidden><b id="bannerTitle"></b><span id="bannerSub"></span></div>
       <div id="stick"><div id="knob"></div></div>
@@ -33,14 +34,34 @@
       <h1>FRUSTUM</h1>
       <p>보이는 것은 내 시야뿐. 시야 밖에서 기습하세요.</p>
       <input id="name" maxlength="12" placeholder="닉네임" autocomplete="off" />
-      <div id="modes">
-        <button id="modeFfa">개인전<small>8인 생존</small></button>
-        <button id="modeDuo">2인 팀전<small>2명 × 4팀 생존</small></button>
+      <div id="rules" class="pick">
+        <button id="ruleDm">데스매치<small>3분 · 최다 킬</small></button>
+        <button id="ruleScore">점수제<small>목표 킬 선취</small></button>
+        <button id="ruleSurvival">서바이벌<small>부활 없음</small></button>
+      </div>
+      <div id="modes" class="pick">
+        <button id="modeFfa">개인전<small>8명 각자</small></button>
+        <button id="modeDuo">2인 팀전<small>2명 × 4팀</small></button>
       </div>
       <button id="play">혼자 하기 (봇전)</button>
       <button id="online" class="alt">온라인 접속</button>
-      <small>부활 없는 생존전: 마지막까지 살아남으면 승리. 손전등 빔으로 적을 비추면 처치. 구르는 동안은 무적, 조명탄은 주변을 밝혀 팀에게 보여줍니다.<br />모바일: 왼쪽 드래그 이동 · 오른쪽 드래그 회전 · 버튼으로 스킬<br />PC: WASD 이동 · 마우스 드래그/←→ 회전 · Space 공격 · Shift 구르기 · F 조명탄</small>
+      <button id="openSettings" class="alt">⚙️ 설정</button>
+      <small>손전등 빔으로 적을 비추면 처치. 구르는 동안은 무적, 조명탄은 주변을 밝혀 팀에게 보여줍니다.<br />모바일: 왼쪽 드래그 이동 · 오른쪽 드래그 회전 · 버튼으로 스킬<br />PC: WASD 이동 · 마우스 드래그/←→ 회전 · Space 공격 · Shift 구르기 · F 조명탄</small>
       <div id="status"></div>
+    </div>
+
+    <div id="settings" hidden>
+      <div class="panel">
+        <h2>설정</h2>
+        <label><span>조이스틱 고정<small>항상 같은 자리에 표시</small></span><input type="checkbox" id="setFixed" /></label>
+        <label><span>왼손 모드<small>조이스틱과 버튼 좌우 반전</small></span><input type="checkbox" id="setLefty" /></label>
+        <label><span>회전 감도 <b id="sensVal"></b></span><input type="range" id="setSens" min="0.4" max="2.5" step="0.1" /></label>
+        <label><span>효과음 크기 <b id="volVal"></b></span><input type="range" id="setVol" min="0" max="1" step="0.05" /></label>
+        <label><span>진동<small>처치하거나 당했을 때</small></span><input type="checkbox" id="setVibrate" /></label>
+        <label><span>성능 정보 표시<small>fps, 드로우콜 등</small></span><input type="checkbox" id="setStats" /></label>
+        <button id="closeSettings">닫기</button>
+        <button id="leave" class="alt" hidden>게임 나가기</button>
+      </div>
     </div>
 
     <script type="module" src="main.js"></script>

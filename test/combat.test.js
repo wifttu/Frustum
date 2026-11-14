@@ -180,3 +180,32 @@ test('사람은 살아있는 봇의 자리를 이어받는다', () => {
   if (aliveBefore > 0) assert.equal(h.alive, true);
   assert.equal(game.teamSize(h.team), 2);
 });
+
+test('데스매치: 처치당하면 잠시 후 부활하고, 시간 종료 시 킬이 많은 쪽이 이긴다', () => {
+  const { game, add, place } = setup({ rule: 'dm', TEAMS: 0, ROUND_TIME: 6 });
+  const a = add('A');
+  const b = add('B');
+  place(a, 0, 0, 0);
+  place(b, 0, 3, 0);
+  game.attack(a);
+  assert.equal(b.alive, false);
+  assert.equal(game.winner, null, '데스매치는 한 명만 남아도 끝나지 않는다');
+  for (let i = 0; i < CFG.TICK_RATE * (CFG.RESPAWN_TIME + 0.2); i++) game.step();
+  assert.equal(b.alive, true);
+  for (let i = 0; i < CFG.TICK_RATE * 3; i++) game.step();
+  assert.equal(game.winner, a.team);
+});
+
+test('점수제 데스매치: 목표 킬에 먼저 도달하면 끝난다', () => {
+  const { game, add, place } = setup({ rule: 'score', TEAMS: 0, TARGET: 2 });
+  const a = add('A');
+  const b = add('B');
+  for (let i = 0; i < 2; i++) {
+    assert.equal(game.winner, null);
+    place(a, 0, 0, 0);
+    place(b, 0, 3, 0);
+    game.attack(a);
+  }
+  assert.equal(game.winner, a.team);
+  assert.equal(new Game({ rule: 'score', mode: 'duo' }).info().g, 15);
+});
