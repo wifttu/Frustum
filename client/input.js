@@ -1,14 +1,18 @@
-// 입력: 모바일(왼쪽 가상 조이스틱 + 오른쪽 드래그 회전 + 공격 버튼), 데스크톱(WASD + 마우스 드래그/방향키 + Space).
+// 입력: 모바일(왼쪽 가상 조이스틱 + 오른쪽 드래그 회전 + 공격/구르기/조명탄 버튼),
+// 데스크톱(WASD + 마우스 드래그/방향키 + Space 공격 + Shift 구르기 + F 조명탄).
 const STICK_R = 56;
 const LOOK_SENS = 0.006; // rad / px
 const KEY_TURN = 2.8; // rad / s
 
 export class Input {
-  constructor({ surface, stick, knob, attackBtn }) {
+  constructor({ surface, stick, knob, attackBtn, rollBtn, flareBtn }) {
     this.mx = 0;
     this.mz = 0;
     this.yaw = 0; // 목표 방향 (누적)
-    this.atk = false; // 다음 틱에서 소비
+    // 버튼 입력은 다음 틱에서 한 번 소비된다
+    this.atk = false;
+    this.roll = false;
+    this.flare = false;
     this.keys = new Set();
     this.moveId = null;
     this.lookId = null;
@@ -22,16 +26,22 @@ export class Input {
     for (const t of ['pointerup', 'pointercancel']) surface.addEventListener(t, (e) => this.up(e));
     surface.addEventListener('contextmenu', (e) => e.preventDefault());
 
-    attackBtn.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      this.atk = true;
-    });
+    const bind = (btn, key) =>
+      btn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this[key] = true;
+      });
+    bind(attackBtn, 'atk');
+    bind(rollBtn, 'roll');
+    bind(flareBtn, 'flare');
 
     addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement) return;
       this.keys.add(e.code);
       if (e.code === 'Space' || e.code === 'KeyJ') this.atk = true;
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyK') this.roll = true;
+      if (e.code === 'KeyF' || e.code === 'KeyL') this.flare = true;
     });
     addEventListener('keyup', (e) => this.keys.delete(e.code));
     addEventListener('blur', () => this.keys.clear());
@@ -97,9 +107,9 @@ export class Input {
     this.mz = mz;
   }
 
-  consumeAttack() {
-    const a = this.atk;
-    this.atk = false;
-    return a;
+  consume(key) {
+    const v = this[key];
+    this[key] = false;
+    return v;
   }
 }

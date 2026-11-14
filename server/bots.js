@@ -22,11 +22,24 @@ export function botThink(bot, game, dt) {
 
   if (target && ai.seenFor >= REACTION) {
     const yaw = Math.atan2(target.x - bot.x, target.z - bot.z);
-    const aligned = Math.abs(wrapAngle(yaw - bot.yaw)) < 0.4;
-    return { mx: 0, mz: 1, yaw, atk: aligned && best < cfg.ATTACK_RANGE };
+    const aligned = Math.abs(wrapAngle(yaw - bot.yaw)) < cfg.ATTACK_ARC / 2;
+    const inRange = best < cfg.ATTACK_RANGE;
+    // 상대가 나를 정면으로 겨누고 있으면 가끔 옆으로 구른다
+    const threatened =
+      best < cfg.ATTACK_RANGE + 1 &&
+      Math.abs(wrapAngle(Math.atan2(bot.x - target.x, bot.z - target.z) - target.yaw)) < cfg.ATTACK_ARC / 2;
+    const dodge = threatened && Math.random() < 0.04;
+    return {
+      mx: dodge ? (Math.random() < 0.5 ? -1 : 1) : 0,
+      mz: inRange ? 0.3 : 1,
+      yaw,
+      atk: aligned && inRange,
+      roll: dodge,
+      flare: false,
+    };
   }
 
-  // 순찰: 웨이포인트로 이동, 막히면 새 목적지
+  // 순찰: 웨이포인트로 이동, 막히면 새 목적지. 가끔 조명탄으로 앞을 밝힌다.
   ai.stuckT = (ai.stuckT || 0) + dt;
   if (ai.stuckT > 1) {
     if (Math.hypot(bot.x - ai.lx, bot.z - ai.lz) < 0.8) pickWaypoint(bot, game);
@@ -39,7 +52,7 @@ export function botThink(bot, game, dt) {
   if (Math.hypot(dx, dz) < 1.5) pickWaypoint(bot, game);
   const yaw = Math.atan2(dx, dz);
   const diff = Math.abs(wrapAngle(yaw - bot.yaw));
-  return { mx: 0, mz: diff < 0.6 ? 0.8 : 0.2, yaw, atk: false };
+  return { mx: 0, mz: diff < 0.6 ? 0.8 : 0.2, yaw, atk: false, roll: false, flare: Math.random() < 0.003 };
 }
 
 function pickWaypoint(bot, game) {
