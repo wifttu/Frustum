@@ -11,7 +11,10 @@ const q2 = (v) => Math.round(v * 100) / 100;
 
 export class Game {
   constructor(opts = {}) {
-    this.cfg = { ...CFG, ...opts };
+    this.mode = opts.mode === 'ffa' ? 'ffa' : 'duo';
+    this.cfg = { ...CFG, TEAMS: this.mode === 'ffa' ? 0 : CFG.TEAMS, ...opts };
+    delete this.cfg.mode;
+    this.roundT = 0; // 현재 라운드 경과 시간
     this.walls = WALLS;
     this.players = new Map();
     this.flares = [];
@@ -30,44 +33,45 @@ export class Game {
     return n;
   }
 
-  get targetScore() {
-    return this.cfg.TEAMS > 0 ? this.cfg.TARGET_SCORE : Math.ceil(this.cfg.TARGET_SCORE / 2);
-  }
-
   teamSize(team) {
     let n = 0;
     for (const p of this.players.values()) if (p.team === team) n++;
     return n;
   }
 
-  teamScore(team) {
-    let n = 0;
-    for (const p of this.players.values()) if (p.team === team) n += p.score;
-    return n;
-  }
-
+  // 사람은 봇의 자리(팀, 위치, 생존 상태)를 이어받아 라운드 중에도 바로 플레이한다.
   addPlayer(name, send = null, isBot = false) {
     const id = this.nextId++;
-    let team = 1000 + id; // 개인전: 각자 고유 팀
-    if (this.cfg.TEAMS > 0) {
-      team = 1;
-      for (let t = 2; t <= this.cfg.TEAMS; t++) if (this.teamSize(t) < this.teamSize(team)) team = t;
-    }
     const p = {
-      id, name, team, isBot, send,
+      id, name, team: 0, isBot, send,
       x: 0, z: 0, yaw: 0,
-      alive: true, respawn: 0, cd: 0, beam: 0, score: 0,
+      alive: false, cd: 0, beam: 0, score: 0, wins: 0,
       rollT: 0, rollCd: 0, rollDx: 0, rollDz: 1, flareCd: 0,
       queue: [], budget: 0, ack: 0, lastSeq: 0, ai: {},
     };
+    const bots = isBot ? [] : [...this.players.values()].filter((q) => q.isBot);
+    const seat = bots.find((q) => q.alive) || bots[0];
+    if (seat) {
+      this.players.delete(seat.id);
+      Object.assign(p, { team: seat.team, x: seat.x, z: seat.z, yaw: seat.yaw, alive: seat.alive, score: seat.score });
+    } else {
+      p.team = 1000 + id; // 개인전: 각자 고유 팀
+      if (this.cfg.TEAMS > 0) {
+        p.team = 1;
+        for (let t = 2; t <= this.cfg.TEAMS; t++) if (this.teamSize(t) < this.teamSize(p.team)) p.team = t;
+      }
+      // 라운드가 한창이면 다음 라운드부터 참가
+      if (this.endT <= 0 && this.roundT < this.cfg.JOIN_GRACE) this.spawn(p);
+    }
     this.players.set(id, p);
-    this.spawn(p);
     this.rosterDirty = true;
     return p;
   }
 
   removePlayer(id) {
-    if (this.players.delete(id)) this.rosterDirty = true;
+    if (!this.players.delete(id)) return;
+    this.rosterDirty = true;
+    this.checkRoundEnd();
   }
 
   // 사람 수에 맞춰 봇 수를 조절한다.
@@ -91,24 +95,28 @@ export class Game {
   }
 
   spawn(p) {
-    // 적의 시야 밖에서 리스폰
+    // 적의 시야 밖이면서 다른 플레이어와 가장 멀리 떨어진 후보 지점을 고른다
     let pos = [0, 0];
+    let bestScore = -Infinity;
     for (let i = 0; i < 30; i++) {
-      pos = this.randomFreePoint();
+      const c = this.randomFreePoint();
+      let minD = 40;
       let seen = false;
       for (const q of this.players.values()) {
-        if (q.alive && q.team !== p.team && q !== p && canSee(q, pos[0], pos[1], this.cfg.PLAYER_RADIUS, this.walls, this.cfg, 2)) {
-          seen = true;
-          break;
-        }
+        if (!q.alive || q === p || q.team === p.team) continue;
+        minD = Math.min(minD, Math.hypot(q.x - c[0], q.z - c[1]));
+        if (canSee(q, c[0], c[1], this.cfg.PLAYER_RADIUS, this.walls, this.cfg, 2)) seen = true;
       }
-      if (!seen) break;
+      const score = minD - (seen ? 100 : 0);
+      if (score > bestScore) {
+        bestScore = score;
+        pos = c;
+      }
     }
     p.x = pos[0];
     p.z = pos[1];
     p.yaw = Math.atan2(-p.x, -p.z); // 맵 중앙을 향해
     p.alive = true;
-    p.respawn = 0;
     p.cd = 0;
     p.beam = 0;
     p.rollT = 0;
@@ -137,7 +145,7 @@ export class Game {
   applyInput(p, inp) {
     stepPlayer(p, inp, DT, this.walls);
     // 구르는 중에는 공격할 수 없다
-    if (inp.atk && p.cd <= 0 && !(p.rollT > 0)) this.attack(p);
+    if (inp.atk && p.cd <= 0 && !(p.rollT > 0) && this.roundT >= this.cfg.START_GRACE) this.attack(p);
     if (inp.flare && p.flareCd <= 0) this.throwFlare(p);
   }
 
@@ -159,13 +167,12 @@ export class Game {
       if (Math.abs(wrapAngle(Math.atan2(dx, dz) - p.yaw)) > cfg.ATTACK_ARC / 2 + slack) continue;
       if (segmentBlocked(p.x, p.z, q.x, q.z, this.walls)) continue;
       q.alive = false;
-      q.respawn = cfg.RESPAWN_TIME;
       q.queue.length = 0;
       p.score++;
       this.kills.push([p.id, q.id]);
       this.rosterDirty = true;
     }
-    if (this.endT <= 0 && this.teamScore(p.team) >= this.targetScore) this.endRound(p.team);
+    this.checkRoundEnd();
   }
 
   throwFlare(p) {
@@ -174,14 +181,48 @@ export class Game {
     this.flares.push({ team: p.team, x, z, t: this.cfg.FLARE_TIME });
   }
 
+  aliveByTeam() {
+    const m = new Map();
+    for (const p of this.players.values()) {
+      if (!p.alive) continue;
+      const t = m.get(p.team) || { n: 0, kills: 0 };
+      t.n++;
+      m.set(p.team, t);
+    }
+    for (const p of this.players.values()) if (m.has(p.team)) m.get(p.team).kills += p.score;
+    return m;
+  }
+
+  // 한 팀(개인전은 한 명)만 남으면 라운드 종료
+  checkRoundEnd() {
+    if (this.endT > 0 || this.players.size < 2) return;
+    const teams = this.aliveByTeam();
+    if (teams.size <= 1) this.endRound(teams.size ? [...teams.keys()][0] : 0);
+  }
+
+  // 시간 초과: 생존자가 많은 팀, 동률이면 킬이 많은 팀. 그래도 같으면 무승부(0)
+  timeUp() {
+    const rank = [...this.aliveByTeam()].sort((a, b) => b[1].n - a[1].n || b[1].kills - a[1].kills);
+    const tie = rank.length > 1 && rank[0][1].n === rank[1][1].n && rank[0][1].kills === rank[1][1].kills;
+    this.endRound(rank.length && !tie ? rank[0][0] : 0);
+  }
+
   endRound(team) {
     this.endT = this.cfg.INTERMISSION;
     this.winner = team;
-    this.events.push({ t: 'e', w: team, s: this.cfg.INTERMISSION });
+    const names = [];
+    for (const p of this.players.values()) {
+      if (p.team !== team) continue;
+      p.wins++;
+      names.push(p.name);
+    }
+    this.rosterDirty = true;
+    this.events.push({ t: 'e', w: team, s: this.cfg.INTERMISSION, n: names });
   }
 
   newRound() {
     this.endT = 0;
+    this.roundT = 0;
     this.winner = null;
     this.flares.length = 0;
     for (const p of this.players.values()) {
@@ -210,14 +251,19 @@ export class Game {
       return;
     }
 
+    this.roundT += DT;
+    if (this.roundT >= this.cfg.ROUND_TIME) {
+      this.timeUp();
+      return;
+    }
+
     for (const p of this.players.values()) {
       p.cd = Math.max(0, p.cd - DT);
       p.beam = Math.max(0, p.beam - DT);
       p.flareCd = Math.max(0, p.flareCd - DT);
       if (!p.alive) {
-        p.respawn -= DT;
+        // 탈락: 다음 라운드까지 대기
         while (p.queue.length) p.ack = p.queue.shift().seq;
-        if (p.respawn <= 0) this.spawn(p);
         continue;
       }
       if (p.isBot) {
@@ -279,18 +325,19 @@ export class Game {
       t: 's',
       k: this.tick,
       a: p.ack,
+      rt: Math.ceil(Math.max(0, this.cfg.ROUND_TIME - this.roundT)), // 남은 라운드 시간
       // 예측 보정에 필요한 값은 반올림하지 않는다
-      me: [p.x, p.z, p.yaw, p.alive ? 1 : 0, q2(Math.max(0, p.respawn)), q2(p.cd), p.rollT, p.rollCd, p.rollDx, p.rollDz, q2(p.flareCd)],
+      me: [p.x, p.z, p.yaw, p.alive ? 1 : 0, 0, q2(p.cd), p.rollT, p.rollCd, p.rollDx, p.rollDz, q2(p.flareCd)],
       e,
       f,
     };
   }
 
+  // p: [id, 이름, 팀, 이번 라운드 킬, 생존 여부, 누적 승]  (위치 정보 없음)
   roster() {
     return {
       t: 'r',
-      g: this.targetScore,
-      p: [...this.players.values()].map((p) => [p.id, p.name, p.team, p.score]),
+      p: [...this.players.values()].map((p) => [p.id, p.name, p.team, p.score, p.alive ? 1 : 0, p.wins]),
     };
   }
 

@@ -6,7 +6,7 @@ import { CFG } from '../shared/config.js';
 import { stepPlayer } from '../shared/sim.js';
 
 function setup(opts) {
-  const game = new Game({ BOT_FILL: 0, ...opts });
+  const game = new Game({ BOT_FILL: 0, TEAMS: 2, ...opts });
   game.walls = [];
   const sent = new Map();
   const add = (name) => {
@@ -20,12 +20,12 @@ function setup(opts) {
 }
 const at = (deg, d) => [Math.sin((deg * Math.PI) / 180) * d, Math.cos((deg * Math.PI) / 180) * d];
 
-test('빔: 6m 앞, 15도 옆의 적을 맞힌다', () => {
+test('빔: 5.5m 앞, 15도 옆의 적을 맞힌다', () => {
   const { game, add, place } = setup();
   const a = add('A');
   const b = add('B');
   place(a, 0, 0, 0);
-  place(b, ...at(15, 6), 0);
+  place(b, ...at(15, 5.5), 0);
   game.attack(a);
   assert.equal(b.alive, false);
 });
@@ -35,7 +35,7 @@ test('빔: 원뿔 밖(35도)이나 사거리 밖(9m)은 맞지 않는다', () =>
   const a = add('A');
   const b = add('B');
   place(a, 0, 0, 0);
-  place(b, ...at(35, 6), 0);
+  place(b, ...at(35, 5), 0);
   game.attack(a);
   assert.equal(b.alive, true);
   place(b, 0, 9, 0);
@@ -116,21 +116,67 @@ test('조명탄은 같은 팀에게만 전송된다', () => {
   assert.equal(last(b).f.length, 0);
 });
 
-test('라운드: 목표 점수에 도달하면 종료되고 휴식 후 초기화된다', () => {
-  const { game, add, place, sent } = setup({ TARGET_SCORE: 2, INTERMISSION: 1 });
+test('생존전: 마지막 한 팀이 남으면 라운드가 끝나고, 휴식 후 전원 부활한다', () => {
+  const { game, add, place, sent } = setup({ TEAMS: 0, INTERMISSION: 1 });
   const a = add('A');
   const b = add('B');
-  for (let i = 0; i < 2; i++) {
-    place(a, 0, 0, 0);
-    place(b, 0, 3, 0);
-    a.cd = 0;
-    game.attack(a);
-  }
+  const c = add('C');
+  place(a, 0, 0, 0);
+  place(b, 0, 3, 0);
+  place(c, 20, 20, 0);
+  game.attack(a);
+  assert.equal(b.alive, false);
+  assert.equal(game.winner, null, '아직 둘이 남았다');
+  // 탈락자는 부활하지 않는다
+  for (let i = 0; i < CFG.TICK_RATE * 5; i++) game.step();
+  assert.equal(b.alive, false);
+  place(c, a.x, a.z + 3, 0);
+  a.yaw = 0;
+  game.attack(a);
   assert.equal(game.winner, a.team);
+  assert.equal(a.wins, 1);
   game.broadcast();
-  assert.ok(sent.get(a.id).some((m) => m.t === 'e' && m.w === a.team));
+  assert.ok(sent.get(b.id).some((m) => m.t === 'e' && m.w === a.team && m.n[0] === 'A'));
   for (let i = 0; i < CFG.TICK_RATE + 2; i++) game.step();
   assert.equal(game.winner, null);
+  assert.ok(a.alive && b.alive && c.alive);
   assert.equal(a.score, 0);
-  assert.ok(a.alive && b.alive);
+});
+
+test('생존전: 시간이 다 되면 생존자가 많은 팀이 이긴다', () => {
+  const { game, add, place } = setup({ TEAMS: 2, ROUND_TIME: 1 });
+  const a = add('A'); // 팀 1
+  const b = add('B'); // 팀 2
+  const c = add('C'); // 팀 1
+  place(a, -20, -20, 0);
+  place(c, -22, -20, 0);
+  place(b, 20, 20, 0);
+  for (let i = 0; i < CFG.TICK_RATE + 2; i++) game.step();
+  assert.equal(game.winner, a.team);
+});
+
+test('모드: ffa는 전원 다른 팀, duo는 2명씩 4팀', () => {
+  const ffa = new Game({ mode: 'ffa' });
+  ffa.balanceBots();
+  assert.equal(ffa.players.size, 8);
+  assert.equal(new Set([...ffa.players.values()].map((p) => p.team)).size, 8);
+  const duo = new Game({ mode: 'duo' });
+  duo.balanceBots();
+  const sizes = new Map();
+  for (const p of duo.players.values()) sizes.set(p.team, (sizes.get(p.team) || 0) + 1);
+  assert.deepEqual([...sizes.values()], [2, 2, 2, 2]);
+});
+
+test('사람은 살아있는 봇의 자리를 이어받는다', () => {
+  const game = new Game({ mode: 'duo' });
+  game.balanceBots();
+  for (let i = 0; i < CFG.TICK_RATE * 15; i++) game.step(); // 유예 시간 이후
+  if (game.endT > 0) return; // 봇끼리 이미 끝낸 경우는 건너뛴다
+  const aliveBefore = [...game.players.values()].filter((p) => p.alive).length;
+  const h = game.addPlayer('H', () => {});
+  game.balanceBots();
+  assert.equal(game.players.size, 8);
+  assert.equal([...game.players.values()].filter((p) => p.alive).length, aliveBefore);
+  if (aliveBefore > 0) assert.equal(h.alive, true);
+  assert.equal(game.teamSize(h.team), 2);
 });

@@ -1,7 +1,7 @@
 // 간단한 봇. 사람과 동일한 입력 구조를 만들고, 자기 시야에 들어온 적만 인지한다.
 import { canSee, wrapAngle } from '../shared/vision.js';
 
-const REACTION = 0.35; // 적을 본 뒤 반응하기까지의 시간
+const REACTION = 0.6; // 적을 본 뒤 반응하기까지의 시간
 
 export function botThink(bot, game, dt) {
   const cfg = game.cfg;
