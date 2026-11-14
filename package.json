@@ -1,0 +1,16 @@
+{
+  "name": "frustum",
+  "version": "0.1.0",
+  "description": "시야(프러스텀) 기반 실시간 멀티플레이어 3D 모바일 게임 코어",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node --test"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "three": "^0.170.0",
+    "ws": "^8.18.0"
+  }
+}
