@@ -16,11 +16,10 @@ export const CFG = Object.freeze({
   VIS_MARGIN: 0.3, // 서버 판정 여유값: 시야 경계에서 갑자기 튀어나오는 현상 완화
 
   // 손전등 빔 공격: 좁고 긴 원뿔. 벽에 막힌다.
-  ATTACK_RANGE: 7,
+  ATTACK_RANGE: 6,
   ATTACK_ARC: 40 * DEG,
-  ATTACK_COOLDOWN: 0.8,
+  ATTACK_COOLDOWN: 4,
   BEAM_TIME: 0.25, // 빔이 화면에 보이는 시간
-  RESPAWN_TIME: 3,
 
   // 구르기: 짧은 순간이동 + 무적
   ROLL_TIME: 0.3,
@@ -30,15 +29,19 @@ export const CFG = Object.freeze({
   // 조명탄: 던진 지점 주변을 팀 시야로 밝힌다
   FLARE_THROW: 8, // 최대 투척 거리
   FLARE_RADIUS: 7, // 밝히는 반경
-  FLARE_TIME: 6,
+  FLARE_TIME: 4,
   FLARE_COOLDOWN: 12,
 
-  TARGET_SCORE: 20, // 팀전 승리 킬 수 (개인전은 절반)
+  // 생존전: 부활 없음. 마지막까지 살아남은 사람/팀이 라운드 승리.
+  ROUND_TIME: 120, // 시간이 다 되면 생존자가 많은 팀(동률이면 킬이 많은 팀) 승리
   INTERMISSION: 6, // 라운드 종료 후 다음 라운드까지
+  START_GRACE: 3, // 라운드 시작 직후 공격 금지 시간
+  JOIN_GRACE: 10, // 라운드 시작 후 이 시간 안에 들어오면 바로 참가
 
-  TEAMS: 2, // 0이면 개인전(시야 공유 없음), 2 이상이면 팀원끼리 시야 공유
-  MAX_PLAYERS: 12,
-  BOT_FILL: 6, // 접속 인원이 이보다 적으면 봇으로 채운다
+  // 모드: 'ffa' = 8인 개인전(시야 공유 없음), 'duo' = 2인 1팀 × 4팀(팀원과 시야 공유)
+  TEAMS: 4, // duo 모드의 팀 수. ffa 모드에서는 0으로 덮어쓴다
+  MAX_PLAYERS: 8,
+  BOT_FILL: 8, // 접속 인원이 이보다 적으면 봇으로 채운다
 });
 
 // 조명탄을 시야원으로 쓸 때의 설정: 360도, 반경 FLARE_RADIUS

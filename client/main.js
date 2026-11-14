@@ -158,12 +158,14 @@ let myTeam = 0;
 let seq = 0;
 let alive = false;
 let everAlive = false;
-let respawnIn = 0;
+let mode = 'duo';
+let roundLeft = 0;
+let snapNext = false; // 새 라운드: 다음 스냅샷 위치로 순간이동
 let localCd = 0;
 let localBeam = 0;
 let flareCd = 0;
 let killedBy = '';
-let targetScore = CFG.TARGET_SCORE;
+let winnerText = '';
 let roundEnd = 0; // 라운드 종료 배너 남은 시간
 let stepT = 0;
 let lastSpot = 0;
@@ -230,7 +232,7 @@ function showMenu(msg) {
   for (const id of [...ents.keys()]) removeEnt(id);
 }
 
-function connect(name) {
+function connect(name, gameMode) {
   if (STATIC_HOST && !REMOTE) {
     $('status').textContent = '온라인 서버 주소가 설정되지 않았습니다. 혼자 하기는 서버 없이 됩니다.';
     return;
@@ -243,7 +245,7 @@ function connect(name) {
     ws = new WebSocket(wsUrl());
     ws.onopen = () => {
       opened = true;
-      ws.send(JSON.stringify({ t: 'j', n: name }));
+      ws.send(JSON.stringify({ t: 'j', n: name, m: gameMode }));
     };
     ws.onmessage = (ev) => onMessage(JSON.parse(ev.data));
     ws.onclose = () => {
@@ -261,28 +263,28 @@ function connect(name) {
 }
 
 // 오프라인(혼자 하기): 서버와 같은 Game 클래스를 브라우저에서 실행한다. 메시지 형식도 같아서 아래 코드는 구분하지 않는다.
-async function startOffline(name) {
+async function startOffline(name, gameMode) {
   $('status').textContent = '불러오는 중…';
   const { Game } = await import('./server/game.js');
-  const game = new Game();
-  const player = game.addPlayer(name, (msg) => onMessage(JSON.parse(msg)));
+  const game = new Game({ mode: gameMode });
   game.balanceBots();
+  const player = game.addPlayer(name, (msg) => onMessage(JSON.parse(msg))); // 봇 한 자리를 이어받는다
   offline = { game, player };
-  onMessage({ t: 'w', id: player.id, team: player.team });
+  onMessage({ t: 'w', id: player.id, team: player.team, m: game.mode });
 }
 
 function onMessage(m) {
   if (m.t === 'w') {
     myId = m.id;
     myTeam = m.team;
+    mode = m.m || 'duo';
     $('menu').style.display = 'none';
     $('hud').hidden = false;
   } else if (m.t === 'full') {
     $('status').textContent = '방이 가득 찼습니다.';
   } else if (m.t === 'r') {
     roster.clear();
-    for (const [id, name, team, score] of m.p) roster.set(id, { name, team, score });
-    if (m.g) targetScore = m.g;
+    for (const [id, name, team, score, al, wins] of m.p) roster.set(id, { name, team, score, alive: !!al, wins });
     for (const [id, e] of ents) setKind(e.mesh, kindOf(id));
     drawScore();
   } else if (m.t === 'k') {
@@ -298,12 +300,14 @@ function onMessage(m) {
   } else if (m.t === 'e') {
     const won = m.w === myTeam;
     roundEnd = m.s;
-    $('bannerTitle').textContent = won ? '승리' : '패배';
+    $('bannerTitle').textContent = won ? '승리' : m.w ? '패배' : '무승부';
     $('bannerTitle').className = won ? 'win' : 'lose';
+    winnerText = m.w ? `승자: ${m.n.join(', ')}` : '시간 초과';
     $('banner').hidden = false;
     won ? sfx.win() : sfx.lose();
   } else if (m.t === 'n') {
     roundEnd = 0;
+    snapNext = true;
     $('banner').hidden = true;
     killedBy = '';
   } else if (m.t === 's') {
@@ -314,23 +318,25 @@ function onMessage(m) {
 const kindOf = (id) => (roster.get(id)?.team === myTeam ? 'ally' : 'enemy');
 
 function onSnapshot(m) {
-  const [x, z, yaw, al, resp, , rollT, rollCd, rollDx, rollDz, fcd] = m.me;
+  const [x, z, yaw, al, , , rollT, rollCd, rollDx, rollDz, fcd] = m.me;
   const wasAlive = alive;
   alive = !!al;
-  respawnIn = resp;
+  roundLeft = m.rt ?? 0;
   flareCd = fcd;
   // 서버 상태로 되돌린 뒤 미확인 입력을 다시 적용 (클라이언트 예측 보정)
   Object.assign(sim, { x, z, yaw, rollT, rollCd, rollDx, rollDz });
   while (pending.length && pending[0].seq <= m.a) pending.shift();
   if (alive) for (const inp of pending) stepPlayer(sim, inp, DT, WALLS);
   else pending.length = 0;
-  if (alive && !wasAlive) {
-    // 리스폰: 보간 없이 순간이동, 조준 방향도 서버 값으로
+  if (alive && (!wasAlive || snapNext)) {
+    // 새 라운드: 보간 없이 순간이동, 조준 방향과 쿨다운도 초기화
     Object.assign(prev, sim);
     input.yaw = sim.yaw;
+    localCd = 0;
     if (everAlive) sfx.respawn();
     everAlive = true;
   }
+  snapNext = false;
 
   snapCount++;
   const now = performance.now();
@@ -368,14 +374,19 @@ function removeEnt(id) {
 
 // ───────────────────────── HUD ─────────────────────────
 function drawScore() {
-  let mine = 0;
-  let theirs = 0;
-  for (const p of roster.values()) p.team === myTeam ? (mine += p.score) : (theirs += p.score);
+  let aliveN = 0;
+  const teams = new Set();
+  for (const p of roster.values()) {
+    if (!p.alive) continue;
+    aliveN++;
+    teams.add(p.team);
+  }
   const me = roster.get(myId);
+  const time = `${Math.floor(roundLeft / 60)}:${String(roundLeft % 60).padStart(2, '0')}`;
+  const left = mode === 'ffa' ? `생존 ${aliveN}명` : `생존 ${teams.size}팀 · ${aliveN}명`;
   $('score').innerHTML =
-    CFG.TEAMS > 0
-      ? `<span class="ally">아군 ${mine}</span> : <span class="enemy">${theirs} 적군</span><span class="me">목표 ${targetScore} · 내 킬 ${me?.score ?? 0}</span>`
-      : `<span class="me">킬 ${me?.score ?? 0} / ${targetScore}</span>`;
+    `<span class="ally">${left}</span> <span class="enemy">${time}</span>` +
+    `<span class="me">킬 ${me?.score ?? 0} · ${me?.wins ?? 0}승</span>`;
 }
 function addFeed(k, v) {
   const row = document.createElement('div');
@@ -389,10 +400,16 @@ function addFeed(k, v) {
   while ($('feed').children.length > 5) $('feed').lastChild.remove();
   setTimeout(() => row.remove(), 6000);
 }
+// 스킬 버튼: 쿨다운 중에는 남은 시간을 숫자로 보여준다
 function drawSkill(id, remain, total, usable) {
   const el = $(id);
+  const label = el.firstElementChild;
+  const cooling = remain > 0.05;
   el.style.setProperty('--cd', usable ? Math.max(0, Math.min(1, remain / total)).toFixed(3) : 1);
   el.classList.toggle('off', !usable);
+  el.classList.toggle('cooling', cooling);
+  const text = cooling ? (remain >= 1 ? String(Math.ceil(remain)) : remain.toFixed(1)) : el.dataset.label;
+  if (label.textContent !== text) label.textContent = text;
 }
 
 // ───────────────────────── 고정 틱: 입력 전송 + 예측 ─────────────────────────
@@ -406,7 +423,9 @@ function fixedStep() {
   let atk = input.consume('atk');
   const roll = input.consume('roll') && canAct;
   let flare = input.consume('flare') && canAct;
-  if (!canAct || sim.rollT > 0) atk = false;
+  // 라운드 시작 직후에는 공격할 수 없다 (서버와 같은 규칙)
+  const grace = roundLeft > CFG.ROUND_TIME - CFG.START_GRACE;
+  if (!canAct || sim.rollT > 0 || grace) atk = false;
   if (atk && localCd <= 0) {
     localCd = CFG.ATTACK_COOLDOWN;
     localBeam = CFG.BEAM_TIME; // 즉시 피드백 (판정은 서버)
@@ -596,8 +615,9 @@ function frame(now) {
     }
     $('dead').hidden = alive || !myId || roundEnd > 0;
     $('deadBy').textContent = killedBy ? ` — ${killedBy}` : '';
-    $('respawn').textContent = `${Math.ceil(respawnIn)}초 후 부활`;
-    if (roundEnd > 0) $('bannerSub').textContent = `${Math.ceil(roundEnd)}초 후 다음 라운드`;
+    $('respawn').textContent = '다음 라운드까지 대기';
+    if (roundEnd > 0) $('bannerSub').textContent = `${winnerText} · ${Math.ceil(roundEnd)}초 후 다음 라운드`;
+    if (myId) drawScore();
   }
 }
 requestAnimationFrame(frame);
@@ -609,18 +629,33 @@ function remember(name) {
     localStorage.setItem('frustum.name', name);
   } catch {}
 }
+let menuMode = params.get('mode') === 'ffa' ? 'ffa' : localStorage.getItem('frustum.mode') === 'ffa' ? 'ffa' : 'duo';
+function drawMode() {
+  $('modeFfa').classList.toggle('on', menuMode === 'ffa');
+  $('modeDuo').classList.toggle('on', menuMode === 'duo');
+}
+for (const [id, m] of [['modeFfa', 'ffa'], ['modeDuo', 'duo']]) {
+  $(id).addEventListener('click', () => {
+    menuMode = m;
+    try {
+      localStorage.setItem('frustum.mode', m);
+    } catch {}
+    drawMode();
+  });
+}
+drawMode();
 $('play').addEventListener('click', () => {
   const name = $('name').value.trim() || 'Player';
   remember(name);
-  startOffline(name).catch((e) => ($('status').textContent = '시작 실패: ' + e.message));
+  startOffline(name, menuMode).catch((e) => ($('status').textContent = '시작 실패: ' + e.message));
 });
 $('online').addEventListener('click', () => {
   const name = $('name').value.trim() || 'Player';
   remember(name);
-  connect(name);
+  connect(name, menuMode);
 });
-if (params.has('offline')) startOffline($('name').value || 'Player');
-else if (params.has('auto')) connect($('name').value || 'Player');
+if (params.has('offline')) startOffline($('name').value || 'Player', menuMode);
+else if (params.has('auto')) connect($('name').value || 'Player', menuMode);
 
 // 디버그/자동 테스트용 핸들
 window.__frustum = {

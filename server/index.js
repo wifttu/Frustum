@@ -60,12 +60,14 @@ const server = http.createServer((req, res) => {
   res.writeHead(404).end('Not found');
 });
 
-const game = new Game();
-game.balanceBots();
+// 모드별로 방 하나씩
+const games = { ffa: new Game({ mode: 'ffa' }), duo: new Game({ mode: 'duo' }) };
+for (const g of Object.values(games)) g.balanceBots();
 
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 512 });
 wss.on('connection', (ws) => {
   let player = null;
+  let game = null;
   let msgCount = 0;
   const rateTimer = setInterval(() => (msgCount = 0), 1000);
 
@@ -79,6 +81,8 @@ wss.on('connection', (ws) => {
     }
     if (!m || typeof m !== 'object') return;
     if (m.t === 'j' && !player) {
+      game = Object.hasOwn(games, m.m) ? games[m.m] : games.duo;
+      const wasEmpty = game.humanCount === 0;
       if (game.humanCount >= CFG.MAX_PLAYERS) {
         ws.send(JSON.stringify({ t: 'full' }));
         ws.close();
@@ -90,7 +94,8 @@ wss.on('connection', (ws) => {
         if (ws.readyState === ws.OPEN && ws.bufferedAmount < 64 * 1024) ws.send(msg);
       });
       game.balanceBots();
-      ws.send(JSON.stringify({ t: 'w', id: player.id, team: player.team }));
+      if (wasEmpty) game.newRound(); // 비어 있던 방은 새 라운드로 시작
+      ws.send(JSON.stringify({ t: 'w', id: player.id, team: player.team, m: game.mode }));
     } else if (m.t === 'i' && player) {
       game.queueInput(player.id, m.d);
     }
@@ -113,8 +118,11 @@ setInterval(() => {
   const now = performance.now();
   let steps = 0;
   while (now >= next && steps < 5) {
-    game.step();
-    if (game.tick % CFG.SNAPSHOT_EVERY === 0) game.broadcast();
+    for (const g of Object.values(games)) {
+      if (g.humanCount === 0) continue; // 사람이 없는 방은 멈춰 둔다
+      g.step();
+      if (g.tick % CFG.SNAPSHOT_EVERY === 0) g.broadcast();
+    }
     next += STEP_MS;
     steps++;
   }

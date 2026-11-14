@@ -27,7 +27,7 @@ html, body {
   position: absolute; top: 34%; left: 50%; transform: translateX(-50%); text-align: center;
   font-size: 18px; padding: 14px 22px; border-radius: 12px; background: rgba(0, 0, 0, .7);
 }
-#dead b { font-size: 26px; color: #ff6b5e; }
+#dead b { font-size: 15px; font-weight: 500; color: #b9c8d6; }
 #stick {
   display: none; position: absolute; width: 112px; height: 112px; margin: -56px 0 0 -56px;
   border-radius: 50%; border: 2px solid rgba(255, 255, 255, .25); background: rgba(255, 255, 255, .06);
@@ -49,6 +49,7 @@ html, body {
 .skill span { position: relative; }
 .skill:active { background: rgba(255, 190, 60, .45); }
 .skill.off { opacity: .45; }
+.skill.cooling span { font-size: 24px; color: #fff; text-shadow: 0 1px 3px #000; }
 #attack {
   right: calc(22px + env(safe-area-inset-right)); bottom: calc(26px + env(safe-area-inset-bottom));
   width: 88px; height: 88px; font-size: 15px;
@@ -85,10 +86,25 @@ html, body {
 #menu input { border: 1px solid #33475a; background: #0c141c; color: #fff; -webkit-user-select: text; user-select: text; }
 #menu button { border: 0; background: #2f8fe6; color: #fff; font-weight: 700; }
 #menu button.alt { background: #26323e; color: #cfe0f0; }
+#modes { display: flex; gap: 8px; width: min(260px, 80vw); }
+#menu #modes button { flex: 1; width: auto; padding: 10px 4px; background: #17212b; color: #9fb2c4; border: 2px solid transparent; }
+#menu #modes button.on { border-color: #2f8fe6; color: #fff; background: #1b2f45; }
+#modes small { display: block; font-weight: 400; font-size: 11px; }
 #menu small { color: #6f8294; line-height: 1.6; }
 #status { color: #ff6b5e; min-height: 1.2em; font-size: 14px; }
 
 @media (orientation: portrait) {
   #stats { top: calc(48px + env(safe-area-inset-top)); }
   #feed { top: calc(88px + env(safe-area-inset-top)); }
+}
+
+/* 가로로 든 휴대폰: 메뉴를 압축하고, 넘치면 스크롤 */
+#menu { overflow-y: auto; touch-action: pan-y; justify-content: safe center; }
+@media (max-height: 480px) {
+  #menu { gap: 7px; padding: 10px 16px; }
+  #menu h1 { font-size: 24px; letter-spacing: 6px; }
+  #menu p { display: none; }
+  #menu input, #menu button { padding: 9px 12px; font-size: 15px; }
+  #menu #modes button { padding: 6px 4px; }
+  #menu small { font-size: 11px; line-height: 1.4; }
 }

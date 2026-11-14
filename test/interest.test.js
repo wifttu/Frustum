@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { Game } from '../server/game.js';
 
 function setup(opts) {
-  const game = new Game({ BOT_FILL: 0, ...opts });
+  const game = new Game({ BOT_FILL: 0, TEAMS: 2, START_GRACE: 0, ...opts });
   game.walls = [];
   const sent = new Map();
   const add = (name) => {
