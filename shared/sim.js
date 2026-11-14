@@ -1,9 +1,10 @@
 // 플레이어 이동 시뮬레이션. 서버(권위)와 클라이언트(예측)가 같은 코드를 실행한다.
 import { CFG } from './config.js';
 import { MAP_SIZE } from './map.js';
-import { wrapAngle } from './vision.js';
+import { rayAabb, wrapAngle } from './vision.js';
 
-// p: {x,z,yaw}, input: {mx,mz,yaw}  (mx: 오른쪽, mz: 전방, yaw: 목표 방향)
+// p: {x,z,yaw,rollT,rollCd,rollDx,rollDz}
+// input: {mx,mz,yaw,roll}  (mx: 오른쪽, mz: 전방, yaw: 목표 방향)
 export function stepPlayer(p, input, dt, walls) {
   const maxTurn = CFG.TURN_RATE * dt;
   const dy = wrapAngle(input.yaw - p.yaw);
@@ -18,10 +19,29 @@ export function stepPlayer(p, input, dt, walls) {
   }
   const s = Math.sin(p.yaw);
   const c = Math.cos(p.yaw);
-  const step = CFG.PLAYER_SPEED * dt;
   // 전방 (s,c), 오른쪽 (-c,s)
-  p.x += (s * mz - c * mx) * step;
-  p.z += (c * mz + s * mx) * step;
+  let vx = s * mz - c * mx;
+  let vz = c * mz + s * mx;
+
+  p.rollCd = Math.max(0, (p.rollCd || 0) - dt);
+  if (input.roll && p.rollCd <= 0 && !(p.rollT > 0)) {
+    // 이동 중이면 이동 방향으로, 아니면 바라보는 방향으로 구른다
+    const vl = Math.hypot(vx, vz);
+    p.rollDx = vl > 0.2 ? vx / vl : s;
+    p.rollDz = vl > 0.2 ? vz / vl : c;
+    p.rollT = CFG.ROLL_TIME;
+    p.rollCd = CFG.ROLL_COOLDOWN;
+  }
+
+  let step = CFG.PLAYER_SPEED * dt;
+  if (p.rollT > 0) {
+    vx = p.rollDx;
+    vz = p.rollDz;
+    step = CFG.ROLL_SPEED * dt;
+    p.rollT = Math.max(0, p.rollT - dt);
+  }
+  p.x += vx * step;
+  p.z += vz * step;
 
   const r = CFG.PLAYER_RADIUS;
   for (let iter = 0; iter < 2; iter++) {
@@ -53,4 +73,14 @@ export function stepPlayer(p, input, dt, walls) {
   const lim = MAP_SIZE / 2 - r;
   p.x = Math.max(-lim, Math.min(lim, p.x));
   p.z = Math.max(-lim, Math.min(lim, p.z));
+}
+
+// 조명탄 착지점: 전방으로 던지되 벽 앞에서 멈춘다.
+export function flareLanding(p, walls) {
+  const dx = Math.sin(p.yaw);
+  const dz = Math.cos(p.yaw);
+  let t = CFG.FLARE_THROW;
+  for (const w of walls) t = Math.min(t, rayAabb(p.x, p.z, dx, dz, w, t));
+  t = Math.max(0, t - 0.4);
+  return [p.x + dx * t, p.z + dz * t];
 }

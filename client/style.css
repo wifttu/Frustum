@@ -15,7 +15,7 @@ html, body {
 }
 #score .ally { color: #5ab4ff; } #score .enemy { color: #ff6b5e; } #score .me { color: #fff; font-weight: 500; margin-left: 10px; }
 #feed {
-  position: absolute; top: calc(8px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right));
+  position: absolute; top: calc(48px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right));
   text-align: right; font-size: 12px; line-height: 1.5; text-shadow: 0 1px 2px #000;
 }
 #feed .ally { color: #5ab4ff; } #feed .enemy { color: #ff6b5e; }
@@ -36,14 +36,42 @@ html, body {
   position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; border-radius: 50%;
   background: rgba(255, 255, 255, .35); transform: translate(-50%, -50%);
 }
-#attack {
-  pointer-events: auto; position: absolute;
-  right: calc(22px + env(safe-area-inset-right)); bottom: calc(26px + env(safe-area-inset-bottom));
-  width: 84px; height: 84px; border-radius: 50%; border: 2px solid rgba(255, 210, 90, .8);
-  background: rgba(255, 190, 60, .22); color: #ffe2a0; font-size: 16px; font-weight: 700; touch-action: none;
+.skill {
+  --cd: 0; /* 남은 쿨다운 비율 0..1 */
+  pointer-events: auto; position: absolute; border-radius: 50%; touch-action: none; overflow: hidden;
+  border: 2px solid rgba(255, 210, 90, .8); background: rgba(255, 190, 60, .2); color: #ffe2a0;
+  font-family: inherit; font-weight: 700; font-size: 13px; line-height: 1; padding: 0;
 }
-#attack:active { background: rgba(255, 190, 60, .5); }
-#attack.cd { opacity: .4; }
+.skill::before { /* 쿨다운 부채꼴 */
+  content: ''; position: absolute; inset: 0; border-radius: 50%;
+  background: conic-gradient(rgba(0, 0, 0, .62) calc(var(--cd) * 360deg), transparent 0);
+}
+.skill span { position: relative; }
+.skill:active { background: rgba(255, 190, 60, .45); }
+.skill.off { opacity: .45; }
+#attack {
+  right: calc(22px + env(safe-area-inset-right)); bottom: calc(26px + env(safe-area-inset-bottom));
+  width: 88px; height: 88px; font-size: 15px;
+}
+#roll {
+  right: calc(122px + env(safe-area-inset-right)); bottom: calc(22px + env(safe-area-inset-bottom));
+  width: 62px; height: 62px; border-color: rgba(140, 220, 255, .8); background: rgba(90, 180, 255, .18); color: #cdeeff;
+}
+#flare {
+  right: calc(34px + env(safe-area-inset-right)); bottom: calc(128px + env(safe-area-inset-bottom));
+  width: 62px; height: 62px; border-color: rgba(255, 140, 90, .85); background: rgba(255, 110, 60, .18); color: #ffd2bf;
+}
+#mute {
+  pointer-events: auto; position: absolute; top: calc(6px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right));
+  width: 36px; height: 36px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, .5); font-size: 17px; padding: 0;
+}
+#banner {
+  position: absolute; top: 24%; left: 50%; transform: translateX(-50%); text-align: center; white-space: nowrap;
+  padding: 16px 28px; border-radius: 14px; background: rgba(0, 0, 0, .72);
+}
+#banner b { display: block; font-size: 34px; letter-spacing: 4px; }
+#banner b.win { color: #ffd25a; } #banner b.lose { color: #ff6b5e; }
+#banner span { color: #b9c8d6; font-size: 14px; }
 
 #menu {
   position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -61,5 +89,6 @@ html, body {
 #status { color: #ff6b5e; min-height: 1.2em; font-size: 14px; }
 
 @media (orientation: portrait) {
-  #stats, #feed { top: calc(48px + env(safe-area-inset-top)); }
+  #stats { top: calc(48px + env(safe-area-inset-top)); }
+  #feed { top: calc(88px + env(safe-area-inset-top)); }
 }

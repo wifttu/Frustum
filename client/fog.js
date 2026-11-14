@@ -38,7 +38,7 @@ void main() {
 }`;
 
 export class VisionMask {
-  constructor(mapSize, walls, cfg, { maxSources = 8, res = 512 } = {}) {
+  constructor(mapSize, walls, cfg, { maxSources = 14, res = 512 } = {}) {
     this.mapSize = mapSize;
     this.walls = walls;
     this.cfg = cfg;
@@ -106,7 +106,7 @@ export class VisionMask {
     this.blurScene.add(blur);
   }
 
-  // sources: [{x,z,yaw}] — 나 + 살아있는 팀원
+  // sources: [{x,z,yaw, view?}] — 나 + 살아있는 팀원 + 팀 조명탄(view: 시야 설정 덮어쓰기)
   update(renderer, sources) {
     const { cfg, pts, seen } = this;
     seen.fill(0);
@@ -115,7 +115,8 @@ export class VisionMask {
       const s = sources[i];
       mesh.visible = !!s;
       if (!s) continue;
-      const n = computeVisionFan(s.x, s.z, s.yaw, this.walls, cfg, pts, seen);
+      const view = s.view || cfg;
+      const n = computeVisionFan(s.x, s.z, s.yaw, this.walls, view, pts, seen);
       const pos = mesh.geometry.attributes.position;
       const idx = mesh.geometry.index;
       const P = pos.array;
@@ -137,8 +138,8 @@ export class VisionMask {
       const c0 = v;
       for (let j = 0; j < CIRCLE_SEG; j++, v++) {
         const a = (j / CIRCLE_SEG) * Math.PI * 2;
-        P[v * 3] = s.x + Math.sin(a) * cfg.NEAR_RADIUS;
-        P[v * 3 + 2] = s.z + Math.cos(a) * cfg.NEAR_RADIUS;
+        P[v * 3] = s.x + Math.sin(a) * view.NEAR_RADIUS;
+        P[v * 3 + 2] = s.z + Math.cos(a) * view.NEAR_RADIUS;
         I[k++] = 0;
         I[k++] = c0 + j;
         I[k++] = c0 + ((j + 1) % CIRCLE_SEG);
@@ -147,6 +148,7 @@ export class VisionMask {
       idx.needsUpdate = true;
       mesh.geometry.setDrawRange(0, k);
       mesh.material.uniforms.uEye.value.set(s.x, s.z);
+      mesh.material.uniforms.uRange.value = view.VIEW_RANGE;
     }
 
     const prevTarget = renderer.getRenderTarget();

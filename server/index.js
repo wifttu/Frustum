@@ -33,6 +33,11 @@ const server = http.createServer((req, res) => {
     res.writeHead(400).end();
     return;
   }
+  if (url === '/healthz') {
+    // Render 헬스체크 / 잠든 서버 깨우기용
+    res.writeHead(200, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' }).end('ok');
+    return;
+  }
   if (url === '/') url = '/index.html';
   for (const [prefix, dir] of MOUNTS) {
     if (!url.startsWith(prefix)) continue;
