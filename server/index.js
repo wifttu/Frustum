@@ -1,0 +1,117 @@
+// HTTP(정적 파일) + WebSocket 게임 서버.
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { WebSocketServer } from 'ws';
+import { CFG } from '../shared/config.js';
+import { Game } from './game.js';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const PORT = Number(process.env.PORT) || 3000;
+
+const MOUNTS = [
+  ['/shared/', path.join(ROOT, 'shared')],
+  ['/vendor/three/', path.join(ROOT, 'node_modules/three/build')],
+  ['/', path.join(ROOT, 'client')],
+];
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json',
+  '.webmanifest': 'application/manifest+json',
+  '.svg': 'image/svg+xml',
+};
+
+const server = http.createServer((req, res) => {
+  let url;
+  try {
+    url = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+  } catch {
+    res.writeHead(400).end();
+    return;
+  }
+  if (url === '/') url = '/index.html';
+  for (const [prefix, dir] of MOUNTS) {
+    if (!url.startsWith(prefix)) continue;
+    const file = path.resolve(dir, url.slice(prefix.length));
+    if (!file.startsWith(dir + path.sep)) break; // 디렉터리 탈출 차단
+    fs.readFile(file, (err, data) => {
+      if (err) {
+        res.writeHead(404).end('Not found');
+        return;
+      }
+      res.writeHead(200, {
+        'Content-Type': MIME[path.extname(file)] || 'application/octet-stream',
+        'Cache-Control': prefix.startsWith('/vendor') ? 'public, max-age=86400' : 'no-cache',
+      });
+      res.end(data);
+    });
+    return;
+  }
+  res.writeHead(404).end('Not found');
+});
+
+const game = new Game();
+game.balanceBots();
+
+const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 512 });
+wss.on('connection', (ws) => {
+  let player = null;
+  let msgCount = 0;
+  const rateTimer = setInterval(() => (msgCount = 0), 1000);
+
+  ws.on('message', (raw) => {
+    if (++msgCount > 120) return; // 초당 메시지 제한
+    let m;
+    try {
+      m = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    if (!m || typeof m !== 'object') return;
+    if (m.t === 'j' && !player) {
+      if (game.humanCount >= CFG.MAX_PLAYERS) {
+        ws.send(JSON.stringify({ t: 'full' }));
+        ws.close();
+        return;
+      }
+      const name = String(m.n ?? '').replace(/[^\p{L}\p{N}_\- ]/gu, '').trim().slice(0, 12) || 'Player';
+      player = game.addPlayer(name, (msg) => {
+        // 느린 클라이언트에 스냅샷이 쌓이지 않게 한다
+        if (ws.readyState === ws.OPEN && ws.bufferedAmount < 64 * 1024) ws.send(msg);
+      });
+      game.balanceBots();
+      ws.send(JSON.stringify({ t: 'w', id: player.id, team: player.team }));
+    } else if (m.t === 'i' && player) {
+      game.queueInput(player.id, m.d);
+    }
+  });
+
+  ws.on('close', () => {
+    clearInterval(rateTimer);
+    if (player) {
+      game.removePlayer(player.id);
+      game.balanceBots();
+    }
+  });
+  ws.on('error', () => {});
+});
+
+// 고정 틱 루프 (타이머 오차 누적 보정)
+const STEP_MS = 1000 / CFG.TICK_RATE;
+let next = performance.now();
+setInterval(() => {
+  const now = performance.now();
+  let steps = 0;
+  while (now >= next && steps < 5) {
+    game.step();
+    if (game.tick % CFG.SNAPSHOT_EVERY === 0) game.broadcast();
+    next += STEP_MS;
+    steps++;
+  }
+  if (now - next > 250) next = now; // 크게 밀리면 따라잡기 포기
+}, STEP_MS / 2);
+
+server.listen(PORT, () => console.log(`Frustum server: http://localhost:${PORT}`));
