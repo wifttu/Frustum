@@ -1,0 +1,115 @@
+// 상점 규칙: 스킨, 뽑기(등급·확률·천장), 출석 보상.
+// 화면과 분리된 순수 로직이라 테스트할 수 있다. 재화는 게임으로 버는 코인뿐이고 실제 결제는 없다.
+import { CHARACTERS } from './progress.js';
+
+// 스킨: 내 캐릭터의 후드/망토 색. 아군 파랑, 적 빨강과 헷갈리지 않는 색만 쓴다.
+// (다른 플레이어에게는 팀 색으로 보이므로 스킨은 내 화면과 선택 화면에서 보인다)
+export const SKINS = Object.freeze({
+  default: { name: '기본', color: null, tier: 'common' },
+  strawberry: { name: '딸기우유', color: 0xff8fc0, tier: 'rare' },
+  lime: { name: '라임', color: 0xb4e03a, tier: 'rare' },
+  pumpkin: { name: '호박', color: 0xff9a2e, tier: 'rare' },
+  snow: { name: '눈꽃', color: 0xf2f4f8, tier: 'epic' },
+  night: { name: '밤하늘', color: 0x39407e, tier: 'epic' },
+  gold: { name: '황금', color: 0xffcf3a, tier: 'legend' },
+});
+
+export const TIERS = Object.freeze({
+  common: { name: '일반', p: 0.6, color: '#9fb2c4' },
+  rare: { name: '희귀', p: 0.28, color: '#5ab4ff' },
+  epic: { name: '영웅', p: 0.1, color: '#c58bff' },
+  legend: { name: '전설', p: 0.02, color: '#ffd25a' },
+});
+const ORDER = ['common', 'rare', 'epic', 'legend'];
+
+export const GACHA = Object.freeze({
+  COST: 100,
+  COST10: 900, // 10회 묶음 (1회 무료)
+  PITY: 10, // 이 횟수 안에 영웅 이상이 한 번은 나온다
+  DUP: { rare: 90, epic: 200, legend: 500 }, // 더 받을 것이 없을 때 돌려주는 코인
+});
+export const DAILY = Object.freeze({ BASE: 60, PER_STREAK: 15, MAX_STREAK: 7 });
+
+// 캐릭터의 등급: 가격 기준
+export const charTier = (id) => (CHARACTERS[id].price > 450 ? 'legend' : 'epic');
+
+export function newProfile() {
+  return { xp: 0, coins: 0, owned: ['explorer'], char: 'explorer', skins: ['default'], skin: 'default', pity: 0, daily: '', streak: 0 };
+}
+
+// 저장된 값을 안전하게 정리한다 (오래된 저장 데이터, 손상된 값 대비)
+export function normalizeProfile(raw) {
+  const p = { ...newProfile(), ...(raw && typeof raw === 'object' ? raw : {}) };
+  p.coins = Number.isFinite(p.coins) ? Math.max(0, p.coins) : 0;
+  p.xp = Number.isFinite(p.xp) ? Math.max(0, p.xp) : 0;
+  p.owned = [...new Set(['explorer', ...(Array.isArray(p.owned) ? p.owned : [])])].filter((id) => Object.hasOwn(CHARACTERS, id));
+  p.skins = [...new Set(['default', ...(Array.isArray(p.skins) ? p.skins : [])])].filter((id) => Object.hasOwn(SKINS, id));
+  if (!p.owned.includes(p.char)) p.char = 'explorer';
+  if (!p.skins.includes(p.skin)) p.skin = 'default';
+  p.pity = Number.isInteger(p.pity) ? p.pity : 0;
+  p.streak = Number.isInteger(p.streak) ? p.streak : 0;
+  return p;
+}
+
+function pickTier(rnd) {
+  let r = rnd();
+  for (const id of ORDER) {
+    r -= TIERS[id].p;
+    if (r < 0) return id;
+  }
+  return 'common';
+}
+
+// 뽑기 한 번의 결과를 정하고 profile 에 반영한다 (코인 차감은 호출하는 쪽에서).
+// 반환: { tier, kind: 'coins' | 'skin' | 'char', id?, coins?, dup? }
+export function rollOnce(profile, rnd = Math.random) {
+  let tier = pickTier(rnd);
+  profile.pity++;
+  if (profile.pity >= GACHA.PITY && ORDER.indexOf(tier) < 2) tier = 'epic'; // 천장
+  if (ORDER.indexOf(tier) >= 2) profile.pity = 0;
+
+  if (tier === 'common') {
+    const coins = 30 + Math.floor(rnd() * 41);
+    profile.coins += coins;
+    return { tier, kind: 'coins', coins };
+  }
+  // 아직 없는 것 중에서 고른다
+  const pool = [];
+  for (const [id, s] of Object.entries(SKINS)) if (s.tier === tier && !profile.skins.includes(id)) pool.push(['skin', id]);
+  if (tier !== 'rare') {
+    for (const id of Object.keys(CHARACTERS)) if (CHARACTERS[id].price > 0 && charTier(id) === tier && !profile.owned.includes(id)) pool.push(['char', id]);
+  }
+  if (!pool.length) {
+    const coins = GACHA.DUP[tier];
+    profile.coins += coins;
+    return { tier, kind: 'coins', coins, dup: true };
+  }
+  const [kind, id] = pool[Math.floor(rnd() * pool.length)];
+  if (kind === 'skin') profile.skins.push(id);
+  else profile.owned.push(id);
+  return { tier, kind, id };
+}
+
+// n 회 뽑기. 코인이 모자라면 null.
+export function gacha(profile, n, rnd = Math.random) {
+  const cost = n >= 10 ? GACHA.COST10 : GACHA.COST * n;
+  if (profile.coins < cost) return null;
+  profile.coins -= cost;
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(rollOnce(profile, rnd));
+  return out;
+}
+
+export const dayKey = (d = new Date()) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+
+// 출석 보상: 하루 한 번. 어제도 받았으면 연속 출석으로 보상이 커진다. 받을 수 없으면 0.
+export function claimDaily(profile, now = new Date()) {
+  const today = dayKey(now);
+  if (profile.daily === today) return 0;
+  const yesterday = dayKey(new Date(now.getTime() - 86400000));
+  profile.streak = profile.daily === yesterday ? Math.min(DAILY.MAX_STREAK, profile.streak + 1) : 1;
+  profile.daily = today;
+  const coins = DAILY.BASE + DAILY.PER_STREAK * (profile.streak - 1);
+  profile.coins += coins;
+  return coins;
+}

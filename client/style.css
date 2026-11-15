@@ -120,6 +120,7 @@ button { font-family: inherit; }
 .card i { font-style: normal; font-size: 18px; line-height: 1; }
 .card b { font-size: 13px; }
 .card span { font-size: 9.5px; color: #e8d8b0; line-height: 1.2; min-height: 2.4em; }
+.num.heal { color: #7dff9a; font-size: 22px; }
 .num.lvup { color: #ffb02e; font-size: 22px; letter-spacing: 1px; white-space: nowrap; animation-duration: 1.4s; }
 .card em { font-style: normal; font-size: 8px; color: #ffd25a; letter-spacing: 1px; }
 
@@ -250,6 +251,8 @@ body.lefty #buffs { right: auto; left: calc(20px + env(safe-area-inset-left)); a
   background: conic-gradient(rgba(0, 0, 0, .68) calc(var(--cd) * 360deg), transparent 0);
 }
 .skill svg { position: relative; width: 44%; height: 44%; fill: currentColor; }
+.skill i { position: relative; font-style: normal; font-size: 22px; line-height: 1; }
+.skill.cooling i { opacity: .18; position: absolute; }
 .skill span { position: relative; font-weight: 700; font-size: 10px; line-height: 1; opacity: .9; }
 .skill:active { transform: scale(.93); background: rgba(var(--c), .45); }
 .skill.off { opacity: .4; }
@@ -325,6 +328,7 @@ body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
 #menu > button { border: 0; color: #fff; font-weight: 800; transition: transform .08s; }
 #menu > button:active { transform: scale(.97); }
 #play { background: linear-gradient(180deg, #ffc94d, #f08a2c); color: #3a2208 !important; box-shadow: 0 6px 22px rgba(255, 170, 60, .4); }
+#menu > button#daily { background: linear-gradient(180deg, #3a2f5c, #2a2244); color: #ffe27a; border-color: #6a5a9a; }
 #menu > button.alt { background: #1c2733; color: #cfe0f0; border: 1px solid #2b3d4e; font-weight: 600; padding: 10px 14px; }
 .pick { display: flex; gap: 6px; width: min(280px, 82vw); }
 #menu .pick button {
@@ -341,8 +345,8 @@ body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
 #shop[hidden] { display: none; }
 #shop button { font-family: inherit; }
 #shopCoins {
-  position: absolute; top: calc(10px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
-  min-width: 120px; padding: 5px 18px; border-radius: 999px; text-align: center; font-size: 16px; font-weight: 900;
+  position: absolute; top: calc(10px + env(safe-area-inset-top)); right: calc(72px + env(safe-area-inset-right));
+  min-width: 96px; padding: 7px 14px; border-radius: 999px; text-align: center; font-size: 15px; font-weight: 900;
   background: rgba(40, 24, 20, .85); color: #ffd25a; border: 2px solid rgba(255, 210, 90, .6);
   box-shadow: 0 4px 14px rgba(0, 0, 0, .4);
 }
@@ -353,7 +357,7 @@ body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
 }
 #closeShop:active, #shopAct:active { transform: translateY(2px); }
 #shopHead {
-  position: absolute; top: calc(48px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); text-align: center;
+  position: absolute; top: calc(52px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); text-align: center;
   white-space: nowrap; pointer-events: none;
 }
 #shopName {
@@ -364,6 +368,73 @@ body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
   display: inline-block; margin-top: 2px; padding: 4px 14px; border-radius: 999px; font-size: 13px; font-weight: 700;
   background: rgba(20, 16, 30, .78); color: #ffe9b0; border: 1px solid rgba(255, 255, 255, .2);
 }
+#shopSkill {
+  display: block; width: fit-content; margin: 4px auto 0; padding: 3px 12px; border-radius: 999px; font-size: 12px; font-weight: 700;
+  background: rgba(30, 60, 90, .82); color: #cfeaff; border: 1px solid rgba(140, 205, 255, .45);
+}
+/* 상점 탭 */
+#shopTabs { position: absolute; top: calc(10px + env(safe-area-inset-top)); left: calc(12px + env(safe-area-inset-left)); display: flex; gap: 6px; }
+#shopTabs button {
+  padding: 8px 12px; border: 0; border-radius: 10px; font-size: 13px; font-weight: 800; color: #d8d2e4;
+  background: rgba(20, 16, 30, .7); box-shadow: 0 3px 0 rgba(0, 0, 0, .35);
+}
+#shopTabs button.on { background: #f4f1ea; color: #3a2a20; box-shadow: 0 3px 0 #b9b2a4; }
+/* 탭에 따라 보이는 것 */
+#skinRow, #gachaPanel { display: none; }
+#shop[data-tab='skins'] #skinRow { display: flex; }
+#shop[data-tab='gacha'] #gachaPanel { display: block; }
+#shop:not([data-tab='chars']) :is(.nav, #shopAct, #shopStats, #shopCount) { display: none; }
+#shop[data-tab='gacha'] #shopHead { display: none; }
+
+/* 스킨 고르기 */
+#skinRow {
+  position: absolute; left: 50%; bottom: calc(12px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  gap: 6px; padding: 8px; border-radius: 16px; background: rgba(20, 16, 30, .75); border: 1px solid rgba(255, 255, 255, .15);
+  max-width: 96vw; overflow-x: auto;
+}
+.skin {
+  flex: none; width: 74px; padding: 6px 2px 5px; border-radius: 12px; border: 2px solid transparent; background: rgba(255, 255, 255, .07);
+  color: #fff; font-size: 11px; font-weight: 700; display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+.skin i { width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(255, 255, 255, .85); box-shadow: 0 2px 6px rgba(0, 0, 0, .5); }
+.skin.on { border-color: #ffd25a; background: rgba(255, 210, 90, .18); }
+.skin.locked { opacity: .6; }
+.skin.rare span { color: #9fd4ff; } .skin.epic span { color: #dcb8ff; } .skin.legend span { color: #ffd25a; }
+
+/* 뽑기 */
+#gachaPanel {
+  position: absolute; right: calc(16px + env(safe-area-inset-right)); top: 50%; transform: translateY(-46%); width: min(330px, 44vw);
+  padding: 14px 16px; border-radius: 18px; text-align: center; background: rgba(20, 16, 30, .82); border: 2px solid rgba(255, 210, 90, .5);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .5);
+}
+#gachaPanel b { display: block; font-size: 22px; color: #ffe27a; letter-spacing: 2px; text-shadow: 0 0 16px rgba(255, 220, 80, .5); }
+#gachaPanel p { margin: 6px 0; font-size: 11.5px; line-height: 1.45; color: #d8d2e4; }
+#gachaOdds { font-weight: 800; font-size: 12.5px !important; }
+#gachaPanel .btns { display: flex; gap: 8px; margin-top: 10px; }
+#gachaPanel .btns button {
+  flex: 1; padding: 12px 4px; border: 0; border-radius: 12px; font-size: 15px; font-weight: 900; color: #3a2208;
+  background: linear-gradient(180deg, #ffc94d, #f08a2c); box-shadow: 0 4px 0 #a85a14;
+}
+#gachaPanel .btns button:disabled { background: #4a4652; color: #b9b2c4; box-shadow: 0 4px 0 #2c2932; }
+#gachaPanel .btns button:active { transform: translateY(2px); }
+#gachaResult {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  background: rgba(6, 4, 12, .82); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+}
+#gachaResult[hidden] { display: none; }
+#gachaCards { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: 620px; padding: 0 10px; }
+.gcard {
+  width: 104px; padding: 10px 4px 8px; border-radius: 14px; text-align: center; color: #fff; border: 2px solid var(--tc);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--tc) 35%, #15121f), #15121f); box-shadow: 0 0 14px color-mix(in srgb, var(--tc) 55%, transparent);
+  animation: flip .45s cubic-bezier(.2, 1.3, .4, 1) both;
+}
+.gcard.common { --tc: #9fb2c4; } .gcard.rare { --tc: #5ab4ff; } .gcard.epic { --tc: #c58bff; } .gcard.legend { --tc: #ffd25a; }
+.gcard i { font-style: normal; font-size: 26px; display: block; }
+.gcard b { display: block; font-size: 12.5px; margin-top: 2px; }
+.gcard span { font-size: 10px; color: var(--tc); font-weight: 800; }
+#gachaOk { padding: 11px 44px; border: 0; border-radius: 12px; font-size: 16px; font-weight: 900; background: #f4f1ea; color: #3a2a20; box-shadow: 0 4px 0 #b9b2a4; }
+@keyframes flip { from { opacity: 0; transform: rotateY(90deg) scale(.6); } }
+
 #shopLocks { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 #shopLocks div {
   position: absolute; left: 0; top: 0; font-size: 22px; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .6));
@@ -464,6 +535,7 @@ body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
   #menu input, #menu > button { padding: 8px 12px; font-size: 15px; }
   #menu > button.alt { padding: 7px 12px; }
   #menu .pair button { padding: 6px; font-size: 14px; }
+  #menu > button#daily { padding: 6px 12px; font-size: 13px; }
   #menu .pick button { padding: 5px 2px; }
   #menu > small { font-size: 10.5px; line-height: 1.4; }
 }

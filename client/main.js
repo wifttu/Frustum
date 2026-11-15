@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CFG, FLARE_VIEW, ITEMS, ZONE } from './shared/config.js';
+import { CFG, FLARE_VIEW, ITEMS, SCAN_VIEW, ZONE } from './shared/config.js';
 import { MAP_SIZE, MAPS } from './shared/map.js';
 import { stepPlayer } from './shared/sim.js';
 import { wrapAngle } from './shared/vision.js';
@@ -8,11 +8,12 @@ import { Input } from './input.js';
 import { Sfx } from './audio.js';
 import { DEFAULT_SERVER } from './settings.js';
 import { prefs, savePrefs } from './prefs.js';
-import { CHARACTERS, PROGRESS, UPGRADES, charOf, statsOf, xpToNext } from './shared/progress.js';
+import { CHARACTERS, PROGRESS, SKILLS, UPGRADES, charOf, statsOf, xpToNext } from './shared/progress.js';
 import { Characters, DeathFx } from './character.js';
 import { Minimap } from './minimap.js';
 import { buildFloorTexture, buildItemGeos, buildWalls, buildWater } from './world.js';
 import { Showcase, radarOf } from './showcase.js';
+import { DAILY, GACHA, SKINS, TIERS, claimDaily, dayKey, gacha, normalizeProfile } from './shared/shop.js';
 
 const DT = 1 / CFG.TICK_RATE;
 const INTERP_MS = 110; // 원격 플레이어 보간 지연
@@ -212,8 +213,8 @@ let cricketT = 2;
 let roundEnd = 0; // 라운드 종료 배너 남은 시간
 let stepT = 0;
 let lastSpot = 0;
-const sim = { x: 0, z: 0, yaw: 0, rollT: 0, rollCd: 0, rollDx: 0, rollDz: 1, speedT: 0 }; // 예측된 내 상태
-const buffs = { vest: 0, cloak: 0 }; // 서버가 알려준 내 버프 남은 시간
+const sim = { x: 0, z: 0, yaw: 0, rollT: 0, rollCd: 0, rollDx: 0, rollDz: 1, speedT: 0, dashT: 0, skill: 'roll' }; // 예측된 내 상태
+const buffs = { vest: 0, cloak: 0, shield: 0, scan: 0 }; // 서버가 알려준 내 버프 남은 시간
 const prev = { x: 0, z: 0, yaw: 0 };
 const view = { x: 0, z: 0, yaw: 0 }; // 렌더용 보간 상태
 const pending = []; // 서버가 아직 확인하지 않은 입력
@@ -333,7 +334,7 @@ async function startOffline(name, gameMode, gameRule) {
 function onMessage(m) {
   if (m.t === 'w') {
     Object.assign(prog, { hp: PROGRESS.BASE_HP, xp: 0, level: 1, next: xpToNext(1), ups: {}, choices: null, more: 0, stats: statsOf({}, CFG, profile.char), earned: 0 });
-    setKind(selfMesh, 'self', profile.char);
+    chars.setKind(selfMesh, 'self', profile.char, skinColor());
     applyMyStats();
     drawChoices();
     myId = m.id;
@@ -417,9 +418,25 @@ function onMessage(m) {
       deathFx.spawn(view.x, view.z, 'level');
       buzz(30);
     }
+  } else if (m.t === 'c') {
+    // 스킬 사용: 보이는 플레이어(또는 나)에게만 효과를 낸다
+    for (const [id, skill] of m.l) {
+      const at = id === myId ? view : ents.get(id);
+      if (!at) continue;
+      const [vol, pan] = id === myId ? [1, 0] : spatial(at.x, at.z);
+      sfx.skill(skill, vol, pan);
+      if (skill === 'heal' || skill === 'magnet' || skill === 'scan') deathFx.spawn(at.x, at.z, skill === 'heal' ? 'heal' : 'level');
+      if (skill === 'shield') deathFx.spawn(at.x, at.z, 'shield');
+    }
   } else if (m.t === 'h') {
     // 손전등 피해: 보이는 대상에게만 숫자를 띄운다
     for (const [k, v, dmg] of m.l) {
+      if (dmg < 0) {
+        // 치유
+        const at = v === myId ? view : ents.get(v);
+        if (at) popNumber(at.x, at.z, `+${-dmg}`, 'heal');
+        continue;
+      }
       const at = v === myId ? view : ents.get(v);
       if (!at) continue;
       popNumber(at.x, at.z, dmg, v === myId ? 'hurt' : k === myId ? 'deal' : 'other');
@@ -441,7 +458,7 @@ function onMessage(m) {
 const kindOf = (id) => (roster.get(id)?.team === myTeam ? 'ally' : 'enemy');
 
 function onSnapshot(m) {
-  const [x, z, yaw, al, resp, cdNow, rollT, rollCd, rollDx, rollDz, fcd, gasT, speedT, vestT, cloakT] = m.me;
+  const [x, z, yaw, al, resp, cdNow, rollT, rollCd, rollDx, rollDz, fcd, gasT, speedT, vestT, cloakT, dashT, shieldT, scanT] = m.me;
   const wasAlive = alive;
   alive = !!al;
   roundLeft = m.rt ?? 0;
@@ -451,10 +468,12 @@ function onSnapshot(m) {
   flareCd = fcd;
   buffs.vest = vestT || 0;
   buffs.cloak = cloakT || 0;
+  buffs.shield = shieldT || 0;
+  buffs.scan = scanT || 0;
   // 배터리를 주우면 서버 쿨다운이 0이 되므로 따라간다
   if (cdNow === 0 && localCd > 0 && m.pk?.includes('battery')) localCd = 0;
   // 서버 상태로 되돌린 뒤 미확인 입력을 다시 적용 (클라이언트 예측 보정)
-  Object.assign(sim, { x, z, yaw, rollT, rollCd, rollDx, rollDz, speedT: speedT || 0 });
+  Object.assign(sim, { x, z, yaw, rollT, rollCd, rollDx, rollDz, speedT: speedT || 0, dashT: dashT || 0 });
   while (pending.length && pending[0].seq <= m.a) pending.shift();
   if (alive) for (const inp of pending) stepPlayer(sim, inp, DT, curMap.solid);
   else pending.length = 0;
@@ -622,6 +641,13 @@ function drawLabels() {
 function applyMyStats() {
   sim.spd = prog.stats.speed;
   sim.rollCdMax = prog.stats.rollCd;
+  sim.skill = prog.stats.skill || 'roll';
+  // 스킬 버튼을 내 캐릭터의 고유 스킬로 바꾼다
+  const sk = SKILLS[sim.skill];
+  const btn = $('roll');
+  btn.dataset.label = sk.name;
+  btn.querySelector('i').textContent = sk.icon;
+  btn.setAttribute('aria-label', sk.name);
   chars.setBeamStats(selfMesh, prog.stats.range, prog.stats.arc);
 }
 
@@ -745,16 +771,13 @@ function drawFireflies(t) {
 // 모험가 레벨: 기기에 쌓이는 누적 경험치
 const PROFILE_KEY = 'frustum.profile';
 const profile = (() => {
-  const base = { xp: 0, coins: 0, owned: ['explorer'], char: 'explorer' };
   try {
-    const p = { ...base, ...JSON.parse(localStorage.getItem(PROFILE_KEY)) };
-    if (!Array.isArray(p.owned) || !p.owned.includes('explorer')) p.owned = ['explorer'];
-    if (!p.owned.includes(p.char) || charOf(p.char) !== p.char) p.char = 'explorer';
-    return p;
+    return normalizeProfile(JSON.parse(localStorage.getItem(PROFILE_KEY)));
   } catch {
-    return base;
+    return normalizeProfile(null);
   }
 })();
+const skinColor = () => SKINS[profile.skin]?.color ?? null;
 function saveProfile() {
   try {
     localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
@@ -796,7 +819,9 @@ function drawShop() {
   const owned = profile.owned.includes(id);
   $('shopCoins').textContent = `🪙 ${Math.floor(profile.coins)}`;
   $('shopName').textContent = c.name;
+  const sk = SKILLS[c.skill];
   $('shopAbility').textContent = `${c.icon} ${c.desc}`;
+  $('shopSkill').textContent = `${sk.icon} ${sk.name} · ${sk.desc}`;
   $('shopCount').textContent = `${profile.owned.length}/${CHAR_IDS.length}`;
   $('shopPrev').disabled = showcase.index === 0;
   $('shopNext').disabled = showcase.index === CHAR_IDS.length - 1;
@@ -817,7 +842,108 @@ function drawShop() {
     btn.disabled = profile.coins < c.price;
   }
 }
+// ── 상점 탭: 캐릭터 / 스킨 / 뽑기 ──
+let shopTab = 'chars';
+function setShopTab(tab) {
+  shopTab = tab;
+  $('shop').dataset.tab = tab;
+  for (const b of $('shopTabs').children) b.classList.toggle('on', b.dataset.tab === tab);
+  // 스킨/뽑기 탭에서는 지금 쓰는 캐릭터를 가운데에 세운다
+  if (tab !== 'chars') showcase.open(profile.char);
+  showcase.setSkin(tab === 'skins' ? skinColor() : null);
+  drawShop();
+  if (tab === 'skins') drawSkins();
+  if (tab === 'gacha') drawGacha();
+}
+for (const b of $('shopTabs').children) b.addEventListener('click', () => setShopTab(b.dataset.tab));
+
+function drawSkins() {
+  $('skinRow').replaceChildren(
+    ...Object.entries(SKINS).map(([id, sk]) => {
+      const owned = profile.skins.includes(id);
+      const b = document.createElement('button');
+      b.className = `skin ${sk.tier}` + (profile.skin === id ? ' on' : '') + (owned ? '' : ' locked');
+      b.innerHTML = '<i></i><span></span>';
+      b.querySelector('i').style.background = sk.color === null ? 'conic-gradient(#4fc46a, #f2c230, #8a68d8, #f2903a, #4fc46a)' : `#${sk.color.toString(16).padStart(6, '0')}`;
+      b.querySelector('span').textContent = owned ? sk.name : `🔒 ${sk.name}`;
+      b.addEventListener('click', () => {
+        // 가진 스킨은 입고, 없는 스킨은 미리보기만
+        showcase.setSkin(sk.color);
+        if (owned) {
+          profile.skin = id;
+          saveProfile();
+          sfx.choose();
+          drawSkins();
+        } else $('shopSkill').textContent = `${TIERS[sk.tier].name} 스킨 · 뽑기에서 얻을 수 있어요`;
+      });
+      return b;
+    }),
+  );
+}
+
+function drawGacha() {
+  $('shopCoins').textContent = `🪙 ${Math.floor(profile.coins)}`;
+  $('gachaOdds').innerHTML = Object.values(TIERS)
+    .map((t) => `<span style="color:${t.color}">${t.name} ${Math.round(t.p * 100)}%</span>`)
+    .join(' · ');
+  $('gachaPity').textContent = `영웅 이상 확정까지 ${GACHA.PITY - profile.pity}회 · 일반: 코인 / 희귀: 스킨 / 영웅·전설: 캐릭터, 스킨`;
+  $('gacha1').textContent = `1회 🪙 ${GACHA.COST}`;
+  $('gacha10').textContent = `10회 🪙 ${GACHA.COST10}`;
+  $('gacha1').disabled = profile.coins < GACHA.COST;
+  $('gacha10').disabled = profile.coins < GACHA.COST10;
+}
+function doGacha(n) {
+  const results = gacha(profile, n);
+  if (!results) return;
+  saveProfile();
+  drawGacha();
+  drawProfile();
+  // 결과 카드를 하나씩 뒤집어 보여준다
+  $('gachaCards').replaceChildren(
+    ...results.map((r, i) => {
+      const card = document.createElement('div');
+      card.className = `gcard ${r.tier}`;
+      card.style.animationDelay = `${i * 0.12}s`;
+      const icon = r.kind === 'coins' ? '🪙' : r.kind === 'skin' ? '🎨' : CHARACTERS[r.id].icon;
+      const name = r.kind === 'coins' ? `코인 ${r.coins}` : r.kind === 'skin' ? `${SKINS[r.id].name} 스킨` : CHARACTERS[r.id].name;
+      card.innerHTML = '<i></i><b></b><span></span>';
+      card.querySelector('i').textContent = icon;
+      card.querySelector('b').textContent = name;
+      card.querySelector('span').textContent = TIERS[r.tier].name + (r.dup ? ' (모두 보유)' : '');
+      return card;
+    }),
+  );
+  $('gachaResult').hidden = false;
+  const best = Math.max(...results.map((r) => Object.keys(TIERS).indexOf(r.tier)));
+  if (best >= 2) sfx.win();
+  else sfx.levelUp();
+  buzz(best >= 2 ? 120 : 30);
+}
+$('gacha1').addEventListener('click', () => doGacha(1));
+$('gacha10').addEventListener('click', () => doGacha(10));
+$('gachaOk').addEventListener('click', () => ($('gachaResult').hidden = true));
+
+// 출석 보상: 하루 한 번
+function drawDaily() {
+  const can = profile.daily !== dayKey();
+  $('daily').hidden = !can;
+  if (can) {
+    const next = profile.streak && profile.streak < DAILY.MAX_STREAK ? profile.streak + 1 : profile.streak || 1;
+    $('daily').textContent = `🎁 출석 보상 받기 (연속 ${next}일차)`;
+  }
+}
+$('daily').addEventListener('click', () => {
+  const got = claimDaily(profile);
+  if (!got) return;
+  saveProfile();
+  drawProfile();
+  drawDaily();
+  sfx.pickup();
+  $('status').textContent = `출석 보상 🪙 ${got} 받았어요! (연속 ${profile.streak}일)`;
+});
+
 function shopMove(d) {
+  if (shopTab !== 'chars') return;
   const before = showcase.index;
   showcase.move(d);
   if (showcase.index !== before) {
@@ -864,18 +990,20 @@ addEventListener('keydown', (e) => {
 }
 $('openShop').addEventListener('click', () => {
   showcase.open(profile.char);
-  drawShop();
+  setShopTab('chars');
   $('shop').hidden = false;
   $('menu').style.display = 'none';
 });
 $('closeShop').addEventListener('click', () => {
+  $('gachaResult').hidden = true;
   showcase.close();
   $('shop').hidden = true;
   $('menu').style.display = '';
 });
 
 // 버프 칩: 남은 시간이 있는 효과만 보여준다
-const BUFF_ICONS = { sneakers: '👟', vest: '🛡️', cloak: '👻' };
+const BUFF_ICONS = { sneakers: '👟', vest: '🛡️', cloak: '👻', dash: '💨', shield: '🛡️', scan: '👁️' };
+const BUFF_NAMES = { dash: '질주', shield: '방패', scan: '매의 눈', cloak: '은신' };
 // 내 머리 위 체력바 (다른 플레이어 이름표와 같은 모양)
 $('labels').insertAdjacentHTML('beforeend', '<div id="selfBar" class="self"><s><u></u></s></div>');
 let buffKey = '';
@@ -884,6 +1012,9 @@ function drawBuffs() {
   if (alive && sim.speedT > 0) list.push(['sneakers', sim.speedT]);
   if (alive && buffs.vest > 0) list.push(['vest', buffs.vest]);
   if (alive && buffs.cloak > 0) list.push(['cloak', buffs.cloak]);
+  if (alive && sim.dashT > 0) list.push(['dash', sim.dashT]);
+  if (alive && buffs.shield > 0) list.push(['shield', buffs.shield]);
+  if (alive && buffs.scan > 0) list.push(['scan', buffs.scan]);
   const key = list.map(([t, r]) => t + Math.ceil(r)).join();
   if (key === buffKey) return;
   buffKey = key;
@@ -891,7 +1022,7 @@ function drawBuffs() {
     ...list.map(([t, r]) => {
       const el = document.createElement('div');
       el.className = 'buff ' + t;
-      el.textContent = `${BUFF_ICONS[t]} ${ITEMS[t].name} ${Math.ceil(r)}`;
+      el.textContent = `${BUFF_ICONS[t]} ${BUFF_NAMES[t] || ITEMS[t].name} ${Math.ceil(r)}`;
       return el;
     }),
   );
@@ -987,8 +1118,11 @@ function fixedStep() {
     pending.push(inp);
     if (pending.length > 60) pending.shift();
     const wasRolling = sim.rollT > 0;
+    const wasDashing = sim.dashT > 0;
     stepPlayer(sim, inp, DT, curMap.solid);
     if (sim.rollT > 0 && !wasRolling) sfx.roll();
+    if (sim.dashT > 0 && !wasDashing) sfx.skill('dash');
+    sim.cast = null; // 그 밖의 스킬 효과는 서버가 적용한다
     // 발소리
     if (Math.hypot(inp.mx, inp.mz) > 0.3 && sim.rollT <= 0) {
       stepT -= DT;
@@ -1043,7 +1177,7 @@ function frame(now) {
     showcase.render(renderer, dtMs / 1000, now * 0.001, innerWidth, innerHeight);
     for (let i = 0; i < lockEls.length; i++) {
       // 고른 캐릭터는 구매 버튼이 알려 주므로 자물쇠를 띄우지 않는다
-      const locked = i !== showcase.index && !profile.owned.includes(CHAR_IDS[i]);
+      const locked = shopTab === 'chars' && i !== showcase.index && !profile.owned.includes(CHAR_IDS[i]);
       lockEls[i].style.display = locked ? '' : 'none';
       if (!locked) continue;
       const [x, y] = showcase.headPos(i, innerWidth, innerHeight);
@@ -1075,7 +1209,7 @@ function frame(now) {
     beam: localBeam > 0,
     roll: sim.rollT > 0 ? 1 - sim.rollT / CFG.ROLL_TIME : -1,
     aimReady: canActNow && localCd <= 0 && sim.rollT <= 0,
-    vest: buffs.vest > 0,
+    vest: buffs.vest > 0 || buffs.shield > 0,
     cloak: buffs.cloak > 0,
   });
   deathFx.update(dt);
@@ -1153,6 +1287,9 @@ function frame(now) {
   if (alive) sources.push(view);
   for (const [id, e] of ents) if (roster.get(id)?.team === myTeam) sources.push(e);
   sources.push(...flareSources);
+  // 매의 눈: 사방 시야 (나, 그리고 스킬을 쓴 아군)
+  if (alive && buffs.scan > 0) sources.push({ x: view.x, z: view.z, yaw: 0, view: SCAN_VIEW });
+  for (const [id, e] of ents) if (e.flags & 16 && roster.get(id)?.team === myTeam) sources.push({ x: e.x, z: e.z, yaw: 0, view: SCAN_VIEW });
   renderer.info.reset();
   mask.update(renderer, sources);
 
@@ -1314,6 +1451,7 @@ function applyPrefs() {
   $('zoomVal').textContent = `x${prefs.zoom.toFixed(2)}`;
 }
 drawProfile();
+drawDaily();
 const CHECKS = { setFixed: 'fixedStick', setLefty: 'lefty', setVibrate: 'vibrate', setStats: 'showStats', setMinimap: 'showMinimap' };
 const RANGES = { setSens: 'sens', setVol: 'volume', setZoom: 'zoom' };
 for (const [id, key] of Object.entries(CHECKS)) {

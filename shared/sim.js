@@ -2,6 +2,7 @@
 import { CFG, ITEMS } from './config.js';
 import { MAP_SIZE } from './map.js';
 import { rayAabb, wrapAngle } from './vision.js';
+import { SKILLS } from './progress.js';
 
 // p: {x,z,yaw,rollT,rollCd,rollDx,rollDz}
 // input: {mx,mz,yaw,roll}  (mx: 오른쪽, mz: 전방, yaw: 목표 방향)
@@ -24,19 +25,29 @@ export function stepPlayer(p, input, dt, walls) {
   let vz = c * mz + s * mx;
 
   p.rollCd = Math.max(0, (p.rollCd || 0) - dt);
+  // 고유 스킬 (input.roll = 스킬 버튼). 이동에 영향을 주는 구르기/질주는 여기서 처리해 예측과 판정이 일치한다.
+  // 그 밖의 스킬은 p.cast 로 표시만 하고 서버가 효과를 적용한다.
   if (input.roll && p.rollCd <= 0 && !(p.rollT > 0)) {
-    // 이동 중이면 이동 방향으로, 아니면 바라보는 방향으로 구른다
-    const vl = Math.hypot(vx, vz);
-    p.rollDx = vl > 0.2 ? vx / vl : s;
-    p.rollDz = vl > 0.2 ? vz / vl : c;
-    p.rollT = CFG.ROLL_TIME;
-    p.rollCd = p.rollCdMax || CFG.ROLL_COOLDOWN; // 강화로 짧아질 수 있다
+    const skill = p.skill || 'roll';
+    p.rollCd = p.rollCdMax || SKILLS[skill].cd; // 강화로 짧아질 수 있다
+    if (skill === 'roll') {
+      // 이동 중이면 이동 방향으로, 아니면 바라보는 방향으로 구른다
+      const vl = Math.hypot(vx, vz);
+      p.rollDx = vl > 0.2 ? vx / vl : s;
+      p.rollDz = vl > 0.2 ? vz / vl : c;
+      p.rollT = CFG.ROLL_TIME;
+    } else if (skill === 'dash') p.dashT = SKILLS.dash.time;
+    else p.cast = skill;
   }
 
   let step = CFG.PLAYER_SPEED * (p.spd || 1) * dt; // spd: 이동 속도 강화 배율
   if (p.speedT > 0) {
     step *= ITEMS.sneakers.speed; // 운동화
     p.speedT = Math.max(0, p.speedT - dt);
+  }
+  if (p.dashT > 0) {
+    step *= SKILLS.dash.speed; // 질주
+    p.dashT = Math.max(0, p.dashT - dt);
   }
   if (p.rollT > 0) {
     vx = p.rollDx;

@@ -32,23 +32,34 @@ export const UPGRADES = Object.freeze({
   arc: { name: '넓은 빛', desc: '빛의 폭 +10°', icon: '🌟', max: 3 },
   cd: { name: '빠른 충전', desc: '손전등 충전 -18%', icon: '🔋', max: 3 },
   speed: { name: '가벼운 발', desc: '이동 속도 +8%', icon: '👟', max: 3 },
-  roll: { name: '구르기 달인', desc: '구르기 충전 -30%', icon: '🌀', max: 2 },
+  roll: { name: '스킬 달인', desc: '고유 스킬 충전 -25%', icon: '🌀', max: 2 },
   regen: { name: '회복력', desc: '회복 +4/초, 더 빨리 시작', icon: '🍀', max: 3 },
   leech: { name: '따뜻한 빛', desc: '입힌 피해의 25% 회복', icon: '💗', max: 2 },
   magnet: { name: '반딧불 자석', desc: '반딧불을 멀리서 끌어당김', icon: '🧲', max: 2 },
 });
 export const UPGRADE_KEYS = Object.keys(UPGRADES);
 
+// 고유 스킬: 캐릭터마다 하나씩 (두 번째 버튼). cd: 충전 시간(초)
+export const SKILLS = Object.freeze({
+  roll: { name: '구르기', icon: '🌀', cd: 3, desc: '빠르게 굴러 피한다 (구르는 동안 무적)' },
+  dash: { name: '질주', icon: '💨', cd: 8, time: 2.5, speed: 1.7, desc: '2.5초 동안 훨씬 빨라진다' },
+  shield: { name: '방패', icon: '🛡️', cd: 12, time: 2.5, desc: '2.5초 동안 모든 빛을 막는다' },
+  scan: { name: '매의 눈', icon: '👁️', cd: 14, time: 4, radius: 15, desc: '4초 동안 주변 15m를 사방으로 본다' },
+  magnet: { name: '끌어오기', icon: '🧲', cd: 9, radius: 11, desc: '주변 11m의 반딧불을 한 번에 모은다' },
+  stealth: { name: '은신', icon: '🌫️', cd: 10, time: 3.5, desc: '3.5초 동안 상대에게 안 보인다 (공격하면 풀림)' },
+  heal: { name: '치유', icon: '💚', cd: 12, amount: 40, radius: 6, desc: '나와 주변 아군의 체력을 40 회복한다' },
+});
+
 // 캐릭터: 저마다 기본 능력이 다르다. 코인으로 구매한다(explorer 는 기본 제공).
 // 수치 필드는 statsOf 에서 기본값에 더하거나 곱한다. 특수 능력은 서버 game.js 에서 처리한다.
 export const CHARACTERS = Object.freeze({
-  explorer: { name: '탐험가', icon: '🧭', price: 0, desc: '균형 잡힌 기본 캐릭터' },
-  runner: { name: '번개', icon: '⚡', price: 300, desc: '이동 +12%, 구르기 충전 -25%, 체력 85', hp: -15, speed: 0.12, rollCd: 0.75 },
-  bear: { name: '곰돌이', icon: '🐻', price: 400, desc: '체력 150, 이동 -8%', hp: 50, speed: -0.08 },
-  owl: { name: '올빼미', icon: '🦉', price: 500, desc: '사거리 +2m, 피해 +10%, 빛의 폭 -8°', range: 2, dmg: 0.1, arc: -8 },
-  collector: { name: '반디', icon: '🏮', price: 350, desc: '경험치 +25%, 반딧불을 멀리서 줍기', xp: 0.25, pick: 2 },
-  ninja: { name: '그림자', icon: '🥷', price: 600, desc: '구른 뒤 1.5초 동안 안 보임, 체력 90', hp: -10, rollCloak: 1.5 },
-  healer: { name: '약초꾼', icon: '🌿', price: 450, desc: '회복 2배, 입힌 피해의 10% 회복', regenMul: 2, leech: 0.1 },
+  explorer: { name: '탐험가', icon: '🧭', price: 0, skill: 'roll', desc: '균형 잡힌 기본 캐릭터' },
+  runner: { name: '번개', icon: '⚡', price: 300, skill: 'dash', desc: '이동 +12%, 체력 85', hp: -15, speed: 0.12 },
+  bear: { name: '곰돌이', icon: '🐻', price: 400, skill: 'shield', desc: '체력 150, 이동 -8%', hp: 50, speed: -0.08 },
+  owl: { name: '올빼미', icon: '🦉', price: 500, skill: 'scan', desc: '사거리 +2m, 피해 +10%, 빛의 폭 -8°', range: 2, dmg: 0.1, arc: -8 },
+  collector: { name: '반디', icon: '🏮', price: 350, skill: 'magnet', desc: '경험치 +25%, 반딧불을 멀리서 줍기', xp: 0.25, pick: 2 },
+  ninja: { name: '그림자', icon: '🥷', price: 600, skill: 'stealth', desc: '피해 +10%, 체력 90', hp: -10, dmg: 0.1 },
+  healer: { name: '약초꾼', icon: '🌿', price: 450, skill: 'heal', desc: '회복 2배, 입힌 피해의 10% 회복', regenMul: 2, leech: 0.1 },
 });
 export const CHARACTER_KEYS = Object.keys(CHARACTERS);
 export const charOf = (id) => (Object.hasOwn(CHARACTERS, id) ? id : 'explorer');
@@ -64,13 +75,13 @@ export function statsOf(ups, cfg, charId = 'explorer') {
     arc: cfg.ATTACK_ARC + (((c.arc || 0) + u('arc') * 10) * Math.PI) / 180,
     cooldown: cfg.ATTACK_COOLDOWN * Math.pow(0.82, u('cd')),
     speed: 1 + (c.speed || 0) + u('speed') * 0.08,
-    rollCd: cfg.ROLL_COOLDOWN * (c.rollCd || 1) * Math.pow(0.7, u('roll')),
+    skill: c.skill,
+    rollCd: SKILLS[c.skill].cd * Math.pow(0.75, u('roll')), // 고유 스킬 충전 시간 (필드 이름은 호환을 위해 유지)
     regen: (PROGRESS.BASE_REGEN + u('regen') * 4) * (c.regenMul || 1),
     regenDelay: PROGRESS.REGEN_DELAY - u('regen') * 0.8,
     leech: (c.leech || 0) + u('leech') * 0.25,
     pickRadius: PROGRESS.PICK_RADIUS + (c.pick || 0) + u('magnet') * 1.6,
     xpMul: 1 + (c.xp || 0),
-    rollCloak: c.rollCloak || 0,
   };
 }
 

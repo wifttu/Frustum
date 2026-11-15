@@ -36,12 +36,20 @@ export function botThink(bot, game, dt) {
       best < cfg.ATTACK_RANGE + 1 &&
       Math.abs(wrapAngle(Math.atan2(bot.x - target.x, bot.z - target.z) - target.yaw)) < cfg.ATTACK_ARC / 2;
     const dodge = threatened && Math.random() < 0.04;
+    // 고유 스킬: 위협받으면 회피/방어기, 체력이 낮으면 치유, 접근할 때 은신/질주
+    const sk = bot.skill;
+    const useSkill =
+      sk === 'roll' ? dodge :
+      sk === 'shield' ? threatened && Math.random() < 0.1 :
+      sk === 'heal' ? bot.hp < bot.stats.maxHp * 0.55 :
+      sk === 'stealth' || sk === 'dash' ? !inRange && Math.random() < 0.05 :
+      false;
     return {
       mx: dodge ? (Math.random() < 0.5 ? -1 : 1) : 0,
       mz: inRange ? 0.3 : 1,
       yaw,
       atk: aligned && inRange,
-      roll: dodge,
+      roll: useSkill,
       flare: false,
     };
   }
@@ -80,7 +88,15 @@ export function botThink(bot, game, dt) {
   }
   const yaw = Math.atan2(node[0] - bot.x, node[1] - bot.z);
   const diff = Math.abs(wrapAngle(yaw - bot.yaw));
-  return { mx: 0, mz: diff < 0.6 ? (outside ? 1 : 0.8) : 0.2, yaw, atk: false, roll: false, flare: Math.random() < 0.003 };
+  // 순찰 중 스킬: 매의 눈으로 둘러보기, 반딧불이 많으면 끌어오기, 다쳤으면 치유, 독구름 밖이면 질주
+  const sk = bot.skill;
+  const patrolSkill =
+    sk === 'scan' ? Math.random() < 0.004 :
+    sk === 'magnet' ? game.fireflies.filter((f) => Math.hypot(f.x - bot.x, f.z - bot.z) < 9).length >= 3 :
+    sk === 'heal' ? bot.hp < bot.stats.maxHp * 0.6 :
+    sk === 'dash' ? outside :
+    false;
+  return { mx: 0, mz: diff < 0.6 ? (outside ? 1 : 0.8) : 0.2, yaw, atk: false, roll: patrolSkill, flare: Math.random() < 0.003 };
 }
 
 // 목적지와 그곳까지의 경로를 정한다

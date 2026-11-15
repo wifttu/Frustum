@@ -148,7 +148,7 @@ test('캐릭터: 저마다 기본 능력이 다르고, 서버 판정에 반영�
   assert.ok(Object.values(CHARACTERS).every((c) => c.name && c.desc && c.price >= 0));
 });
 
-test('캐릭터: 그림자는 구르면 잠깐 안 보이고, 반디는 경험치를 더 받는다', () => {
+test('스킬: 그림자의 은신은 위치 전송을 끊고, 반디는 경험치를 더 받는다', () => {
   const { game, place } = setup();
   const ninja = game.addPlayer('N', () => {}, false, 'ninja');
   const col = game.addPlayer('C', () => {}, false, 'collector');
@@ -157,10 +157,69 @@ test('캐릭터: 그림자는 구르면 잠깐 안 보이고, 반디는 경험�
   assert.equal(game.computeVisibility().get(col.team).has(ninja.id), true);
   game.queueInput(ninja.id, [1, 0, 0, Math.PI, 0, 1, 0]);
   game.step();
-  assert.ok(ninja.cloakT > 1);
+  assert.ok(ninja.cloakT > 3);
+  assert.ok(ninja.rollCd > 9, '충전 시간이 걸린다');
+  assert.equal(ninja.rollT, 0, '구르지 않는다');
   assert.equal(game.computeVisibility().get(col.team).has(ninja.id), false);
   game.gainXp(col, 20);
   assert.equal(col.xp, 25);
+});
+
+test('스킬: 질주, 방패, 매의 눈, 끌어오기, 치유', async () => {
+  const { SKILLS } = await import('../shared/progress.js');
+  const { game, place } = setup({ TEAMS: 2 });
+  const use = (p) => {
+    game.queueInput(p.id, [(p.lastSeq || 0) + 1, 0, 1, p.yaw, 0, 1, 0]);
+    game.step();
+  };
+  const runner = game.addPlayer('R', () => {}, false, 'runner'); // 팀 1
+  const bear = game.addPlayer('B', () => {}, false, 'bear'); // 팀 2
+  const healer = game.addPlayer('H', () => {}, false, 'healer'); // 팀 1
+  const owl = game.addPlayer('O', () => {}, false, 'owl'); // 팀 2
+  const col = game.addPlayer('C', () => {}, false, 'collector'); // 팀 1
+  place(runner, -20, -20, 0);
+  place(bear, 0, 3, 0);
+  place(healer, -20, -18, 0);
+  place(owl, 20, 0, 0);
+  place(col, 20, 20, 0);
+
+  // 질주: 한 틱 이동 거리가 늘어난다
+  const z0 = runner.z;
+  use(runner);
+  assert.ok(runner.dashT > 2);
+  assert.ok(runner.z - z0 > (CFG.PLAYER_SPEED * runner.spd * 1.6) / CFG.TICK_RATE);
+
+  // 방패: 지속 시간 동안 피해를 받지 않는다
+  use(bear);
+  assert.ok(bear.shieldT > 2);
+  const hp = bear.hp;
+  const filler = game.addPlayer('F', () => {}, false, 'explorer'); // 팀 2 (팀 수를 맞추는 용도)
+  place(filler, -28, 28, 0);
+  const atk = game.addPlayer('X', () => {}, false, 'explorer'); // 팀 1
+  assert.notEqual(atk.team, bear.team);
+  place(atk, 0, 0, 0);
+  game.attack(atk);
+  assert.equal(bear.hp, hp);
+
+  // 매의 눈: 등 뒤의 적이 보인다
+  place(atk, 20, -8, 0); // 올빼미(20,0, +z 를 봄)의 등 뒤
+  assert.equal(game.computeVisibility().get(owl.team).has(atk.id), false);
+  use(owl);
+  assert.equal(game.computeVisibility().get(owl.team).has(atk.id), true);
+
+  // 끌어오기: 범위 안의 반딧불을 모은다
+  game.fireflies = [{ id: 1, x: 25, z: 25, v: 10 }, { id: 2, x: 14, z: 20, v: 10 }, { id: 3, x: -20, z: 0, v: 10 }];
+  use(col);
+  assert.equal(game.fireflies.length, 1);
+  assert.ok(col.earned >= 25);
+
+  // 치유: 나와 가까운 아군을 회복한다 (적은 아님)
+  healer.hp = 40;
+  runner.hp = 30;
+  place(runner, -20, -16, 0);
+  use(healer);
+  assert.ok(Math.abs(healer.hp - (40 + SKILLS.heal.amount)) < 1); // 자연 회복이 조금 섞인다
+  assert.ok(runner.hp >= 30 + SKILLS.heal.amount);
 });
 
 test('하트: 체력을 회복한다', () => {

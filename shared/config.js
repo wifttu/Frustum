@@ -94,3 +94,6 @@ export const FLARE_VIEW = Object.freeze({
   VIEW_RANGE: CFG.FLARE_RADIUS,
   NEAR_RADIUS: 1,
 });
+
+// '매의 눈' 스킬의 시야: 360도, 반경 15m (벽은 여전히 가린다)
+export const SCAN_VIEW = Object.freeze({ ...CFG, FOV: Math.PI * 2, VIEW_RANGE: 15, NEAR_RADIUS: 1 });

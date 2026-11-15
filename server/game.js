@@ -1,10 +1,10 @@
 // 권위 서버 게임 로직. 네트워크와 분리되어 있어 테스트와 오프라인 모드에서 그대로 쓴다.
-import { CFG, FLARE_VIEW, ITEM_RULES, ITEM_TYPES, ITEMS, RULES, ZONE, zoneHalf } from '../shared/config.js';
+import { CFG, FLARE_VIEW, SCAN_VIEW, ITEM_RULES, ITEM_TYPES, ITEMS, RULES, ZONE, zoneHalf } from '../shared/config.js';
 import { MAP_ROTATION, MAP_SIZE, MAPS, isFree } from '../shared/map.js';
 import { flareLanding, stepPlayer } from '../shared/sim.js';
 import { canSee, segmentBlocked, wrapAngle } from '../shared/vision.js';
 import { botThink } from './bots.js';
-import { CHARACTER_KEYS, PROGRESS, UPGRADES, charOf, rollChoices, statsOf, xpToNext } from '../shared/progress.js';
+import { CHARACTER_KEYS, PROGRESS, SKILLS, UPGRADES, charOf, rollChoices, statsOf, xpToNext } from '../shared/progress.js';
 
 const DT = 1 / CFG.TICK_RATE;
 const MAX_QUEUE = 10;
@@ -40,6 +40,7 @@ export class Game {
     this.rosterDirty = false;
     this.kills = [];
     this.blocks = []; // 반사 조끼가 막은 공격 [공격자, 대상]
+    this.casts = []; // 스킬 사용 [플레이어, 스킬]
     this.events = []; // 라운드 시작/종료 알림
     this.endT = 0; // > 0 이면 라운드 종료 후 휴식 중
     this.winner = null;
@@ -80,6 +81,7 @@ export class Game {
       id, name, team: 0, isBot, send,
       x: 0, z: 0, yaw: 0,
       alive: false, respawn: 0, gas: 0, cd: 0, speedT: 0, vest: 0, cloakT: 0, picked: [],
+      dashT: 0, shieldT: 0, scanT: 0, cast: null,
       hp: 0, xp: 0, level: 1, ups: {}, choices: [], hurtT: 0, statsDirty: true, ffVer: -1, earned: 0,
       // 캐릭터: 봇은 무작위. (계정이 없어 구매 여부는 클라이언트가 관리한다)
       char: isBot ? CHARACTER_KEYS[Math.floor(Math.random() * CHARACTER_KEYS.length)] : charOf(char), beam: 0, score: 0, wins: 0,
@@ -171,6 +173,10 @@ export class Game {
     p.speedT = 0;
     p.vest = 0;
     p.cloakT = 0;
+    p.dashT = 0;
+    p.shieldT = 0;
+    p.scanT = 0;
+    p.cast = null;
     if (p.stats) p.hp = p.stats.maxHp;
     p.hurtT = 99;
   }
@@ -195,13 +201,39 @@ export class Game {
   }
 
   applyInput(p, inp) {
-    const wasRolling = p.rollT > 0;
     stepPlayer(p, inp, DT, this.solid);
-    // 그림자: 구르기 시작과 함께 잠깐 모습을 감춘다
-    if (!wasRolling && p.rollT > 0 && p.stats.rollCloak) p.cloakT = Math.max(p.cloakT, p.stats.rollCloak);
+    if (p.cast) {
+      this.castSkill(p, p.cast);
+      p.cast = null;
+    }
     // 구르는 중에는 공격할 수 없다
     if (inp.atk && p.cd <= 0 && !(p.rollT > 0) && this.roundT >= this.cfg.START_GRACE) this.attack(p);
     if (inp.flare && p.flareCd <= 0) this.throwFlare(p);
+  }
+
+  // 이동과 무관한 고유 스킬의 효과 (충전 시간은 공용 시뮬레이션이 이미 걸었다)
+  castSkill(p, skill) {
+    const S = SKILLS[skill];
+    if (skill === 'shield') p.shieldT = S.time;
+    else if (skill === 'scan') p.scanT = S.time;
+    else if (skill === 'stealth') p.cloakT = Math.max(p.cloakT, S.time);
+    else if (skill === 'magnet') {
+      const before = this.fireflies.length;
+      this.fireflies = this.fireflies.filter((f) => {
+        if (Math.hypot(f.x - p.x, f.z - p.z) > S.radius) return true;
+        this.gainXp(p, f.v);
+        return false;
+      });
+      if (this.fireflies.length !== before) this.ffVer++;
+    } else if (skill === 'heal') {
+      for (const q of this.players.values()) {
+        if (!q.alive || q.team !== p.team || Math.hypot(q.x - p.x, q.z - p.z) > S.radius) continue;
+        const healed = Math.min(S.amount, q.stats.maxHp - q.hp);
+        q.hp += healed;
+        if (healed > 0) this.hits.push([p.id, q.id, -Math.round(healed)]); // 음수 = 회복
+      }
+    }
+    this.casts.push([p.id, skill]);
   }
 
   // 손전등 빔: 좁고 긴 원뿔 안의, 벽에 가리지 않은 적을 처치한다.
@@ -223,6 +255,11 @@ export class Game {
       const slack = d > r ? Math.asin(r / d) : Math.PI;
       if (Math.abs(wrapAngle(Math.atan2(dx, dz) - p.yaw)) > st.arc / 2 + slack) continue;
       if (segmentBlocked(p.x, p.z, q.x, q.z, this.walls)) continue;
+      if (q.shieldT > 0) {
+        // 방패: 지속 시간 동안 전부 막는다
+        this.blocks.push([p.id, q.id]);
+        continue;
+      }
       if (q.vest > 0) {
         // 반사 조끼: 이번 한 번은 막는다
         q.vest = 0;
@@ -255,6 +292,7 @@ export class Game {
     p.stats = statsOf(p.ups, this.cfg, p.char);
     p.spd = p.stats.speed; // 공용 시뮬레이션이 쓰는 값
     p.rollCdMax = p.stats.rollCd;
+    p.skill = p.stats.skill;
     p.statsDirty = true;
   }
 
@@ -514,6 +552,8 @@ export class Game {
       p.hurtT += DT;
       if (p.alive && p.hurtT >= p.stats.regenDelay && p.hp < p.stats.maxHp) p.hp = Math.min(p.stats.maxHp, p.hp + p.stats.regen * DT);
       p.cloakT = Math.max(0, p.cloakT - DT);
+      p.shieldT = Math.max(0, p.shieldT - DT);
+      p.scanT = Math.max(0, p.scanT - DT);
       p.beam = Math.max(0, p.beam - DT);
       p.flareCd = Math.max(0, p.flareCd - DT);
       if (!p.alive) {
@@ -551,7 +591,11 @@ export class Game {
       if (!sources.has(team)) sources.set(team, []);
       sources.get(team).push([src, view]);
     };
-    for (const p of this.players.values()) if (p.alive) add(p.team, p, cfg);
+    for (const p of this.players.values()) {
+      if (!p.alive) continue;
+      add(p.team, p, cfg);
+      if (p.scanT > 0) add(p.team, p, SCAN_VIEW); // 매의 눈
+    }
     for (const f of this.flares) add(f.team, { x: f.x, z: f.z, yaw: 0 }, FLARE_VIEW);
 
     const vis = new Map();
@@ -596,7 +640,7 @@ export class Game {
     for (const q of this.players.values()) {
       if (q === p || !q.alive) continue;
       if (q.team !== p.team && !(seen && seen.has(q.id))) continue;
-      e.push([q.id, q2(q.x), q2(q.z), q2(q.yaw), (q.beam > 0 ? 1 : 0) | (q.rollT > 0 ? 2 : 0) | (q.cloakT > 0 ? 4 : 0) | (q.vest > 0 ? 8 : 0), Math.ceil((q.hp / q.stats.maxHp) * 100), q.level]);
+      e.push([q.id, q2(q.x), q2(q.z), q2(q.yaw), (q.beam > 0 ? 1 : 0) | (q.rollT > 0 ? 2 : 0) | (q.cloakT > 0 ? 4 : 0) | (q.vest > 0 || q.shieldT > 0 ? 8 : 0) | (q.scanT > 0 ? 16 : 0), Math.ceil((q.hp / q.stats.maxHp) * 100), q.level]);
     }
     const f = [];
     for (const fl of this.flares) if (fl.team === p.team) f.push([q2(fl.x), q2(fl.z), q2(fl.t)]);
@@ -618,7 +662,7 @@ export class Game {
       zh: this.zoned ? q2(this.zoneHalf()) : 0, // 안전 구역 절반 길이 (0 = 독구름 없음)
       rt: Math.ceil(Math.max(0, this.cfg.ROUND_TIME - this.roundT)), // 남은 라운드 시간
       // 예측 보정에 필요한 값은 반올림하지 않는다
-      me: [p.x, p.z, p.yaw, p.alive ? 1 : 0, this.respawns ? q2(Math.max(0, p.respawn)) : 0, q2(p.cd), p.rollT, p.rollCd, p.rollDx, p.rollDz, q2(p.flareCd), q2(p.gas), p.speedT, q2(p.vest), q2(p.cloakT)],
+      me: [p.x, p.z, p.yaw, p.alive ? 1 : 0, this.respawns ? q2(Math.max(0, p.respawn)) : 0, q2(p.cd), p.rollT, p.rollCd, p.rollDx, p.rollDz, q2(p.flareCd), q2(p.gas), p.speedT, q2(p.vest), q2(p.cloakT), p.dashT, q2(p.shieldT), q2(p.scanT)],
       e,
       f,
       it, // 보이는 아이템 [id, 종류, x, z]
@@ -660,6 +704,11 @@ export class Game {
     if (this.blocks.length) {
       all({ t: 'b', l: this.blocks });
       this.blocks = [];
+    }
+    if (this.casts.length) {
+      // 스킬 사용 알림: 보이는 플레이어에게만 효과를 그리도록 클라이언트가 걸러낸다 (위치 없음)
+      all({ t: 'c', l: this.casts });
+      this.casts = [];
     }
     if (this.hits.length) {
       all({ t: 'h', l: this.hits });
