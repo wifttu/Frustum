@@ -44,7 +44,7 @@
         <span>손전등</span>
       </button>
       <button id="roll" class="skill" data-label="구르기" aria-label="구르기">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.5a7.5 7.5 0 1 0 7.5 7.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" /><path d="M11.5 0.8l5.2 3.7-5.2 3.7z" /></svg>
+        <i>🌀</i>
         <span>구르기</span>
       </button>
       <button id="flare" class="skill" data-label="조명탄" aria-label="조명탄">
@@ -69,15 +69,21 @@
       </div>
       <button id="play">혼자 하기 (봇전)</button>
       <button id="online" class="alt">온라인 접속</button>
-      <div class="pair"><button id="openShop" class="alt">🧢 캐릭터</button><button id="openSettings" class="alt">⚙️ 설정</button></div>
+      <div class="pair"><button id="openShop" class="alt">🛍️ 상점</button><button id="openSettings" class="alt">⚙️ 설정</button></div>
+      <button id="daily" class="alt" hidden>🎁 출석 보상 받기</button>
       <small>반딧불을 모아 레벨을 올리고, 강화를 골라 강해지세요. 플레이로 모은 코인으로 능력이 다른 캐릭터를 살 수 있습니다. 손전등으로 상대의 체력을 깎아 잡습니다. 맵은 라운드마다 바뀌고, 곳곳에 아이템(🔋👟🛡️👻)이 생깁니다. 구르는 동안은 무적, 조명탄은 주변을 밝혀 팀에게 보여줍니다.<br />모바일: 왼쪽 드래그 이동 · 오른쪽 드래그 회전 · 버튼으로 스킬<br />PC: WASD 이동 · 마우스 드래그/←→ 회전 · Space 공격 · Shift 구르기 · F 조명탄</small>
       <div id="status"></div>
     </div>
 
     <div id="shop" hidden>
+      <div id="shopTabs">
+        <button data-tab="chars">🧢 캐릭터</button>
+        <button data-tab="skins">🎨 스킨</button>
+        <button data-tab="gacha">✨ 뽑기</button>
+      </div>
       <div id="shopCoins"></div>
       <button id="closeShop" aria-label="돌아가기">↩</button>
-      <div id="shopHead"><b id="shopName"></b><span id="shopAbility"></span></div>
+      <div id="shopHead"><b id="shopName"></b><span id="shopAbility"></span><span id="shopSkill"></span></div>
       <div id="shopLocks"></div>
       <button id="shopPrev" class="nav" aria-label="이전">‹</button>
       <button id="shopNext" class="nav" aria-label="다음">›</button>
@@ -95,6 +101,14 @@
         </svg>
       </div>
       <button id="shopAct"></button>
+      <div id="skinRow"></div>
+      <div id="gachaPanel">
+        <b>반딧불 뽑기</b>
+        <p id="gachaOdds"></p>
+        <p id="gachaPity"></p>
+        <div class="btns"><button id="gacha1"></button><button id="gacha10"></button></div>
+      </div>
+      <div id="gachaResult" hidden><div id="gachaCards"></div><button id="gachaOk">확인</button></div>
     </div>
 
     <div id="rotate"><b>📱↻</b>화면을 가로로 돌려 주세요</div>

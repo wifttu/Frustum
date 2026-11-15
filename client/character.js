@@ -221,9 +221,11 @@ export class Characters {
   }
 
   // 팀 종류 × 캐릭터 조합별 지오메트리 (처음 쓸 때 한 번 만든다)
-  partsFor(kind, char) {
-    const key = `${kind}:${char}`;
-    if (!this.parts[key]) this.parts[key] = buildParts(kind === 'self' ? (SIGNATURE[char] ?? COLORS.self) : COLORS[kind], char);
+  // skin: 내 캐릭터의 후드 색(스킨). 없으면 캐릭터 고유 색.
+  partsFor(kind, char, skin = null) {
+    const color = kind === 'self' ? (skin ?? SIGNATURE[char] ?? COLORS.self) : COLORS[kind];
+    const key = `${kind}:${char}:${color}`;
+    if (!this.parts[key]) this.parts[key] = buildParts(color, char);
     return this.parts[key];
   }
 
@@ -273,12 +275,13 @@ export class Characters {
     return root;
   }
 
-  setKind(root, kind, char = root.userData.char) {
+  setKind(root, kind, char = root.userData.char, skin = null) {
     const u = root.userData;
-    if (u.kind === kind && u.char === char) return;
+    if (u.kind === kind && u.char === char && u.skin === skin) return;
+    u.skin = skin;
     u.kind = kind;
     u.char = char;
-    const g = this.partsFor(kind, char);
+    const g = this.partsFor(kind, char, skin);
     u.torso.geometry = g.torso;
     u.legL.geometry = u.legR.geometry = g.leg;
     u.armL.geometry = g.armL;
@@ -389,7 +392,7 @@ export class DeathFx {
       fx = { ring, pts, vel: new Float32Array(BURST_N * 3), t: 1 };
       this.pool.push(fx);
     }
-    const color = kind === 'shield' ? 0x9fe8ff : kind === 'level' ? 0xffe27a : (COLORS[kind] ?? 0xffffff);
+    const color = kind === 'shield' ? 0x9fe8ff : kind === 'heal' ? 0x7dff9a : kind === 'level' ? 0xffe27a : (COLORS[kind] ?? 0xffffff);
     fx.ring.material.color.set(color);
     fx.pts.material.color.set(color);
     fx.ring.position.set(x, 0.07, z);

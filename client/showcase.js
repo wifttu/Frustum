@@ -71,6 +71,11 @@ export class Showcase {
     this.active = false;
   }
 
+  // 고른 캐릭터에 스킨 색을 입혀 보여준다 (null = 고유 색)
+  setSkin(color) {
+    for (const it of this.items) this.chars.setKind(it.mesh, 'self', it.id, it.id === this.current ? color : null);
+  }
+
   get current() {
     return CHARACTER_KEYS[this.index];
   }

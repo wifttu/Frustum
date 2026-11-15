@@ -148,6 +148,19 @@ export class Sfx {
     this.tone('square', 150, 120, 0.12, 0.1);
   }
 
+  // 고유 스킬 소리
+  skill(name, vol = 1, pan = 0) {
+    if (!this.ready) return;
+    if (name === 'dash') this.hiss(600, 3200, 1.2, 0.35, 0.45 * vol, pan);
+    else if (name === 'shield') {
+      this.tone('sine', 300, 600, 0.25, 0.2 * vol, pan);
+      this.tone('triangle', 900, 1200, 0.3, 0.1 * vol, pan, 0.05);
+    } else if (name === 'scan') [1200, 1600, 2000].forEach((f, i) => this.tone('sine', f, f, 0.1, 0.12 * vol, pan, i * 0.09));
+    else if (name === 'magnet') this.tone('sawtooth', 200, 900, 0.3, 0.12 * vol, pan);
+    else if (name === 'stealth') this.hiss(3000, 400, 0.8, 0.4, 0.3 * vol, pan, 0, 'lowpass');
+    else if (name === 'heal') [660, 880, 1100].forEach((f, i) => this.tone('sine', f, f * 1.02, 0.25, 0.14 * vol, pan, i * 0.08));
+  }
+
   // 반딧불 줍기: 아주 작은 반짝
   firefly() {
     if (!this.ready) return;
