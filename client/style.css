@@ -143,3 +143,10 @@ html, body {
 body.lefty #attack { right: auto; left: calc(22px + env(safe-area-inset-left)); }
 body.lefty #roll { right: auto; left: calc(122px + env(safe-area-inset-left)); }
 body.lefty #flare { right: auto; left: calc(34px + env(safe-area-inset-left)); }
+
+/* 독구름 안에 있을 때 화면 가장자리가 초록으로 물든다 */
+#gas { position: absolute; inset: 0; opacity: 0; box-shadow: inset 0 0 90px 30px rgba(110, 230, 60, .85); }
+#gasText {
+  position: absolute; top: 20%; left: 50%; transform: translateX(-50%); padding: 6px 16px; border-radius: 999px;
+  background: rgba(20, 60, 10, .8); color: #c8ff8a; font-weight: 700; font-size: 18px; white-space: nowrap;
+}

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CFG, FLARE_VIEW } from './shared/config.js';
+import { CFG, FLARE_VIEW, ZONE } from './shared/config.js';
 import { MAP_SIZE, WALLS, WALL_HEIGHT } from './shared/map.js';
 import { stepPlayer } from './shared/sim.js';
 import { wrapAngle } from './shared/vision.js';
@@ -54,6 +54,46 @@ const sfx = new Sfx();
   );
   scene.add(floor);
 }
+
+// 독구름: 안전 구역(정사각형) 바깥을 덮는 초록 안개. 시야와 무관하게 항상 보인다.
+// 높이가 다른 두 장을 겹쳐 위에서 볼 때 부피감이 나게 한다 (드로우콜 2회, 텍스처 없음).
+const gasMat = new THREE.ShaderMaterial({
+  transparent: true,
+  depthWrite: false,
+  uniforms: { uHalf: { value: 999 }, uTime: { value: 0 } },
+  vertexShader: /* glsl */ `
+    varying vec2 vW;
+    void main() {
+      vec4 w = modelMatrix * vec4(position, 1.0);
+      vW = w.xz;
+      gl_Position = projectionMatrix * viewMatrix * w;
+    }`,
+  fragmentShader: /* glsl */ `
+    uniform float uHalf;
+    uniform float uTime;
+    varying vec2 vW;
+    float n(vec2 p) { return sin(p.x) * sin(p.y); }
+    void main() {
+      // 구역 경계까지의 거리(밖이 양수). 경계가 일렁이게 한다.
+      float d = max(abs(vW.x), abs(vW.y)) - uHalf;
+      d += 0.6 * n(vW * 0.7 + vec2(uTime * 1.3, -uTime * 1.1));
+      if (d < 0.0) discard;
+      float puff = 0.5 + 0.25 * n(vW * 0.45 + vec2(uTime * 0.5, uTime * 0.3)) + 0.25 * n(vW * 1.1 - vec2(uTime * 0.4, -uTime * 0.6));
+      float edge = exp(-d * 1.2);
+      float a = (0.22 + 0.25 * smoothstep(0.0, 6.0, d)) * (0.6 + 0.6 * puff) + edge * 0.4;
+      vec3 col = mix(vec3(0.2, 0.62, 0.16), vec3(0.7, 1.0, 0.35), edge) * (0.55 + 0.45 * puff);
+      gl_FragColor = vec4(col, clamp(a, 0.0, 0.8));
+    }`,
+});
+const gasLayers = [0.08, 1.7].map((y) => {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(MAP_SIZE + 60, MAP_SIZE + 60).rotateX(-Math.PI / 2), gasMat);
+  m.position.y = y;
+  m.frustumCulled = false;
+  m.renderOrder = 5;
+  m.visible = false;
+  scene.add(m);
+  return m;
+});
 
 // 벽: InstancedMesh 하나(드로우콜 1회). 매 프레임 "보이는 벽"만 인스턴스 버퍼에 채운다.
 const wallMesh = new THREE.InstancedMesh(
@@ -164,6 +204,10 @@ let rule = 'survival';
 let target = 0; // 점수제 목표 킬
 let roundTime = CFG.ROUND_TIME;
 let respawnIn = 0;
+let zoneTarget = 0; // 서버가 알려준 안전 구역 절반 길이 (0 = 독구름 없음)
+let zoneNow = 0; // 화면용으로 부드럽게 따라가는 값
+let gas = 0; // 독구름 노출 시간
+let gasSfxT = 0;
 let roundLeft = 0;
 let snapNext = false; // 새 라운드: 다음 스냅샷 위치로 순간이동
 let localCd = 0;
@@ -237,6 +281,8 @@ function showMenu(msg) {
   alive = false;
   roundEnd = 0;
   flares = [];
+  zoneTarget = 0;
+  gas = 0;
   pending.length = 0;
   $('banner').hidden = true;
   for (const id of [...ents.keys()]) removeEnt(id);
@@ -303,7 +349,7 @@ function onMessage(m) {
   } else if (m.t === 'k') {
     for (const [k, v] of m.l) {
       if (v === myId) {
-        killedBy = roster.get(k)?.name ?? '';
+        killedBy = k ? (roster.get(k)?.name ?? '') : '독구름';
         sfx.death();
         buzz(200);
       } else if (k === myId) {
@@ -335,11 +381,13 @@ function onMessage(m) {
 const kindOf = (id) => (roster.get(id)?.team === myTeam ? 'ally' : 'enemy');
 
 function onSnapshot(m) {
-  const [x, z, yaw, al, resp, , rollT, rollCd, rollDx, rollDz, fcd] = m.me;
+  const [x, z, yaw, al, resp, , rollT, rollCd, rollDx, rollDz, fcd, gasT] = m.me;
   const wasAlive = alive;
   alive = !!al;
   roundLeft = m.rt ?? 0;
   respawnIn = resp;
+  gas = gasT || 0;
+  zoneTarget = m.zh || 0;
   flareCd = fcd;
   // 서버 상태로 되돌린 뒤 미확인 입력을 다시 적용 (클라이언트 예측 보정)
   Object.assign(sim, { x, z, yaw, rollT, rollCd, rollDx, rollDz });
@@ -405,6 +453,7 @@ function drawScore() {
       teams.add(p.team);
     }
     left = mode === 'ffa' ? `생존 ${aliveN}명` : `생존 ${teams.size}팀 · ${aliveN}명`;
+    if (zoneTarget) left += ` · 구역 ${Math.round(zoneTarget * 2)}m`;
   } else {
     // 데스매치: 내(우리 팀) 킬과 가장 앞선 상대의 킬
     const kills = new Map();
@@ -424,7 +473,7 @@ function addFeed(k, v) {
   for (const [id, sep] of [[k, ' ▸ '], [v, '']]) {
     const s = document.createElement('span');
     s.className = roster.get(id)?.team === myTeam ? 'ally' : 'enemy';
-    s.textContent = roster.get(id)?.name ?? '?';
+    s.textContent = id ? (roster.get(id)?.name ?? '?') : '독구름';
     row.append(s, sep);
   }
   $('feed').prepend(row);
@@ -577,6 +626,25 @@ function frame(now) {
     fm.scale.setScalar(flick * Math.min(1, f[2]));
     flareSources.push({ x: f[0], z: f[1], yaw: 0, view: FLARE_VIEW });
   }
+
+  // 독구름: 구역 크기를 부드럽게 따라가고, 안에 들어가 있으면 화면 경고 + 소리
+  const inGame = myId && zoneTarget > 0;
+  if (inGame) zoneNow = Math.abs(zoneTarget - zoneNow) > 4 ? zoneTarget : lerp(zoneNow, zoneTarget, Math.min(1, dtMs * 0.008));
+  for (const g of gasLayers) g.visible = !!inGame;
+  gasMat.uniforms.uHalf.value = zoneNow;
+  gasMat.uniforms.uTime.value = now * 0.001;
+  const inGas = inGame && alive && roundEnd <= 0 && Math.max(Math.abs(view.x), Math.abs(view.z)) > zoneNow;
+  const danger = inGas ? Math.max(0.35, gas / ZONE.GAS_TIME) : inGame && alive ? Math.min(0.3, gas / ZONE.GAS_TIME) : 0;
+  $('gas').style.opacity = danger.toFixed(2);
+  $('gasText').hidden = !inGas;
+  if (inGas) {
+    $('gasText').textContent = `독구름! ${Math.max(0, ZONE.GAS_TIME - gas).toFixed(1)}`;
+    gasSfxT -= dtMs / 1000;
+    if (gasSfxT <= 0) {
+      gasSfxT = 0.6;
+      sfx.gas();
+    }
+  } else gasSfxT = 0;
 
   // 1) 시야 마스크: 나 + 팀원 + 팀 조명탄의 시야 합집합
   sources.length = 0;
