@@ -1,128 +1,225 @@
+:root {
+  --ally: #5ab4ff;
+  --enemy: #ff6b5e;
+  --gold: #ffd25a;
+  --glass: rgba(10, 16, 24, .62);
+  --line: rgba(255, 255, 255, .1);
+  --text: #e8eef5;
+  --dim: #8fa3b5;
+}
 * { box-sizing: border-box; }
 html, body {
-  margin: 0; height: 100%; overflow: hidden; background: #000; color: #e8eef5;
+  margin: 0; height: 100%; overflow: hidden; background: #000; color: var(--text);
   font-family: system-ui, -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+  font-variant-numeric: tabular-nums;
   -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
   touch-action: none; overscroll-behavior: none;
 }
+button { font-family: inherit; }
 #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 
+/* ───────── HUD ───────── */
 #hud { position: fixed; inset: 0; pointer-events: none; }
+#hud[hidden] { display: none; }
+
+/* 점수판: 왼쪽 상황 · 가운데 시간 · 오른쪽 내 기록 */
 #score {
   position: absolute; top: calc(8px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
-  padding: 6px 14px; border-radius: 999px; background: rgba(0, 0, 0, .55);
-  font-weight: 700; font-size: 15px; white-space: nowrap;
+  display: flex; align-items: center; gap: 12px; padding: 5px 14px; border-radius: 999px;
+  background: var(--glass); border: 1px solid var(--line); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  font-weight: 700; font-size: 14px; white-space: nowrap; box-shadow: 0 4px 16px rgba(0, 0, 0, .4);
 }
-#score .ally { color: #5ab4ff; } #score .enemy { color: #ff6b5e; } #score .me { color: #fff; font-weight: 500; margin-left: 10px; }
+#score .ally { color: var(--ally); }
+#score .time {
+  min-width: 52px; padding: 2px 10px; border-radius: 999px; text-align: center;
+  background: rgba(255, 255, 255, .1); color: #fff; font-size: 16px; letter-spacing: .5px;
+}
+#score .time.low { background: rgba(255, 80, 60, .3); color: #ffb3aa; animation: pulse .9s ease-in-out infinite; }
+#score .me { color: #cfd9e3; font-weight: 500; }
+
+/* 킬 피드 */
 #feed {
-  position: absolute; top: calc(48px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right));
-  text-align: right; font-size: 12px; line-height: 1.5; text-shadow: 0 1px 2px #000;
+  position: absolute; top: calc(52px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right));
+  display: flex; flex-direction: column; align-items: flex-end; gap: 4px; font-size: 12px;
 }
-#feed .ally { color: #5ab4ff; } #feed .enemy { color: #ff6b5e; }
+#feed div {
+  padding: 3px 9px; border-radius: 8px; background: var(--glass); border: 1px solid var(--line);
+  animation: slideIn .25s ease-out;
+}
+#feed .ally { color: var(--ally); font-weight: 600; } #feed .enemy { color: var(--enemy); font-weight: 600; }
+
 #stats {
   position: absolute; top: calc(8px + env(safe-area-inset-top)); left: calc(8px + env(safe-area-inset-left));
-  font: 11px/1.45 ui-monospace, Menlo, monospace; color: #8fa3b5; white-space: pre; text-shadow: 0 1px 2px #000;
+  font: 11px/1.45 ui-monospace, Menlo, monospace; color: var(--dim); white-space: pre; text-shadow: 0 1px 2px #000;
 }
+
+/* 이름표 */
+#labels { position: absolute; inset: 0; overflow: hidden; }
+#labels div {
+  position: absolute; left: 0; top: 0; padding: 1px 7px; border-radius: 6px; font-size: 11px; font-weight: 700;
+  background: rgba(0, 0, 0, .55); white-space: nowrap; will-change: transform;
+}
+#labels .ally { color: var(--ally); } #labels .enemy { color: var(--enemy); }
+
+/* 우측 상단 원형 버튼 */
+#mute, #gear {
+  pointer-events: auto; position: absolute; top: calc(6px + env(safe-area-inset-top));
+  width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line); background: var(--glass);
+  font-size: 17px; padding: 0; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+#mute { right: calc(8px + env(safe-area-inset-right)); }
+#gear { right: calc(52px + env(safe-area-inset-right)); }
+#mute:active, #gear:active { transform: scale(.92); }
+
+/* 처치 / 카운트다운 알림 */
+#toast {
+  position: absolute; top: 27%; left: 50%; text-align: center; white-space: nowrap;
+  animation: toast 1.3s cubic-bezier(.2, .9, .3, 1) both;
+}
+#toast b {
+  display: block; font-size: 30px; font-weight: 900; letter-spacing: 2px; color: var(--gold);
+  text-shadow: 0 0 18px rgba(255, 200, 80, .6), 0 2px 4px #000;
+}
+#toast span { font-size: 13px; color: #fff; text-shadow: 0 1px 3px #000; }
+#toast.count b { font-size: 64px; color: #fff; text-shadow: 0 0 24px rgba(120, 190, 255, .8), 0 3px 6px #000; }
+
+/* 탈락 */
 #dead {
-  position: absolute; top: 34%; left: 50%; transform: translateX(-50%); text-align: center;
-  font-size: 18px; padding: 14px 22px; border-radius: 12px; background: rgba(0, 0, 0, .7);
+  position: absolute; top: 32%; left: 50%; transform: translateX(-50%); text-align: center; white-space: nowrap;
+  padding: 14px 26px; border-radius: 16px; background: var(--glass); border: 1px solid rgba(255, 107, 94, .35);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); animation: pop .3s ease-out;
 }
-#dead b { font-size: 15px; font-weight: 500; color: #b9c8d6; }
+#dead em { display: block; font-style: normal; font-weight: 900; font-size: 26px; letter-spacing: 6px; color: var(--enemy); }
+#dead span { font-size: 14px; color: #fff; }
+#dead b { display: block; margin-top: 4px; font-size: 14px; font-weight: 500; color: var(--dim); }
+
+/* 라운드 결과 */
+#banner {
+  position: absolute; top: 22%; left: 50%; transform: translateX(-50%); text-align: center; white-space: nowrap;
+  padding: 18px 34px; border-radius: 18px; background: var(--glass); border: 1px solid var(--line);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 10px 40px rgba(0, 0, 0, .6);
+  animation: pop .35s cubic-bezier(.2, 1.4, .4, 1);
+}
+#banner b { display: block; font-size: 40px; font-weight: 900; letter-spacing: 8px; margin-right: -8px; }
+#banner b.win { color: var(--gold); text-shadow: 0 0 26px rgba(255, 200, 80, .55); }
+#banner b.lose { color: var(--enemy); }
+#banner span { color: #b9c8d6; font-size: 13px; }
+#dead[hidden], #banner[hidden], #toast[hidden], #gasText[hidden] { display: none; }
+
+/* 조이스틱 */
 #stick {
-  display: none; position: absolute; width: 112px; height: 112px; margin: -56px 0 0 -56px;
-  border-radius: 50%; border: 2px solid rgba(255, 255, 255, .25); background: rgba(255, 255, 255, .06);
+  display: none; position: absolute; width: 116px; height: 116px; margin: -58px 0 0 -58px; border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, .22);
+  background: radial-gradient(circle, rgba(255, 255, 255, .02) 40%, rgba(255, 255, 255, .1));
 }
 #knob {
-  position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; border-radius: 50%;
-  background: rgba(255, 255, 255, .35); transform: translate(-50%, -50%);
+  position: absolute; left: 50%; top: 50%; width: 50px; height: 50px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, .7), rgba(255, 255, 255, .28));
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .5); transform: translate(-50%, -50%);
 }
+
+/* 스킬 버튼: 아이콘 + 이름, 쿨다운 중에는 숫자 */
 .skill {
   --cd: 0; /* 남은 쿨다운 비율 0..1 */
-  pointer-events: auto; position: absolute; border-radius: 50%; touch-action: none; overflow: hidden;
-  border: 2px solid rgba(255, 210, 90, .8); background: rgba(255, 190, 60, .2); color: #ffe2a0;
-  font-family: inherit; font-weight: 700; font-size: 13px; line-height: 1; padding: 0;
+  --c: 255, 200, 80;
+  pointer-events: auto; position: absolute; border-radius: 50%; touch-action: none; overflow: hidden; padding: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  border: 2px solid rgba(var(--c), .85); color: rgb(var(--c));
+  background: radial-gradient(circle at 50% 30%, rgba(var(--c), .34), rgba(var(--c), .1) 70%);
+  box-shadow: 0 0 14px rgba(var(--c), .25), inset 0 0 10px rgba(0, 0, 0, .35);
+  transition: transform .08s;
 }
 .skill::before { /* 쿨다운 부채꼴 */
   content: ''; position: absolute; inset: 0; border-radius: 50%;
-  background: conic-gradient(rgba(0, 0, 0, .62) calc(var(--cd) * 360deg), transparent 0);
+  background: conic-gradient(rgba(0, 0, 0, .68) calc(var(--cd) * 360deg), transparent 0);
 }
-.skill span { position: relative; }
-.skill:active { background: rgba(255, 190, 60, .45); }
-.skill.off { opacity: .45; }
-.skill.cooling span { font-size: 24px; color: #fff; text-shadow: 0 1px 3px #000; }
+.skill svg { position: relative; width: 44%; height: 44%; fill: currentColor; }
+.skill span { position: relative; font-weight: 700; font-size: 10px; line-height: 1; opacity: .9; }
+.skill:active { transform: scale(.93); background: rgba(var(--c), .45); }
+.skill.off { opacity: .4; }
+.skill.cooling { box-shadow: none; border-color: rgba(var(--c), .4); }
+.skill.cooling svg { opacity: .18; position: absolute; }
+.skill.cooling span { font-size: 26px; font-weight: 800; color: #fff; text-shadow: 0 1px 4px #000; opacity: 1; }
 #attack {
   right: calc(22px + env(safe-area-inset-right)); bottom: calc(26px + env(safe-area-inset-bottom));
-  width: 88px; height: 88px; font-size: 15px;
+  width: 90px; height: 90px;
 }
 #roll {
-  right: calc(122px + env(safe-area-inset-right)); bottom: calc(22px + env(safe-area-inset-bottom));
-  width: 62px; height: 62px; border-color: rgba(140, 220, 255, .8); background: rgba(90, 180, 255, .18); color: #cdeeff;
+  --c: 120, 205, 255;
+  right: calc(124px + env(safe-area-inset-right)); bottom: calc(22px + env(safe-area-inset-bottom));
+  width: 64px; height: 64px;
 }
 #flare {
-  right: calc(34px + env(safe-area-inset-right)); bottom: calc(128px + env(safe-area-inset-bottom));
-  width: 62px; height: 62px; border-color: rgba(255, 140, 90, .85); background: rgba(255, 110, 60, .18); color: #ffd2bf;
+  --c: 255, 135, 90;
+  right: calc(36px + env(safe-area-inset-right)); bottom: calc(130px + env(safe-area-inset-bottom));
+  width: 64px; height: 64px;
 }
-#mute {
-  pointer-events: auto; position: absolute; top: calc(6px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right));
-  width: 36px; height: 36px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, .5); font-size: 17px; padding: 0;
-}
-#banner {
-  position: absolute; top: 24%; left: 50%; transform: translateX(-50%); text-align: center; white-space: nowrap;
-  padding: 16px 28px; border-radius: 14px; background: rgba(0, 0, 0, .72);
-}
-#banner b { display: block; font-size: 34px; letter-spacing: 4px; }
-#banner b.win { color: #ffd25a; } #banner b.lose { color: #ff6b5e; }
-#banner span { color: #b9c8d6; font-size: 14px; }
+/* 왼손 모드: 스킬 버튼을 왼쪽으로 */
+body.lefty #attack { right: auto; left: calc(22px + env(safe-area-inset-left)); }
+body.lefty #roll { right: auto; left: calc(124px + env(safe-area-inset-left)); }
+body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
 
+/* 독구름 안에 있을 때 화면 가장자리가 초록으로 물든다 */
+#gas { position: absolute; inset: 0; opacity: 0; box-shadow: inset 0 0 90px 30px rgba(110, 230, 60, .85); }
+#gasText {
+  position: absolute; top: 18%; left: 50%; transform: translateX(-50%); padding: 6px 16px; border-radius: 999px;
+  background: rgba(20, 60, 10, .85); border: 1px solid rgba(160, 255, 90, .5); color: #c8ff8a;
+  font-weight: 800; font-size: 18px; white-space: nowrap; animation: pulse .6s ease-in-out infinite;
+}
+
+/* ───────── 메뉴 ───────── */
 #menu {
-  position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 12px; padding: 20px; text-align: center; background: radial-gradient(circle at 50% 40%, #14202c, #000 70%);
+  position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: safe center;
+  gap: 10px; padding: 20px; text-align: center; overflow-y: auto; touch-action: pan-y;
+  background:
+    radial-gradient(ellipse 60% 50% at 50% 0%, rgba(60, 130, 220, .22), transparent 70%),
+    radial-gradient(circle at 50% 40%, #121c27, #020304 75%);
 }
-#menu h1 { margin: 0; font-size: 40px; letter-spacing: 8px; }
-#menu p { margin: 0 0 6px; color: #9fb2c4; }
-#menu input, #menu button {
-  width: min(260px, 80vw); padding: 13px 14px; border-radius: 10px; font-size: 16px; font-family: inherit;
+/* 로고: 위에서 비추는 손전등 불빛 */
+#logo { position: relative; padding-top: 6px; }
+#logo i {
+  position: absolute; left: 50%; top: 50%; width: 340px; height: 90px; transform: translate(-50%, -50%);
+  background: radial-gradient(ellipse, rgba(255, 225, 150, .22), transparent 68%);
+  animation: sweep 4s ease-in-out infinite; pointer-events: none;
 }
-#menu input { border: 1px solid #33475a; background: #0c141c; color: #fff; -webkit-user-select: text; user-select: text; }
-#menu button { border: 0; background: #2f8fe6; color: #fff; font-weight: 700; }
-#menu button.alt { background: #26323e; color: #cfe0f0; }
-.pick { display: flex; gap: 8px; width: min(260px, 80vw); }
-#menu .pick button { flex: 1; width: auto; padding: 10px 4px; background: #17212b; color: #9fb2c4; border: 2px solid transparent; }
-#menu .pick button.on { border-color: #2f8fe6; color: #fff; background: #1b2f45; }
-#menu .pick small { display: block; font-weight: 400; font-size: 11px; }
-#menu small { color: #6f8294; line-height: 1.6; }
-#status { color: #ff6b5e; min-height: 1.2em; font-size: 14px; }
+#logo h1 {
+  position: relative; margin: 0; font-size: 42px; font-weight: 900; letter-spacing: 10px; margin-right: -10px;
+  background: linear-gradient(180deg, #fff 30%, #8fb6dc); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+#menu p { margin: 0 0 4px; color: #9fb2c4; font-size: 14px; }
+#menu input, #menu > button {
+  width: min(280px, 82vw); padding: 13px 14px; border-radius: 12px; font-size: 16px; font-family: inherit;
+}
+#menu input {
+  border: 1px solid #2b3d4e; background: rgba(8, 14, 20, .8); color: #fff; text-align: center;
+  -webkit-user-select: text; user-select: text; outline: none;
+}
+#menu input:focus { border-color: #2f8fe6; }
+#menu > button { border: 0; color: #fff; font-weight: 800; transition: transform .08s; }
+#menu > button:active { transform: scale(.97); }
+#play { background: linear-gradient(180deg, #45a4ff, #2476d2); box-shadow: 0 6px 20px rgba(47, 143, 230, .35); }
+#menu > button.alt { background: #1c2733; color: #cfe0f0; border: 1px solid #2b3d4e; font-weight: 600; padding: 10px 14px; }
+.pick { display: flex; gap: 6px; width: min(280px, 82vw); }
+#menu .pick button {
+  flex: 1; padding: 9px 2px; border-radius: 12px; font-size: 14px; font-weight: 700;
+  background: #121b24; color: #8fa3b5; border: 2px solid #1d2a37; transition: all .12s;
+}
+#menu .pick button.on { border-color: #2f8fe6; color: #fff; background: #17304a; box-shadow: 0 0 14px rgba(47, 143, 230, .3); }
+#menu .pick small { display: block; margin-top: 2px; font-weight: 400; font-size: 10px; opacity: .8; }
+#menu > small { color: #6f8294; line-height: 1.6; font-size: 12px; max-width: 560px; }
+#status { color: var(--enemy); min-height: 1.2em; font-size: 14px; }
 
-@media (orientation: portrait) {
-  #stats { top: calc(48px + env(safe-area-inset-top)); }
-  #feed { top: calc(88px + env(safe-area-inset-top)); }
-}
-
-/* 가로로 든 휴대폰: 메뉴를 압축하고, 넘치면 스크롤 */
-#menu { overflow-y: auto; touch-action: pan-y; justify-content: safe center; }
-@media (max-height: 480px) {
-  #menu { gap: 7px; padding: 10px 16px; }
-  #menu h1 { font-size: 24px; letter-spacing: 6px; }
-  #menu p { display: none; }
-  #menu input, #menu button { padding: 9px 12px; font-size: 15px; }
-  #menu .pick button { padding: 6px 4px; }
-  #menu small { font-size: 11px; line-height: 1.4; }
-}
-
-#gear {
-  pointer-events: auto; position: absolute; top: calc(6px + env(safe-area-inset-top)); right: calc(50px + env(safe-area-inset-right));
-  width: 36px; height: 36px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, .5); font-size: 17px; padding: 0;
-}
-
-/* 설정 창 */
+/* ───────── 설정 창 ───────── */
 #settings {
   position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: safe center;
   background: rgba(0, 0, 0, .7); overflow-y: auto; touch-action: pan-y; padding: 12px;
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
 }
 #settings[hidden] { display: none; }
 #settings .panel {
-  width: min(360px, 100%); margin: auto; padding: 16px 18px; border-radius: 14px; background: #121b24;
-  display: flex; flex-direction: column; gap: 4px;
+  width: min(360px, 100%); margin: auto; padding: 16px 18px; border-radius: 16px; background: #121b24;
+  border: 1px solid #22303e; display: flex; flex-direction: column; gap: 4px; animation: pop .2s ease-out;
 }
 #settings h2 { margin: 0 0 6px; font-size: 18px; }
 #settings label {
@@ -130,23 +227,45 @@ html, body {
   border-bottom: 1px solid #1f2c39; font-size: 15px;
 }
 #settings label small { display: block; color: #6f8294; font-size: 11px; }
-#settings label b { color: #5ab4ff; font-weight: 600; margin-left: 6px; }
+#settings label b { color: var(--ally); font-weight: 600; margin-left: 6px; }
 #settings input[type='checkbox'] { width: 24px; height: 24px; accent-color: #2f8fe6; flex: none; }
 #settings input[type='range'] { width: 46%; accent-color: #2f8fe6; flex: none; }
 #settings button {
   margin-top: 10px; padding: 11px; border: 0; border-radius: 10px; background: #2f8fe6; color: #fff;
-  font-weight: 700; font-size: 15px; font-family: inherit;
+  font-weight: 700; font-size: 15px;
 }
 #settings button.alt { background: #3a2327; color: #ff9d94; }
+#settings button[hidden] { display: none; }
 
-/* 왼손 모드: 스킬 버튼을 왼쪽으로 */
-body.lefty #attack { right: auto; left: calc(22px + env(safe-area-inset-left)); }
-body.lefty #roll { right: auto; left: calc(122px + env(safe-area-inset-left)); }
-body.lefty #flare { right: auto; left: calc(34px + env(safe-area-inset-left)); }
+/* ───────── 애니메이션 ───────── */
+@keyframes pulse { 50% { opacity: .55; } }
+@keyframes slideIn { from { opacity: 0; transform: translateX(20px); } }
+@keyframes pop { from { opacity: 0; scale: .8; } }
+@keyframes toast {
+  0% { opacity: 0; transform: translateX(-50%) scale(1.7); }
+  15% { opacity: 1; transform: translateX(-50%) scale(1); }
+  75% { opacity: 1; transform: translateX(-50%) scale(1); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-14px) scale(.95); }
+}
+@keyframes sweep { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  #logo i, #score .time.low, #gasText { animation: none; }
+}
 
-/* 독구름 안에 있을 때 화면 가장자리가 초록으로 물든다 */
-#gas { position: absolute; inset: 0; opacity: 0; box-shadow: inset 0 0 90px 30px rgba(110, 230, 60, .85); }
-#gasText {
-  position: absolute; top: 20%; left: 50%; transform: translateX(-50%); padding: 6px 16px; border-radius: 999px;
-  background: rgba(20, 60, 10, .8); color: #c8ff8a; font-weight: 700; font-size: 18px; white-space: nowrap;
+/* ───────── 화면 방향별 조정 ───────── */
+@media (orientation: portrait) {
+  #score { font-size: 12px; gap: 8px; padding: 5px 10px; top: calc(50px + env(safe-area-inset-top)); }
+  #stats { top: calc(92px + env(safe-area-inset-top)); }
+  #feed { top: calc(92px + env(safe-area-inset-top)); }
+}
+/* 가로로 든 휴대폰: 메뉴를 압축 */
+@media (max-height: 480px) {
+  #menu { gap: 6px; padding: 8px 16px; }
+  #logo h1 { font-size: 24px; letter-spacing: 6px; margin-right: -6px; }
+  #logo i { height: 50px; }
+  #menu p { display: none; }
+  #menu input, #menu > button { padding: 8px 12px; font-size: 15px; }
+  #menu > button.alt { padding: 7px 12px; }
+  #menu .pick button { padding: 5px 2px; }
+  #menu > small { font-size: 10.5px; line-height: 1.4; }
 }
