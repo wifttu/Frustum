@@ -94,7 +94,7 @@ wss.on('connection', (ws) => {
       player = game.addPlayer(name, (msg) => {
         // 느린 클라이언트에 스냅샷이 쌓이지 않게 한다
         if (ws.readyState === ws.OPEN && ws.bufferedAmount < 64 * 1024) ws.send(msg);
-      });
+      }, false, typeof m.c === 'string' ? m.c : null);
       game.balanceBots();
       if (wasEmpty) game.newRound(); // 비어 있던 방은 새 라운드로 시작
       ws.send(JSON.stringify({ t: 'w', id: player.id, team: player.team, ...game.info() }));

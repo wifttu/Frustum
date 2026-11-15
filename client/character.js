@@ -45,7 +45,65 @@ const PIVOT_Y = 0.62; // 구를 때 회전 중심
 const BODY_SCALE = 1.35; // 위에서 내려다보는 카메라에서 잘 보이도록 몸만 키운다 (판정 크기는 그대로)
 
 // 팀 색(후드, 망토, 소매)을 입힌 부위별 지오메트리
-function buildParts(teamHex) {
+// 캐릭터별 장식: 머리 위/얼굴에 붙는 소품과 몸집. 팀 색(후드, 망토)은 공통이라 아군/적 구분은 그대로다.
+function accessories(charId) {
+  const H = HEAD_Y;
+  const yellow = rgb(0xffd23a);
+  const brown = rgb(0x8a5a34);
+  const white = rgb(0xf4f4f0);
+  const dark = rgb(0x24242c);
+  const leaf = rgb(0x58b84a);
+  switch (charId) {
+    case 'runner': // 번개: 노란 머리띠와 번개 깃
+      return [
+        [new THREE.TorusGeometry(0.385, 0.045, 6, 18).rotateX(Math.PI / 2).translate(0, H + 0.12, 0), yellow],
+        [new THREE.ConeGeometry(0.09, 0.42, 4).rotateX(-0.9).translate(0.2, H + 0.42, -0.12), yellow],
+        [new THREE.ConeGeometry(0.09, 0.42, 4).rotateX(-0.9).translate(-0.2, H + 0.42, -0.12), yellow],
+      ];
+    case 'bear': // 곰돌이: 둥근 귀
+      return [
+        [new THREE.SphereGeometry(0.15, 10, 8).translate(0.27, H + 0.34, 0), brown],
+        [new THREE.SphereGeometry(0.15, 10, 8).translate(-0.27, H + 0.34, 0), brown],
+        [new THREE.SphereGeometry(0.08, 8, 6).translate(0.27, H + 0.35, 0.08), rgb(0xe8b890)],
+        [new THREE.SphereGeometry(0.08, 8, 6).translate(-0.27, H + 0.35, 0.08), rgb(0xe8b890)],
+        [new THREE.SphereGeometry(0.07, 8, 6).translate(0, H - 0.05, 0.35), brown],
+      ];
+    case 'owl': // 올빼미: 큰 고글과 깃털 뿔
+      return [
+        [new THREE.CylinderGeometry(0.12, 0.12, 0.08, 12).rotateX(Math.PI / 2).translate(0.14, H + 0.02, 0.33), white],
+        [new THREE.CylinderGeometry(0.12, 0.12, 0.08, 12).rotateX(Math.PI / 2).translate(-0.14, H + 0.02, 0.33), white],
+        [new THREE.CylinderGeometry(0.06, 0.06, 0.1, 10).rotateX(Math.PI / 2).translate(0.14, H + 0.02, 0.35), dark],
+        [new THREE.CylinderGeometry(0.06, 0.06, 0.1, 10).rotateX(Math.PI / 2).translate(-0.14, H + 0.02, 0.35), dark],
+        [new THREE.ConeGeometry(0.08, 0.3, 5).rotateZ(-0.5).translate(0.3, H + 0.38, 0.05), brown],
+        [new THREE.ConeGeometry(0.08, 0.3, 5).rotateZ(0.5).translate(-0.3, H + 0.38, 0.05), brown],
+      ];
+    case 'collector': // 반디: 머리 위 등불
+      return [
+        [new THREE.CylinderGeometry(0.02, 0.02, 0.4, 5).translate(0, H + 0.55, 0), dark],
+        [new THREE.SphereGeometry(0.12, 10, 8).translate(0, H + 0.8, 0), [3.2, 2.8, 0.9]],
+        [new THREE.CylinderGeometry(0.14, 0.14, 0.04, 8).translate(0, H + 0.68, 0), brown],
+      ];
+    case 'ninja': // 그림자: 얼굴 가리개와 긴 머리띠
+      return [
+        [new THREE.BoxGeometry(0.5, 0.17, 0.2).translate(0, H - 0.1, 0.26), dark],
+        [new THREE.TorusGeometry(0.385, 0.04, 6, 18).rotateX(Math.PI / 2).translate(0, H + 0.14, 0), dark],
+        [new THREE.BoxGeometry(0.08, 0.04, 0.45).rotateX(0.5).translate(0.1, H + 0.02, -0.55), dark],
+        [new THREE.BoxGeometry(0.08, 0.04, 0.38).rotateX(0.7).translate(-0.08, H - 0.02, -0.5), dark],
+      ];
+    case 'healer': // 약초꾼: 머리 위 새싹
+      return [
+        [new THREE.CylinderGeometry(0.025, 0.025, 0.22, 5).translate(0, H + 0.48, 0), leaf],
+        [new THREE.SphereGeometry(0.14, 8, 6).scale(1.3, 0.35, 0.8).rotateZ(0.5).translate(0.14, H + 0.64, 0), leaf],
+        [new THREE.SphereGeometry(0.14, 8, 6).scale(1.3, 0.35, 0.8).rotateZ(-0.5).translate(-0.14, H + 0.64, 0), leaf],
+        [new THREE.BoxGeometry(0.2, 0.2, 0.05).translate(0, 0.62, -0.39), white],
+      ];
+    default:
+      return [];
+  }
+}
+const BODY_WIDTH = { bear: 1.18, runner: 0.92 }; // 몸집 (그 외 1)
+
+function buildParts(teamHex, charId) {
   const team = rgb(teamHex);
   const dark = shade(team, 0.72);
   const torso = merge([
@@ -63,7 +121,10 @@ function buildParts(teamHex) {
     [new THREE.ConeGeometry(0.15, 0.34, 10).rotateX(-1.2).translate(0, HEAD_Y + 0.28, -0.3), dark],
     [new THREE.TorusGeometry(0.2, 0.06, 6, 14).rotateX(Math.PI / 2).translate(0, 0.86, 0), dark], // 목도리
     [new THREE.BoxGeometry(0.3, 0.3, 0.16).translate(0, 0.62, -0.3), PACK], // 배낭
+    ...accessories(charId),
   ]);
+  const bw = BODY_WIDTH[charId];
+  if (bw) torso.scale(bw, 1, bw);
   const leg = merge([
     [new THREE.CapsuleGeometry(0.1, 0.1, 3, 8).translate(0, -0.14, 0), PANTS],
     [new THREE.SphereGeometry(0.12, 8, 6).scale(1, 0.75, 1.35).translate(0, -0.27, 0.04), BOOT],
@@ -118,7 +179,6 @@ export class Characters {
     this.parts = {};
     this.ring = {};
     for (const [kind, color] of Object.entries(COLORS)) {
-      this.parts[kind] = buildParts(color);
       this.ring[kind] = mask.apply(
         new THREE.MeshBasicMaterial({ color, transparent: true, opacity: kind === 'self' ? 0.45 : 0.8, depthWrite: false }),
       );
@@ -143,7 +203,14 @@ export class Characters {
     this.vestGeo = new THREE.SphereGeometry(1.05, 18, 12).scale(1, 0.95, 1).translate(0, 0.95, 0);
   }
 
-  make(kind) {
+  // 팀 종류 × 캐릭터 조합별 지오메트리 (처음 쓸 때 한 번 만든다)
+  partsFor(kind, char) {
+    const key = `${kind}:${char}`;
+    if (!this.parts[key]) this.parts[key] = buildParts(COLORS[kind], char);
+    return this.parts[key];
+  }
+
+  make(kind, char = 'explorer') {
     const root = new THREE.Group();
     const pose = new THREE.Group(); // 구르기/들썩임이 적용되는 그룹
     const inner = new THREE.Group();
@@ -152,7 +219,7 @@ export class Characters {
     pose.add(inner);
 
     const m = this.bodyMat;
-    const g = this.parts[kind];
+    const g = this.partsFor(kind, char);
     const torso = new THREE.Mesh(g.torso, m);
     const legL = new THREE.Mesh(g.leg, m);
     const legR = new THREE.Mesh(g.leg, m);
@@ -179,7 +246,7 @@ export class Characters {
       root.add(aim);
     }
     root.userData = {
-      kind, body, pose, torso, legL, legR, armL, armR, ring, beam, aim, vest, cloaked: false,
+      kind, char, body, pose, torso, legL, legR, armL, armR, ring, beam, aim, vest, cloaked: false,
       phase: Math.random() * 6, seed: Math.random() * 6, atk: 0, spawn: 0, speed: 0, lx: null, lz: 0,
     };
     // 그룹 단위로 컬링하므로 자식의 자동 컬링은 끈다
@@ -187,11 +254,12 @@ export class Characters {
     return root;
   }
 
-  setKind(root, kind) {
+  setKind(root, kind, char = root.userData.char) {
     const u = root.userData;
-    if (u.kind === kind) return;
+    if (u.kind === kind && u.char === char) return;
     u.kind = kind;
-    const g = this.parts[kind];
+    u.char = char;
+    const g = this.partsFor(kind, char);
     u.torso.geometry = g.torso;
     u.legL.geometry = u.legR.geometry = g.leg;
     u.armL.geometry = g.armL;

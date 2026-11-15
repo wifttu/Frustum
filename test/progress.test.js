@@ -128,3 +128,48 @@ test('강화 카드는 최대 단계를 넘지 않는다', () => {
   assert.equal(xpToNext(1), 50);
   assert.ok(statsOf({ cd: 3 }, CFG).cooldown < CFG.ATTACK_COOLDOWN * 0.6);
 });
+
+test('캐릭터: 저마다 기본 능력이 다르고, 서버 판정에 반영된다', async () => {
+  const { CHARACTERS } = await import('../shared/progress.js');
+  const { game, place } = setup();
+  game.fireflies = [];
+  const bear = game.addPlayer('Bear', () => {}, false, 'bear');
+  const owl = game.addPlayer('Owl', () => {}, false, 'owl');
+  const bad = game.addPlayer('X', () => {}, false, '__proto__');
+  assert.equal(bad.char, 'explorer');
+  assert.equal(bear.hp, 150);
+  assert.ok(bear.spd < 1);
+  // 올빼미는 기본 사거리 밖(7.5m)을 맞힌다
+  place(owl, 0, 0, 0);
+  place(bear, 0, 7.5, 0);
+  place(bad, 20, 20, 0);
+  game.attack(owl);
+  assert.equal(bear.hp, 150 - Math.round(PROGRESS.BASE_DAMAGE * 1.1));
+  assert.ok(Object.values(CHARACTERS).every((c) => c.name && c.desc && c.price >= 0));
+});
+
+test('캐릭터: 그림자는 구르면 잠깐 안 보이고, 반디는 경험치를 더 받는다', () => {
+  const { game, place } = setup();
+  const ninja = game.addPlayer('N', () => {}, false, 'ninja');
+  const col = game.addPlayer('C', () => {}, false, 'collector');
+  place(ninja, 0, 6, Math.PI);
+  place(col, 0, 0, 0);
+  assert.equal(game.computeVisibility().get(col.team).has(ninja.id), true);
+  game.queueInput(ninja.id, [1, 0, 0, Math.PI, 0, 1, 0]);
+  game.step();
+  assert.ok(ninja.cloakT > 1);
+  assert.equal(game.computeVisibility().get(col.team).has(ninja.id), false);
+  game.gainXp(col, 20);
+  assert.equal(col.xp, 25);
+});
+
+test('하트: 체력을 회복한다', () => {
+  const { game, add, place } = setup({ items: true });
+  const a = add('A');
+  add('B');
+  place(a, 0, 0, 0);
+  a.hp = 30;
+  game.items = [{ id: 1, type: 'heart', x: 0.2, z: 0 }];
+  game.step();
+  assert.ok(a.hp >= 70 && a.hp < 71);
+});

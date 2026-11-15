@@ -8,7 +8,7 @@ import { Input } from './input.js';
 import { Sfx } from './audio.js';
 import { DEFAULT_SERVER } from './settings.js';
 import { prefs, savePrefs } from './prefs.js';
-import { PROGRESS, UPGRADES, statsOf, xpToNext } from './shared/progress.js';
+import { CHARACTERS, PROGRESS, UPGRADES, charOf, statsOf, xpToNext } from './shared/progress.js';
 import { Characters, DeathFx } from './character.js';
 import { Minimap } from './minimap.js';
 import { buildFloorTexture, buildItemGeos, buildWalls, buildWater } from './world.js';
@@ -153,8 +153,8 @@ function syncItems(list) {
 // 캐릭터(모델 + 애니메이션)와 처치 이펙트
 const chars = new Characters(mask);
 const deathFx = new DeathFx(scene);
-const makePlayerMesh = (kind) => chars.make(kind);
-const setKind = (mesh, kind) => chars.setKind(mesh, kind);
+const makePlayerMesh = (kind, char) => chars.make(kind, charOf(char));
+const setKind = (mesh, kind, char) => chars.setKind(mesh, kind, charOf(char));
 
 const geo = {
   flare: new THREE.SphereGeometry(0.16, 8, 6).translate(0, 0.16, 0),
@@ -301,7 +301,7 @@ function connect(name, gameMode, gameRule) {
     ws = new WebSocket(wsUrl());
     ws.onopen = () => {
       opened = true;
-      ws.send(JSON.stringify({ t: 'j', n: name, m: gameMode, r: gameRule }));
+      ws.send(JSON.stringify({ t: 'j', n: name, m: gameMode, r: gameRule, c: profile.char }));
     };
     ws.onmessage = (ev) => onMessage(JSON.parse(ev.data));
     ws.onclose = () => {
@@ -324,14 +324,15 @@ async function startOffline(name, gameMode, gameRule) {
   const { Game } = await import('./server/game.js');
   const game = new Game({ mode: gameMode, rule: gameRule });
   game.balanceBots();
-  const player = game.addPlayer(name, (msg) => onMessage(JSON.parse(msg))); // 봇 한 자리를 이어받는다
+  const player = game.addPlayer(name, (msg) => onMessage(JSON.parse(msg)), false, profile.char); // 봇 한 자리를 이어받는다
   offline = { game, player };
   onMessage({ t: 'w', id: player.id, team: player.team, ...game.info() });
 }
 
 function onMessage(m) {
   if (m.t === 'w') {
-    Object.assign(prog, { hp: PROGRESS.BASE_HP, xp: 0, level: 1, next: xpToNext(1), ups: {}, choices: null, more: 0, stats: statsOf({}, CFG), earned: 0 });
+    Object.assign(prog, { hp: PROGRESS.BASE_HP, xp: 0, level: 1, next: xpToNext(1), ups: {}, choices: null, more: 0, stats: statsOf({}, CFG, profile.char), earned: 0 });
+    setKind(selfMesh, 'self', profile.char);
     applyMyStats();
     drawChoices();
     myId = m.id;
@@ -347,8 +348,9 @@ function onMessage(m) {
     $('status').textContent = '방이 가득 찼습니다.';
   } else if (m.t === 'r') {
     roster.clear();
-    for (const [id, name, team, score, al, wins, level] of m.p) roster.set(id, { name, team, score, alive: !!al, wins, level: level || 1 });
-    for (const [id, e] of ents) setKind(e.mesh, kindOf(id));
+    for (const [id, name, team, score, al, wins, level, char] of m.p) roster.set(id, { name, team, score, alive: !!al, wins, level: level || 1, char });
+    for (const [id, e] of ents) setKind(e.mesh, kindOf(id), roster.get(id)?.char);
+    drawBoard();
     drawScore();
   } else if (m.t === 'k') {
     for (const [k, v] of m.l) {
@@ -409,7 +411,7 @@ function onMessage(m) {
     applyMyStats();
     drawChoices();
     if (leveled) {
-      toast('레벨 업!', `Lv ${m.lv} · 강화를 골라 주세요`, 'level');
+      popNumber(view.x, view.z, 'LEVEL UP ⬆', 'lvup');
       sfx.levelUp();
       deathFx.spawn(view.x, view.z, 'level');
       buzz(30);
@@ -471,7 +473,7 @@ function onSnapshot(m) {
   for (const [id, ex, ez, eyaw, flags, hpPct, lv] of m.e) {
     let e = ents.get(id);
     if (!e) {
-      e = { mesh: makePlayerMesh(kindOf(id)), buf: [], x: ex, z: ez, yaw: eyaw, flags: 0, stamp: 0, rollP: -1, label: null };
+      e = { mesh: makePlayerMesh(kindOf(id), roster.get(id)?.char), buf: [], x: ex, z: ez, yaw: eyaw, flags: 0, stamp: 0, rollP: -1, label: null };
       e.mesh.position.set(ex, 0, ez);
       scene.add(e.mesh);
       ents.set(id, e);
@@ -516,10 +518,11 @@ function removeEnt(id) {
 
 // ───────────────────────── HUD ─────────────────────────
 function drawScore() {
-  const me = roster.get(myId);
   const time = `${Math.floor(roundLeft / 60)}:${String(roundLeft % 60).padStart(2, '0')}`;
-  let left;
-  let right = `킬 ${me?.score ?? 0} · ${me?.wins ?? 0}승`;
+  const chip = $('timeChip');
+  if (chip.textContent !== time) chip.textContent = time;
+  chip.classList.toggle('low', roundLeft <= 10);
+  let info = '';
   if (rule === 'survival') {
     let aliveN = 0;
     const teams = new Set();
@@ -528,21 +531,40 @@ function drawScore() {
       aliveN++;
       teams.add(p.team);
     }
-    left = mode === 'ffa' ? `생존 ${aliveN}명` : `생존 ${teams.size}팀 · ${aliveN}명`;
-    if (zoneTarget) left += ` · 구역 ${Math.round(zoneTarget * 2)}m`;
-  } else {
-    // 데스매치: 내(우리 팀) 킬과 가장 앞선 상대의 킬
+    info = mode === 'ffa' ? `생존 ${aliveN}명` : `생존 ${teams.size}팀 · ${aliveN}명`;
+    if (zoneTarget) info += ` · 구역 ${Math.round(zoneTarget * 2)}m`;
+  } else if (target) info = `목표 ${target}킬`;
+  if (mode !== 'ffa' && rule !== 'survival') {
     const kills = new Map();
     for (const p of roster.values()) kills.set(p.team, (kills.get(p.team) || 0) + p.score);
-    const mine = kills.get(myTeam) || 0;
     let top = 0;
     for (const [t, k] of kills) if (t !== myTeam) top = Math.max(top, k);
-    left = `${mode === 'ffa' ? '나' : '우리 팀'} ${mine} : ${top} 상대 1위`;
-    if (target) left += ` · 목표 ${target}`;
-    if (mode === 'ffa') right = `${me?.wins ?? 0}승`;
+    info = `우리 팀 ${kills.get(myTeam) || 0} : ${top} 상대${info ? ' · ' + info : ''}`;
   }
-  $('score').innerHTML =
-    `<span class="ally">${left}</span><span class="time${roundLeft <= 10 ? ' low' : ''}">${time}</span><span class="me">${right}</span>`;
+  const el = $('score');
+  if (el.textContent !== info) el.textContent = info;
+  el.hidden = !info;
+}
+
+// 순위표: 점수 = 킬 x 100 + (레벨 - 1) x 20. 위치 정보는 없다.
+const pointsOf = (p) => p.score * 100 + (p.level - 1) * 20;
+function drawBoard() {
+  const rows = [...roster.entries()].sort((a, b) => pointsOf(b[1]) - pointsOf(a[1]));
+  const myRank = rows.findIndex(([id]) => id === myId);
+  const show = rows.slice(0, 4).map((r, i) => [i, r]);
+  if (myRank >= 4) show.push([myRank, rows[myRank]]);
+  $('board').replaceChildren(
+    ...show.map(([i, [id, p]]) => {
+      const row = document.createElement('div');
+      row.className = id === myId ? 'me' : p.team === myTeam ? 'ally' : '';
+      for (const text of [`#${i + 1}`, p.name, pointsOf(p)]) {
+        const c = document.createElement('span');
+        c.textContent = text;
+        row.append(c);
+      }
+      return row;
+    }),
+  );
 }
 function addFeed(k, v) {
   const row = document.createElement('div');
@@ -654,8 +676,15 @@ function drawStatus() {
   const maxed = prog.level >= PROGRESS.MAX_LEVEL;
   $('xpFill').style.transform = `scaleX(${maxed ? 1 : Math.min(1, prog.xp / prog.next).toFixed(3)})`;
   $('xpText').textContent = maxed ? 'MAX' : `${prog.xp} / ${prog.next}`;
-  $('lvBadge').textContent = prog.level;
-  $('statusName').textContent = roster.get(myId)?.name ?? '';
+  $('lvBadge').textContent = `LV ${prog.level}`;
+  // 내 머리 위 체력바
+  const bar = $('selfBar');
+  bar.style.display = alive ? '' : 'none';
+  if (alive) {
+    projV.set(view.x, 2.45, view.z).project(camera);
+    bar.style.transform = `translate(${((projV.x + 1) * 0.5 * innerWidth).toFixed(1)}px, ${((1 - projV.y) * 0.5 * innerHeight).toFixed(1)}px) translate(-50%, -100%)`;
+    bar.firstElementChild.firstElementChild.style.transform = `scaleX(${hpR.toFixed(3)})`;
+  }
 }
 
 // 떠오르는 피해 숫자
@@ -715,12 +744,22 @@ function drawFireflies(t) {
 // 모험가 레벨: 기기에 쌓이는 누적 경험치
 const PROFILE_KEY = 'frustum.profile';
 const profile = (() => {
+  const base = { xp: 0, coins: 0, owned: ['explorer'], char: 'explorer' };
   try {
-    return { xp: 0, ...JSON.parse(localStorage.getItem(PROFILE_KEY)) };
+    const p = { ...base, ...JSON.parse(localStorage.getItem(PROFILE_KEY)) };
+    if (!Array.isArray(p.owned) || !p.owned.includes('explorer')) p.owned = ['explorer'];
+    if (!p.owned.includes(p.char) || charOf(p.char) !== p.char) p.char = 'explorer';
+    return p;
   } catch {
-    return { xp: 0 };
+    return base;
   }
 })();
+function saveProfile() {
+  try {
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+  } catch {}
+}
+const COIN_PER_XP = 0.25; // 경험치 4 = 코인 1
 const rankNeed = (lv) => 200 + (lv - 1) * 150;
 function rankOf(xp) {
   let lv = 1;
@@ -730,9 +769,8 @@ function rankOf(xp) {
 function addProfileXp(n) {
   if (!(n > 0)) return;
   profile.xp += n;
-  try {
-    localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
-  } catch {}
+  profile.coins += n * COIN_PER_XP;
+  saveProfile();
   drawProfile();
 }
 function drawProfile() {
@@ -740,10 +778,61 @@ function drawProfile() {
   $('rankLv').textContent = `모험가 Lv ${r.lv}`;
   $('rankFill').style.transform = `scaleX(${(r.xp / r.need).toFixed(3)})`;
   $('rankText').textContent = `${r.xp} / ${r.need}`;
+  $('coins').textContent = `🪙 ${Math.floor(profile.coins)}`;
 }
+
+// 캐릭터 상점: 코인으로 사고, 가진 것 중에서 고른다
+function drawShop() {
+  $('shopCoins').textContent = `🪙 ${Math.floor(profile.coins)}`;
+  $('shopList').replaceChildren(
+    ...Object.entries(CHARACTERS).map(([id, c]) => {
+      const owned = profile.owned.includes(id);
+      const row = document.createElement('div');
+      row.className = 'char' + (profile.char === id ? ' on' : '');
+      row.innerHTML = '<i></i><div><b></b><span></span></div><button></button>';
+      row.querySelector('i').textContent = c.icon;
+      row.querySelector('b').textContent = c.name;
+      row.querySelector('span').textContent = c.desc;
+      const btn = row.querySelector('button');
+      if (profile.char === id) {
+        btn.textContent = '사용 중';
+        btn.disabled = true;
+      } else if (owned) {
+        btn.textContent = '선택';
+        btn.addEventListener('click', () => {
+          profile.char = id;
+          saveProfile();
+          drawShop();
+        });
+      } else {
+        btn.textContent = `🪙 ${c.price}`;
+        btn.className = 'buy';
+        btn.disabled = profile.coins < c.price;
+        btn.addEventListener('click', () => {
+          if (profile.coins < c.price) return;
+          profile.coins -= c.price;
+          profile.owned.push(id);
+          profile.char = id;
+          saveProfile();
+          sfx.pickup();
+          drawShop();
+          drawProfile();
+        });
+      }
+      return row;
+    }),
+  );
+}
+$('openShop').addEventListener('click', () => {
+  drawShop();
+  $('shop').hidden = false;
+});
+$('closeShop').addEventListener('click', () => ($('shop').hidden = true));
 
 // 버프 칩: 남은 시간이 있는 효과만 보여준다
 const BUFF_ICONS = { sneakers: '👟', vest: '🛡️', cloak: '👻' };
+// 내 머리 위 체력바 (다른 플레이어 이름표와 같은 모양)
+$('labels').insertAdjacentHTML('beforeend', '<div id="selfBar" class="self"><s><u></u></s></div>');
 let buffKey = '';
 function drawBuffs() {
   const list = [];
@@ -1018,7 +1107,7 @@ function frame(now) {
     17 * prefs.zoom + (Math.random() - 0.5) * sk,
     view.z - c * 9 * prefs.zoom + (Math.random() - 0.5) * sk,
   );
-  camera.lookAt(view.x + s * 6 * prefs.zoom, 0, view.z + c * 6 * prefs.zoom);
+  camera.lookAt(view.x + s * 4.5 * prefs.zoom, 0, view.z + c * 4.5 * prefs.zoom);
   camera.updateMatrixWorld();
   projView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
   frustum.setFromProjectionMatrix(projView);
@@ -1136,12 +1225,16 @@ function bindPick(table, key, set) {
 bindPick(MODES, 'frustum.mode', (v) => (menuMode = v));
 bindPick(RULE_BTNS, 'frustum.rule', (v) => (menuRule = v));
 drawPicks();
+// 가로 화면 고정을 시도한다 (지원하는 브라우저/설치형 앱에서만 동작)
+const lockLandscape = () => screen.orientation?.lock?.('landscape')?.catch?.(() => {});
 $('play').addEventListener('click', () => {
+  lockLandscape();
   const name = $('name').value.trim() || 'Player';
   remember(name);
   startOffline(name, menuMode, menuRule).catch((e) => ($('status').textContent = '시작 실패: ' + e.message));
 });
 $('online').addEventListener('click', () => {
+  lockLandscape();
   const name = $('name').value.trim() || 'Player';
   remember(name);
   connect(name, menuMode, menuRule);
@@ -1209,7 +1302,7 @@ else if (params.has('auto')) connect($('name').value || 'Player', menuMode, menu
 
 // 디버그/자동 테스트용 핸들
 window.__frustum = {
-  ents, roster, sim, view, stats, mask, input, sfx, prefs, buffs, itemMeshes,
+  ents, roster, sim, view, stats, mask, input, sfx, prefs, buffs, itemMeshes, profile, prog, drawShop,
   get map() { return curMap.id; },
   get alive() { return alive; },
   get myId() { return myId; },
