@@ -91,6 +91,36 @@ export class VisionMask {
       this.fans.push(mesh);
     }
 
+    // 시야에 걸린 소품(벽)은 통째로 밝힌다: 광선이 닿은 벽의 바닥 면적을 마스크에 칠한다.
+    // 벽은 고정 지형이라 숨길 정보가 아니고, 이렇게 해야 지붕이나 나무 꼭대기까지 색이 보인다.
+    // 맵을 두르는 긴 외곽 벽(처음 4개)은 제외한다.
+    {
+      const geo = new THREE.BufferGeometry();
+      const pos = new THREE.BufferAttribute(new Float32Array(walls.length * 12), 3);
+      pos.setUsage(THREE.DynamicDrawUsage);
+      geo.setAttribute('position', pos);
+      const idx = new Uint16Array(walls.length * 6);
+      for (let i = 0; i < walls.length; i++) idx.set([0, 1, 2, 0, 2, 3].map((v) => v + i * 4), i * 6);
+      geo.setIndex(new THREE.BufferAttribute(idx, 1));
+      this.props = new THREE.Mesh(
+        geo,
+        new THREE.ShaderMaterial({
+          vertexShader: fanVert,
+          fragmentShader: 'void main() { gl_FragColor = vec4(1.0); }',
+          uniforms: { uHalf: { value: mapSize / 2 } },
+          depthTest: false,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+          blending: THREE.CustomBlending,
+          blendEquation: THREE.MaxEquation,
+          blendSrc: THREE.OneFactor,
+          blendDst: THREE.OneFactor,
+        }),
+      );
+      this.props.frustumCulled = false;
+      this.scene.add(this.props);
+    }
+
     this.blurScene = new THREE.Scene();
     const blur = new THREE.Mesh(
       new THREE.PlaneGeometry(2, 2),
@@ -151,6 +181,22 @@ export class VisionMask {
       mesh.material.uniforms.uRange.value = view.VIEW_RANGE;
     }
 
+    // 보인 소품의 바닥 면적 (조금 넓혀서 처마나 나뭇잎까지 덮는다)
+    {
+      const P = this.props.geometry.attributes.position.array;
+      let n = 0;
+      for (let i = 4; i < this.walls.length; i++) {
+        if (!seen[i]) continue;
+        const w = this.walls[i];
+        const m = 0.45;
+        P.set([w.minX - m, 0, w.minZ - m, w.maxX + m, 0, w.minZ - m, w.maxX + m, 0, w.maxZ + m, w.minX - m, 0, w.maxZ + m], n * 12);
+        n++;
+      }
+      this.props.geometry.attributes.position.needsUpdate = true;
+      this.props.geometry.setDrawRange(0, n * 6);
+      this.props.visible = n > 0;
+    }
+
     const prevTarget = renderer.getRenderTarget();
     renderer.setRenderTarget(this.rtA);
     renderer.clear();
@@ -184,7 +230,8 @@ export class VisionMask {
         .replace('#include <common>', '#include <common>\nvarying vec2 vMaskUv;\nuniform sampler2D uMask;\nuniform float uDark;')
         .replace(
           '#include <dithering_fragment>',
-          `gl_FragColor.rgb *= mix(uDark, 1.0, texture2D(uMask, vMaskUv).r);
+          `// 시야 안: 따뜻한 손전등 빛, 시야 밖: 푸른 달빛 (uDark 가 0 이면 완전한 어둠)
+          gl_FragColor.rgb *= mix(uDark * vec3(0.55, 0.75, 1.25), vec3(1.08, 1.0, 0.86), texture2D(uMask, vMaskUv).r);
           #include <dithering_fragment>`,
         );
     };

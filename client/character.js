@@ -5,7 +5,7 @@ import { CFG } from './shared/config.js';
 
 // 색은 정점에 직접 굽는다 (머티리얼 색은 흰색). 후드/망토만 팀 색이고 나머지는 공통.
 // 색은 sRGB 16진수로 적고 렌더링용 선형 값으로 바꿔 쓴다 (그대로 넣으면 물 빠진 색이 된다)
-const rgb = (hex) => new THREE.Color(hex).toArray();
+export const rgb = (hex) => new THREE.Color(hex).toArray();
 const SKIN = rgb(0xffcfa8);
 const CHEEK = rgb(0xff8f86);
 const EYE = rgb(0x1c1418);
@@ -14,10 +14,10 @@ const BOOT = rgb(0x3a271c);
 const PACK = rgb(0xa06c3c);
 const METAL = rgb(0x50545c);
 const GLOW = [3, 3, 2.4]; // 손전등 렌즈: 밝게 빛나 보이게
-const shade = (c, k) => c.map((v) => v * k);
+export const shade = (c, k) => c.map((v) => v * k);
 
 // 여러 지오메트리를 정점 색과 함께 하나로 합친다 (드로우콜 절약)
-function merge(parts) {
+export function merge(parts) {
   const pos = [];
   const nor = [];
   const col = [];

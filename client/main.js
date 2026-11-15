@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CFG, FLARE_VIEW, ZONE } from './shared/config.js';
-import { MAP_SIZE, WALLS, WALL_HEIGHT } from './shared/map.js';
+import { MAP_SIZE, WALLS } from './shared/map.js';
 import { stepPlayer } from './shared/sim.js';
 import { wrapAngle } from './shared/vision.js';
 import { VisionMask } from './fog.js';
@@ -10,6 +10,7 @@ import { DEFAULT_SERVER } from './settings.js';
 import { prefs, savePrefs } from './prefs.js';
 import { Characters, DeathFx } from './character.js';
 import { Minimap } from './minimap.js';
+import { buildFloorTexture, buildWalls } from './world.js';
 
 const DT = 1 / CFG.TICK_RATE;
 const INTERP_MS = 110; // 원격 플레이어 보간 지연
@@ -27,56 +28,22 @@ let resScale = 1;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(55, 1, 0.5, 120);
-scene.add(new THREE.HemisphereLight(0xcfe3ff, 0x30363c, 1.5));
-const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+// 따뜻한 손전등/모닥불 톤의 조명
+scene.add(new THREE.HemisphereLight(0xfff0d8, 0x6b5a45, 1.45));
+const sun = new THREE.DirectionalLight(0xfff2dc, 1.25);
 sun.position.set(0.4, 1, 0.25);
 scene.add(sun);
 
 const mask = new VisionMask(MAP_SIZE, WALLS, CFG);
 const sfx = new Sfx();
 
-// 바닥: 시야 밖에서도 격자만 아주 희미하게 남긴다(지형 정보만, 플레이어 정보 없음)
-{
-  // 2x2 타일(8m): 타일마다 밝기가 조금 다르고, 이음매와 잔 얼룩이 있다
-  const c = document.createElement('canvas');
-  c.width = c.height = 256;
-  const g = c.getContext('2d');
-  const shades = ['#566270', '#4f5b68', '#525e6c', '#5a6674'];
-  for (let i = 0; i < 4; i++) {
-    g.fillStyle = shades[i];
-    g.fillRect((i % 2) * 128, (i >> 1) * 128, 128, 128);
-  }
-  for (let i = 0; i < 900; i++) {
-    g.fillStyle = Math.random() < 0.5 ? 'rgba(255,255,255,.035)' : 'rgba(0,0,0,.06)';
-    g.fillRect(Math.random() * 256, Math.random() * 256, 1 + Math.random() * 3, 1 + Math.random() * 3);
-  }
-  g.strokeStyle = '#3d4753';
-  g.lineWidth = 3;
-  for (const v of [0, 128, 256]) {
-    g.beginPath();
-    g.moveTo(v, 0);
-    g.lineTo(v, 256);
-    g.moveTo(0, v);
-    g.lineTo(256, v);
-    g.stroke();
-  }
-  g.strokeStyle = 'rgba(255,255,255,.07)';
-  g.lineWidth = 1;
-  for (const v of [3, 131]) {
-    g.strokeRect(v, v, 122, 122);
-    g.strokeRect(v === 3 ? 131 : 3, v, 122, 122);
-  }
-  const tex = new THREE.CanvasTexture(c);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(MAP_SIZE / 8, MAP_SIZE / 8);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  const floor = new THREE.Mesh(
+// 바닥: 잔디와 흙길. 시야 밖에서는 달빛 아래처럼 아주 희미하게만 보인다(지형 정보만, 플레이어 정보 없음)
+scene.add(
+  new THREE.Mesh(
     new THREE.PlaneGeometry(MAP_SIZE, MAP_SIZE).rotateX(-Math.PI / 2),
-    mask.apply(new THREE.MeshLambertMaterial({ map: tex }), 0.05),
-  );
-  scene.add(floor);
-}
+    mask.apply(new THREE.MeshLambertMaterial({ map: buildFloorTexture(WALLS, MAP_SIZE) }), 0.09),
+  ),
+);
 
 // 독구름: 안전 구역(정사각형) 바깥을 덮는 초록 안개. 시야와 무관하게 항상 보인다.
 // 높이가 다른 두 장을 겹쳐 위에서 볼 때 부피감이 나게 한다 (드로우콜 2회, 텍스처 없음).
@@ -118,29 +85,9 @@ const gasLayers = [0.08, 1.7].map((y) => {
   return m;
 });
 
-// 벽: InstancedMesh 하나(드로우콜 1회). 매 프레임 "보이는 벽"만 인스턴스 버퍼에 채운다.
-const wallMesh = new THREE.InstancedMesh(
-  new THREE.BoxGeometry(1, 1, 1),
-  mask.apply(new THREE.MeshLambertMaterial({ color: 0xffffff })),
-  WALLS.length,
-);
-wallMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-wallMesh.frustumCulled = false; // 직접 컬링한다
-scene.add(wallMesh);
-const wallMatrices = new Float32Array(WALLS.length * 16);
-const wallColors = new Float32Array(WALLS.length * 3);
-wallMesh.setColorAt(0, new THREE.Color(1, 1, 1)); // instanceColor 버퍼 생성
-wallMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
-const wallSpheres = WALLS.map((w, i) => {
-  // 외곽 벽은 높게, 나머지는 벽마다 높이와 색조가 조금씩 다르다 (보이는 것만 다르고 판정은 같다)
-  const h = i < 4 ? WALL_HEIGHT + 1 : WALL_HEIGHT - 0.6 + ((i * 37) % 5) * 0.3;
-  const tone = i < 4 ? 0.5 : 0.56 + ((i * 53) % 7) * 0.025;
-  new THREE.Color().setRGB(tone * 0.95, tone * 1.02, tone * 1.12).toArray(wallColors, i * 3);
-  new THREE.Matrix4()
-    .compose(new THREE.Vector3(w.cx, h / 2, w.cz), new THREE.Quaternion(), new THREE.Vector3(w.w, h, w.d))
-    .toArray(wallMatrices, i * 16);
-  return new THREE.Sphere(new THREE.Vector3(w.cx, h / 2, w.cz), Math.hypot(w.w, h, w.d) / 2);
-});
+// 벽(캠핑장 소품): 벽마다 메시 하나. 매 프레임 "시야에 걸렸고 화면 안에 있는" 것만 그린다.
+const wallProps = buildWalls(WALLS, mask.apply(new THREE.MeshLambertMaterial({ color: 0xd8d8d8, vertexColors: true })));
+for (const p of wallProps) scene.add(p.mesh);
 
 // 캐릭터(모델 + 애니메이션)와 처치 이펙트
 const chars = new Characters(mask);
@@ -199,6 +146,7 @@ let lastCount = 0; // 라운드 시작 카운트다운 표시용
 let winnerText = '';
 let shake = 0; // 화면 흔들림 세기
 let mapT = 0;
+let cricketT = 2;
 let roundEnd = 0; // 라운드 종료 배너 남은 시간
 let stepT = 0;
 let lastSpot = 0;
@@ -348,7 +296,7 @@ function onMessage(m) {
         buzz(200);
       } else if (k === myId) {
         streak++;
-        toast(streak > 1 ? `${streak}연속 처치!` : '처치!', roster.get(v)?.name ?? '');
+        toast(streak > 1 ? `${streak}연속 잡았다!` : '잡았다!', roster.get(v)?.name ?? '');
         sfx.kill();
         buzz(40);
       }
@@ -752,17 +700,11 @@ function frame(now) {
 
   // 3) 컬링: (시야에 걸린 벽) ∩ (화면 절두체 안) 만 인스턴스 버퍼에 넣는다
   let nWalls = 0;
-  const im = wallMesh.instanceMatrix.array;
-  for (let i = 0; i < WALLS.length; i++) {
-    if (!mask.seen[i] || !frustum.intersectsSphere(wallSpheres[i])) continue;
-    im.set(wallMatrices.subarray(i * 16, i * 16 + 16), nWalls * 16);
-    wallMesh.instanceColor.array.set(wallColors.subarray(i * 3, i * 3 + 3), nWalls * 3);
-    nWalls++;
+  for (let i = 0; i < wallProps.length; i++) {
+    const p = wallProps[i];
+    p.mesh.visible = !!mask.seen[i] && frustum.intersectsSphere(p.sphere);
+    if (p.mesh.visible) nWalls++;
   }
-  wallMesh.count = nWalls;
-  wallMesh.instanceMatrix.needsUpdate = true;
-  wallMesh.instanceColor.needsUpdate = true;
-  wallMesh.visible = nWalls > 0;
 
   let nPlayers = 0;
   for (const e of ents.values()) {
@@ -773,6 +715,12 @@ function frame(now) {
   drawLabels();
 
   renderer.render(scene, camera);
+
+  // 풀벌레 소리
+  if (myId && (cricketT -= dt) <= 0) {
+    cricketT = 0.8 + Math.random() * 2.6;
+    sfx.cricket();
+  }
 
   // 미니맵 (초당 10회)
   if (prefs.showMinimap && now - mapT > 100) {
