@@ -4,7 +4,7 @@ import { MAP_ROTATION, MAP_SIZE, MAPS, isFree } from '../shared/map.js';
 import { flareLanding, stepPlayer } from '../shared/sim.js';
 import { canSee, segmentBlocked, wrapAngle } from '../shared/vision.js';
 import { botThink } from './bots.js';
-import { PROGRESS, UPGRADES, rollChoices, statsOf, xpToNext } from '../shared/progress.js';
+import { CHARACTER_KEYS, PROGRESS, UPGRADES, charOf, rollChoices, statsOf, xpToNext } from '../shared/progress.js';
 
 const DT = 1 / CFG.TICK_RATE;
 const MAX_QUEUE = 10;
@@ -74,13 +74,15 @@ export class Game {
   }
 
   // 사람은 봇의 자리(팀, 위치, 생존 상태)를 이어받아 라운드 중에도 바로 플레이한다.
-  addPlayer(name, send = null, isBot = false) {
+  addPlayer(name, send = null, isBot = false, char = null) {
     const id = this.nextId++;
     const p = {
       id, name, team: 0, isBot, send,
       x: 0, z: 0, yaw: 0,
       alive: false, respawn: 0, gas: 0, cd: 0, speedT: 0, vest: 0, cloakT: 0, picked: [],
-      hp: 0, xp: 0, level: 1, ups: {}, choices: [], hurtT: 0, statsDirty: true, ffVer: -1, earned: 0, beam: 0, score: 0, wins: 0,
+      hp: 0, xp: 0, level: 1, ups: {}, choices: [], hurtT: 0, statsDirty: true, ffVer: -1, earned: 0,
+      // 캐릭터: 봇은 무작위. (계정이 없어 구매 여부는 클라이언트가 관리한다)
+      char: isBot ? CHARACTER_KEYS[Math.floor(Math.random() * CHARACTER_KEYS.length)] : charOf(char), beam: 0, score: 0, wins: 0,
       rollT: 0, rollCd: 0, rollDx: 0, rollDz: 1, flareCd: 0,
       queue: [], budget: 0, ack: 0, lastSeq: 0, ai: {},
     };
@@ -99,7 +101,7 @@ export class Game {
       if (this.endT <= 0 && (this.respawns || this.roundT < this.cfg.JOIN_GRACE)) this.spawn(p);
     }
     this.applyStats(p);
-    if (!seat) p.hp = p.stats.maxHp;
+    p.hp = seat ? Math.min(p.hp, p.stats.maxHp) : p.stats.maxHp;
     this.players.set(id, p);
     this.rosterDirty = true;
     return p;
@@ -193,7 +195,10 @@ export class Game {
   }
 
   applyInput(p, inp) {
+    const wasRolling = p.rollT > 0;
     stepPlayer(p, inp, DT, this.solid);
+    // 그림자: 구르기 시작과 함께 잠깐 모습을 감춘다
+    if (!wasRolling && p.rollT > 0 && p.stats.rollCloak) p.cloakT = Math.max(p.cloakT, p.stats.rollCloak);
     // 구르는 중에는 공격할 수 없다
     if (inp.atk && p.cd <= 0 && !(p.rollT > 0) && this.roundT >= this.cfg.START_GRACE) this.attack(p);
     if (inp.flare && p.flareCd <= 0) this.throwFlare(p);
@@ -247,7 +252,7 @@ export class Game {
 
   // ── 성장 ──
   applyStats(p) {
-    p.stats = statsOf(p.ups, this.cfg);
+    p.stats = statsOf(p.ups, this.cfg, p.char);
     p.spd = p.stats.speed; // 공용 시뮬레이션이 쓰는 값
     p.rollCdMax = p.stats.rollCd;
     p.statsDirty = true;
@@ -264,6 +269,7 @@ export class Game {
 
   gainXp(p, n) {
     if (p.level >= PROGRESS.MAX_LEVEL) return;
+    n = Math.round(n * p.stats.xpMul);
     p.xp += n;
     p.earned += n;
     while (p.level < PROGRESS.MAX_LEVEL && p.xp >= xpToNext(p.level)) {
@@ -405,12 +411,14 @@ export class Game {
   spawnItem() {
     if (!this.useItems || this.items.length >= ITEM_RULES.MAX) return;
     const [x, z] = this.randomFreePoint(1.2);
-    const type = ITEM_TYPES[Math.floor(Math.random() * ITEM_TYPES.length)];
+    // 하트는 다른 아이템보다 자주 나온다
+    const type = Math.random() < 0.4 ? 'heart' : ITEM_TYPES[Math.floor(Math.random() * ITEM_TYPES.length)];
     this.items.push({ id: this.nextItem++, type, x, z });
   }
 
   pickItem(p, it) {
-    if (it.type === 'battery') {
+    if (it.type === 'heart') p.hp = Math.min(p.stats.maxHp, p.hp + ITEMS.heart.heal);
+    else if (it.type === 'battery') {
       p.cd = 0;
       p.flareCd = 0;
     } else if (it.type === 'sneakers') p.speedT = ITEMS.sneakers.time;
@@ -630,7 +638,7 @@ export class Game {
   roster() {
     return {
       t: 'r',
-      p: [...this.players.values()].map((p) => [p.id, p.name, p.team, p.score, p.alive ? 1 : 0, p.wins, p.level]),
+      p: [...this.players.values()].map((p) => [p.id, p.name, p.team, p.score, p.alive ? 1 : 0, p.wins, p.level, p.char]),
     };
   }
 

@@ -47,6 +47,7 @@ export const CFG = Object.freeze({
 
 // 아이템: 맵 곳곳에 생기고, 밟으면 줍는다. 시야 안에 있을 때만 보인다.
 export const ITEMS = Object.freeze({
+  heart: { name: '하트', desc: '체력 +40', heal: 40 },
   battery: { name: '배터리', desc: '손전등·조명탄 즉시 충전' },
   sneakers: { name: '운동화', desc: '6초 동안 빨라짐', time: 6, speed: 1.4 },
   vest: { name: '반사 조끼', desc: '빛을 한 번 막아 줌', time: 20 },
@@ -54,8 +55,8 @@ export const ITEMS = Object.freeze({
 });
 export const ITEM_TYPES = Object.keys(ITEMS);
 export const ITEM_RULES = Object.freeze({
-  MAX: 6, // 맵 위 최대 개수
-  EVERY: 7, // 새로 생기는 간격(초)
+  MAX: 8, // 맵 위 최대 개수
+  EVERY: 5, // 새로 생기는 간격(초)
   START: 3, // 라운드 시작 때 개수
   PICK_RADIUS: 1.1,
   CLOAK_NEAR: 2.2, // 망토를 써도 이 거리 안에서는 보인다

@@ -257,6 +257,12 @@ export function buildWater(map, material) {
 export function buildItemGeos() {
   const Y = 0.75;
   return {
+    heart: merge([
+      [new THREE.SphereGeometry(0.22, 10, 8).translate(-0.15, Y + 0.1, 0), rgb(0xff4a5a)],
+      [new THREE.SphereGeometry(0.22, 10, 8).translate(0.15, Y + 0.1, 0), rgb(0xff4a5a)],
+      [new THREE.ConeGeometry(0.34, 0.45, 10).rotateX(Math.PI).scale(1, 1, 0.62).translate(0, Y - 0.17, 0), rgb(0xff4a5a)],
+      [new THREE.SphereGeometry(0.06, 6, 4).translate(-0.2, Y + 0.2, 0.17), [3, 2.4, 2.4]],
+    ]),
     battery: merge([
       [new THREE.CylinderGeometry(0.2, 0.2, 0.55, 12).translate(0, Y, 0), rgb(0x2b2b30)],
       [new THREE.CylinderGeometry(0.205, 0.205, 0.25, 12).translate(0, Y + 0.13, 0), rgb(0xffc63a)],
