@@ -43,7 +43,7 @@ const server = http.createServer((req, res) => {
     if (!url.startsWith(prefix)) continue;
     const file = path.resolve(dir, url.slice(prefix.length));
     if (!file.startsWith(dir + path.sep)) break; // 디렉터리 탈출 차단
-    if (prefix === '/server/' && !['game.js', 'bots.js'].includes(path.basename(file))) break;
+    if (prefix === '/server/' && !['game.js', 'bots.js', 'nav.js'].includes(path.basename(file))) break;
     fs.readFile(file, (err, data) => {
       if (err) {
         res.writeHead(404).end('Not found');

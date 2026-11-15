@@ -110,6 +110,7 @@ shared/   서버·클라이언트 공용 (같은 코드로 판정과 화면을 �
 server/
   game.js     게임 로직, 팀별 시야 계산, 플레이어별 스냅샷
   bots.js     봇 (자기 시야에 들어온 적만 인지)
+  nav.js      봇 길찾기 (1m 격자 A*)
   index.js    HTTP 정적 서버 + WebSocket
 client/
   main.js     렌더링, 예측/보간, 컬링, HUD
@@ -117,6 +118,7 @@ client/
   input.js    터치/키보드 입력
   character.js 캐릭터 모델, 절차적 애니메이션, 처치 이펙트
   prefs.js    사용자 설정 저장
+  minimap.js  미니맵 (서버가 보내준 정보만 그린다)
   audio.js    효과음 합성
   settings.js Pages에서 쓸 기본 서버 주소
 ```

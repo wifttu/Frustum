@@ -9,6 +9,7 @@ import { Sfx } from './audio.js';
 import { DEFAULT_SERVER } from './settings.js';
 import { prefs, savePrefs } from './prefs.js';
 import { Characters, DeathFx } from './character.js';
+import { Minimap } from './minimap.js';
 
 const DT = 1 / CFG.TICK_RATE;
 const INTERP_MS = 110; // 원격 플레이어 보간 지연
@@ -36,17 +37,38 @@ const sfx = new Sfx();
 
 // 바닥: 시야 밖에서도 격자만 아주 희미하게 남긴다(지형 정보만, 플레이어 정보 없음)
 {
+  // 2x2 타일(8m): 타일마다 밝기가 조금 다르고, 이음매와 잔 얼룩이 있다
   const c = document.createElement('canvas');
-  c.width = c.height = 128;
+  c.width = c.height = 256;
   const g = c.getContext('2d');
-  g.fillStyle = '#56616b';
-  g.fillRect(0, 0, 128, 128);
-  g.strokeStyle = '#6f7c88';
-  g.lineWidth = 4;
-  g.strokeRect(0, 0, 128, 128);
+  const shades = ['#566270', '#4f5b68', '#525e6c', '#5a6674'];
+  for (let i = 0; i < 4; i++) {
+    g.fillStyle = shades[i];
+    g.fillRect((i % 2) * 128, (i >> 1) * 128, 128, 128);
+  }
+  for (let i = 0; i < 900; i++) {
+    g.fillStyle = Math.random() < 0.5 ? 'rgba(255,255,255,.035)' : 'rgba(0,0,0,.06)';
+    g.fillRect(Math.random() * 256, Math.random() * 256, 1 + Math.random() * 3, 1 + Math.random() * 3);
+  }
+  g.strokeStyle = '#3d4753';
+  g.lineWidth = 3;
+  for (const v of [0, 128, 256]) {
+    g.beginPath();
+    g.moveTo(v, 0);
+    g.lineTo(v, 256);
+    g.moveTo(0, v);
+    g.lineTo(256, v);
+    g.stroke();
+  }
+  g.strokeStyle = 'rgba(255,255,255,.07)';
+  g.lineWidth = 1;
+  for (const v of [3, 131]) {
+    g.strokeRect(v, v, 122, 122);
+    g.strokeRect(v === 3 ? 131 : 3, v, 122, 122);
+  }
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(MAP_SIZE / 4, MAP_SIZE / 4);
+  tex.repeat.set(MAP_SIZE / 8, MAP_SIZE / 8);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
   const floor = new THREE.Mesh(
@@ -99,18 +121,25 @@ const gasLayers = [0.08, 1.7].map((y) => {
 // 벽: InstancedMesh 하나(드로우콜 1회). 매 프레임 "보이는 벽"만 인스턴스 버퍼에 채운다.
 const wallMesh = new THREE.InstancedMesh(
   new THREE.BoxGeometry(1, 1, 1),
-  mask.apply(new THREE.MeshLambertMaterial({ color: 0x9aa9b8 })),
+  mask.apply(new THREE.MeshLambertMaterial({ color: 0xffffff })),
   WALLS.length,
 );
 wallMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 wallMesh.frustumCulled = false; // 직접 컬링한다
 scene.add(wallMesh);
 const wallMatrices = new Float32Array(WALLS.length * 16);
+const wallColors = new Float32Array(WALLS.length * 3);
+wallMesh.setColorAt(0, new THREE.Color(1, 1, 1)); // instanceColor 버퍼 생성
+wallMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
 const wallSpheres = WALLS.map((w, i) => {
+  // 외곽 벽은 높게, 나머지는 벽마다 높이와 색조가 조금씩 다르다 (보이는 것만 다르고 판정은 같다)
+  const h = i < 4 ? WALL_HEIGHT + 1 : WALL_HEIGHT - 0.6 + ((i * 37) % 5) * 0.3;
+  const tone = i < 4 ? 0.5 : 0.56 + ((i * 53) % 7) * 0.025;
+  new THREE.Color().setRGB(tone * 0.95, tone * 1.02, tone * 1.12).toArray(wallColors, i * 3);
   new THREE.Matrix4()
-    .compose(new THREE.Vector3(w.cx, WALL_HEIGHT / 2, w.cz), new THREE.Quaternion(), new THREE.Vector3(w.w, WALL_HEIGHT, w.d))
+    .compose(new THREE.Vector3(w.cx, h / 2, w.cz), new THREE.Quaternion(), new THREE.Vector3(w.w, h, w.d))
     .toArray(wallMatrices, i * 16);
-  return new THREE.Sphere(new THREE.Vector3(w.cx, WALL_HEIGHT / 2, w.cz), Math.hypot(w.w, WALL_HEIGHT, w.d) / 2);
+  return new THREE.Sphere(new THREE.Vector3(w.cx, h / 2, w.cz), Math.hypot(w.w, h, w.d) / 2);
 });
 
 // 캐릭터(모델 + 애니메이션)와 처치 이펙트
@@ -168,6 +197,8 @@ let killedBy = '';
 let streak = 0; // 죽지 않고 이어간 처치 수
 let lastCount = 0; // 라운드 시작 카운트다운 표시용
 let winnerText = '';
+let shake = 0; // 화면 흔들림 세기
+let mapT = 0;
 let roundEnd = 0; // 라운드 종료 배너 남은 시간
 let stepT = 0;
 let lastSpot = 0;
@@ -303,10 +334,15 @@ function onMessage(m) {
     for (const [k, v] of m.l) {
       // 내가 보고 있던 플레이어가 쓰러지면 그 자리에 이펙트 (위치는 이미 알고 있던 것만 쓴다)
       const seen = ents.get(v);
-      if (seen) deathFx.spawn(seen.x, seen.z, kindOf(v));
+      if (seen) {
+        deathFx.spawn(seen.x, seen.z, kindOf(v));
+        shake = Math.max(shake, 0.3);
+      }
       if (v === myId) {
         killedBy = k ? (roster.get(k)?.name ?? '') : '독구름';
         deathFx.spawn(view.x, view.z, 'self');
+        shake = 0.9;
+        flash();
         streak = 0;
         sfx.death();
         buzz(200);
@@ -326,6 +362,7 @@ function onMessage(m) {
     $('bannerTitle').textContent = won ? '승리' : m.w ? '패배' : '무승부';
     $('bannerTitle').className = won ? 'win' : 'lose';
     winnerText = m.w ? `승자: ${m.n.join(', ')}` : '시간 초과';
+    drawResults();
     $('banner').hidden = false;
     won ? sfx.win() : sfx.lose();
   } else if (m.t === 'n') {
@@ -473,6 +510,31 @@ function drawLabels() {
   }
 }
 
+// 라운드 결과표: 킬 순위
+function drawResults() {
+  const rows = [...roster.entries()].sort((a, b) => b[1].score - a[1].score).slice(0, 8);
+  $('bannerList').replaceChildren(
+    ...rows.map(([id, p], i) => {
+      const row = document.createElement('div');
+      row.className = id === myId ? 'me' : p.team === myTeam ? 'ally' : 'enemy';
+      for (const text of [i + 1, p.name, `${p.score}킬`]) {
+        const cell = document.createElement('span');
+        cell.textContent = text;
+        row.append(cell);
+      }
+      return row;
+    }),
+  );
+}
+
+// 피격 섬광
+function flash() {
+  const el = $('flash');
+  el.style.animation = 'none';
+  void el.offsetWidth;
+  el.style.animation = 'flash .5s ease-out';
+}
+
 // 화면 중앙 알림 (처치 확인, 라운드 시작)
 let toastTimer = 0;
 function toast(title, sub = '', cls = '') {
@@ -518,6 +580,7 @@ function fixedStep() {
   if (atk && localCd <= 0) {
     localCd = CFG.ATTACK_COOLDOWN;
     localBeam = CFG.BEAM_TIME; // 즉시 피드백 (판정은 서버)
+    shake = Math.max(shake, 0.22);
     sfx.beam();
   }
   if (flare && flareCd <= 0) {
@@ -560,6 +623,8 @@ const projView = new THREE.Matrix4();
 const sphere = new THREE.Sphere(new THREE.Vector3(), 1.3);
 const sources = [];
 const flareSources = [];
+const minimap = new Minimap($('minimap'), WALLS, MAP_SIZE);
+const mapEnts = [];
 const stats = { fps: 0, walls: 0, players: 0, calls: 0, tris: 0 };
 let acc = 0;
 let lastT = performance.now();
@@ -673,7 +738,13 @@ function frame(now) {
   // 2) 카메라 (캐릭터 뒤 위쪽에서 따라가는 3인칭)
   const s = Math.sin(view.yaw);
   const c = Math.cos(view.yaw);
-  camera.position.set(view.x - s * 9, 17, view.z - c * 9);
+  shake = Math.max(0, shake - dt * 2.6);
+  const sk = shake * shake * 1.1;
+  camera.position.set(
+    view.x - s * 9 + (Math.random() - 0.5) * sk,
+    17 + (Math.random() - 0.5) * sk,
+    view.z - c * 9 + (Math.random() - 0.5) * sk,
+  );
   camera.lookAt(view.x + s * 6, 0, view.z + c * 6);
   camera.updateMatrixWorld();
   projView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
@@ -685,10 +756,12 @@ function frame(now) {
   for (let i = 0; i < WALLS.length; i++) {
     if (!mask.seen[i] || !frustum.intersectsSphere(wallSpheres[i])) continue;
     im.set(wallMatrices.subarray(i * 16, i * 16 + 16), nWalls * 16);
+    wallMesh.instanceColor.array.set(wallColors.subarray(i * 3, i * 3 + 3), nWalls * 3);
     nWalls++;
   }
   wallMesh.count = nWalls;
   wallMesh.instanceMatrix.needsUpdate = true;
+  wallMesh.instanceColor.needsUpdate = true;
   wallMesh.visible = nWalls > 0;
 
   let nPlayers = 0;
@@ -700,6 +773,14 @@ function frame(now) {
   drawLabels();
 
   renderer.render(scene, camera);
+
+  // 미니맵 (초당 10회)
+  if (prefs.showMinimap && now - mapT > 100) {
+    mapT = now;
+    mapEnts.length = 0;
+    for (const [id, e] of ents) mapEnts.push({ x: e.x, z: e.z, kind: kindOf(id) });
+    minimap.draw({ me: view, alive, ents: mapEnts, flares, zone: zoneTarget ? zoneNow : 0, fov: CFG.FOV, range: CFG.VIEW_RANGE });
+  }
 
   // 스킬 버튼 쿨다운 (매 프레임)
   const canAct = alive && roundEnd <= 0;
@@ -802,10 +883,11 @@ function applyPrefs() {
   sfx.setVolume(prefs.volume);
   document.body.classList.toggle('lefty', prefs.lefty);
   $('stats').hidden = !prefs.showStats;
+  $('minimap').hidden = !prefs.showMinimap;
   $('sensVal').textContent = `x${prefs.sens.toFixed(1)}`;
   $('volVal').textContent = `${Math.round(prefs.volume * 100)}%`;
 }
-const CHECKS = { setFixed: 'fixedStick', setLefty: 'lefty', setVibrate: 'vibrate', setStats: 'showStats' };
+const CHECKS = { setFixed: 'fixedStick', setLefty: 'lefty', setVibrate: 'vibrate', setStats: 'showStats', setMinimap: 'showMinimap' };
 const RANGES = { setSens: 'sens', setVol: 'volume' };
 for (const [id, key] of Object.entries(CHECKS)) {
   $(id).checked = prefs[key];

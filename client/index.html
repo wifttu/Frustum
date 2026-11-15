@@ -20,14 +20,16 @@
       <div id="labels"></div>
       <div id="score"></div>
       <div id="feed"></div>
+      <canvas id="minimap"></canvas>
       <div id="stats"></div>
+      <div id="flash"></div>
       <button id="mute" aria-label="소리 켜기/끄기">🔊</button>
       <button id="gear" aria-label="설정">⚙️</button>
       <div id="gas"></div>
       <div id="gasText" hidden></div>
       <div id="toast" hidden><b id="toastTitle"></b><span id="toastSub"></span></div>
       <div id="dead" hidden><em>탈락</em><span id="deadBy"></span><b id="respawn"></b></div>
-      <div id="banner" hidden><b id="bannerTitle"></b><span id="bannerSub"></span></div>
+      <div id="banner" hidden><b id="bannerTitle"></b><span id="bannerSub"></span><div id="bannerList"></div></div>
       <div id="stick"><div id="knob"></div></div>
       <button id="attack" class="skill" data-label="손전등" aria-label="손전등 공격">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 2.5h11l-2.2 6.2H8.7z" /><path d="M9 10h6v10.2a1.3 1.3 0 0 1-1.3 1.3h-3.4A1.3 1.3 0 0 1 9 20.2z" /><rect x="11" y="12.5" width="2" height="3.5" rx="1" fill="#000" opacity=".45" /></svg>
@@ -71,6 +73,7 @@
         <label><span>회전 감도 <b id="sensVal"></b></span><input type="range" id="setSens" min="0.4" max="2.5" step="0.1" /></label>
         <label><span>효과음 크기 <b id="volVal"></b></span><input type="range" id="setVol" min="0" max="1" step="0.05" /></label>
         <label><span>진동<small>처치하거나 당했을 때</small></span><input type="checkbox" id="setVibrate" /></label>
+        <label><span>미니맵 표시<small>왼쪽 위 지도</small></span><input type="checkbox" id="setMinimap" /></label>
         <label><span>성능 정보 표시<small>fps, 드로우콜 등</small></span><input type="checkbox" id="setStats" /></label>
         <button id="closeSettings">닫기</button>
         <button id="leave" class="alt" hidden>게임 나가기</button>
