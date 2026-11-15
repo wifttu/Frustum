@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Game } from '../server/game.js';
-import { CFG } from '../shared/config.js';
+import { CFG, ZONE, zoneHalf } from '../shared/config.js';
 import { stepPlayer } from '../shared/sim.js';
 
 function setup(opts) {
@@ -208,4 +208,34 @@ test('점수제 데스매치: 목표 킬에 먼저 도달하면 끝난다', () =
   }
   assert.equal(game.winner, a.team);
   assert.equal(new Game({ rule: 'score', mode: 'duo' }).info().g, 15);
+});
+
+test('독구름: 안전 구역이 가장자리에서 중앙으로 줄어든다', () => {
+  assert.equal(zoneHalf(0), 32);
+  assert.equal(zoneHalf(ZONE.WAIT), 32);
+  assert.ok(zoneHalf((ZONE.WAIT + ZONE.END) / 2) < 32);
+  assert.equal(zoneHalf(ZONE.END + 50), ZONE.MIN_HALF);
+});
+
+test('독구름: 구역 밖에 오래 있으면 탈락하고, 안에 있으면 회복한다', () => {
+  const { game, add, place } = setup({ TEAMS: 0 });
+  const a = add('A');
+  const b = add('B');
+  const c = add('C');
+  game.roundT = ZONE.END; // 최소 구역
+  place(a, 0, 5, 0); // 안
+  place(b, 20, 20, 0); // 밖
+  place(c, 0, -5, 0); // 안
+  for (let i = 0; i < CFG.TICK_RATE * (ZONE.GAS_TIME - 1); i++) game.step();
+  assert.equal(b.alive, true);
+  assert.ok(b.gas > 1.5 && a.gas === 0);
+  for (let i = 0; i < CFG.TICK_RATE * 1.2; i++) game.step();
+  assert.equal(b.alive, false);
+  assert.deepEqual(game.kills.at(-1), [0, b.id]);
+  assert.equal(game.winner, null, '안에 있는 둘은 계속 싸운다');
+});
+
+test('독구름은 서바이벌에만 있다', () => {
+  assert.equal(new Game({ rule: 'dm' }).zoneHalf(), Infinity);
+  assert.equal(new Game({ rule: 'survival' }).zoneHalf(), 32);
 });

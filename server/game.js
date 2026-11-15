@@ -1,5 +1,5 @@
 // 권위 서버 게임 로직. 네트워크와 분리되어 있어 테스트와 오프라인 모드에서 그대로 쓴다.
-import { CFG, FLARE_VIEW, RULES } from '../shared/config.js';
+import { CFG, FLARE_VIEW, RULES, ZONE, zoneHalf } from '../shared/config.js';
 import { MAP_SIZE, WALLS, isFree } from '../shared/map.js';
 import { flareLanding, stepPlayer } from '../shared/sim.js';
 import { canSee, segmentBlocked, wrapAngle } from '../shared/vision.js';
@@ -15,6 +15,7 @@ export class Game {
     this.rule = Object.hasOwn(RULES, opts.rule) ? opts.rule : 'survival';
     const R = RULES[this.rule];
     this.respawns = R.respawn;
+    this.zoned = !!R.zone; // 독구름이 조여 오는 규칙인가
     this.cfg = { ...CFG, TEAMS: this.mode === 'ffa' ? 0 : CFG.TEAMS, ROUND_TIME: R.time, ...opts };
     delete this.cfg.mode;
     delete this.cfg.rule;
@@ -50,7 +51,7 @@ export class Game {
     const p = {
       id, name, team: 0, isBot, send,
       x: 0, z: 0, yaw: 0,
-      alive: false, respawn: 0, cd: 0, beam: 0, score: 0, wins: 0,
+      alive: false, respawn: 0, gas: 0, cd: 0, beam: 0, score: 0, wins: 0,
       rollT: 0, rollCd: 0, rollDx: 0, rollDz: 1, flareCd: 0,
       queue: [], budget: 0, ack: 0, lastSeq: 0, ai: {},
     };
@@ -90,10 +91,17 @@ export class Game {
     }
   }
 
+  // 현재 안전 구역의 절반 길이 (독구름이 없는 규칙은 Infinity)
+  zoneHalf() {
+    return this.zoned ? zoneHalf(this.roundT) : Infinity;
+  }
+
+  // 안전 구역 안의 빈 지점
   randomFreePoint(clearance = 1) {
+    const span = Math.min(MAP_SIZE - 4, (this.zoneHalf() - 1.5) * 2);
     for (let i = 0; i < 200; i++) {
-      const x = (Math.random() - 0.5) * (MAP_SIZE - 4);
-      const z = (Math.random() - 0.5) * (MAP_SIZE - 4);
+      const x = (Math.random() - 0.5) * span;
+      const z = (Math.random() - 0.5) * span;
       if (isFree(x, z, clearance)) return [x, z];
     }
     return [5, 5];
@@ -126,6 +134,7 @@ export class Game {
     p.beam = 0;
     p.rollT = 0;
     p.rollCd = 0;
+    p.gas = 0;
   }
 
   // 클라이언트 입력: [seq, mx, mz, yaw, atk, roll, flare]. 값은 신뢰하지 않고 검증/클램프한다.
@@ -281,6 +290,25 @@ export class Game {
       return;
     }
 
+    // 독구름: 안전 구역 밖에 GAS_TIME 이상 머물면 탈락 (킬 피드의 처치자 0 = 독구름)
+    if (this.zoned) {
+      const half = this.zoneHalf();
+      let died = false;
+      for (const p of this.players.values()) {
+        if (!p.alive) continue;
+        const out = Math.max(Math.abs(p.x), Math.abs(p.z)) > half;
+        p.gas = out ? p.gas + DT : Math.max(0, p.gas - DT * ZONE.RECOVER);
+        if (p.gas < ZONE.GAS_TIME) continue;
+        p.alive = false;
+        p.queue.length = 0;
+        this.kills.push([0, p.id]);
+        this.rosterDirty = true;
+        died = true;
+      }
+      if (died) this.checkRoundEnd();
+      if (this.endT > 0) return;
+    }
+
     for (const p of this.players.values()) {
       p.cd = Math.max(0, p.cd - DT);
       p.beam = Math.max(0, p.beam - DT);
@@ -356,9 +384,10 @@ export class Game {
       t: 's',
       k: this.tick,
       a: p.ack,
+      zh: this.zoned ? q2(this.zoneHalf()) : 0, // 안전 구역 절반 길이 (0 = 독구름 없음)
       rt: Math.ceil(Math.max(0, this.cfg.ROUND_TIME - this.roundT)), // 남은 라운드 시간
       // 예측 보정에 필요한 값은 반올림하지 않는다
-      me: [p.x, p.z, p.yaw, p.alive ? 1 : 0, this.respawns ? q2(Math.max(0, p.respawn)) : 0, q2(p.cd), p.rollT, p.rollCd, p.rollDx, p.rollDz, q2(p.flareCd)],
+      me: [p.x, p.z, p.yaw, p.alive ? 1 : 0, this.respawns ? q2(Math.max(0, p.respawn)) : 0, q2(p.cd), p.rollT, p.rollCd, p.rollDx, p.rollDz, q2(p.flareCd), q2(p.gas)],
       e,
       f,
     };

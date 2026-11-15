@@ -141,6 +141,13 @@ export class Sfx {
     this.tone('sine', 1760, 1760, 0.06, 0.08, pan, 0.08);
   }
 
+  // 독구름 안: 쉭 하는 가스 소리 + 낮은 경고음
+  gas() {
+    if (!this.ready) return;
+    this.hiss(1800, 600, 0.9, 0.35, 0.3);
+    this.tone('square', 150, 120, 0.12, 0.1);
+  }
+
   step(vol = 1) {
     if (!this.ready) return;
     this.hiss(260, 140, 1, 0.07, 0.12 * vol, 0, 0, 'lowpass');

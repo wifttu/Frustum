@@ -45,10 +45,25 @@ export const CFG = Object.freeze({
   BOT_FILL: 8, // 접속 인원이 이보다 적으면 봇으로 채운다
 });
 
+// 독구름(서바이벌 전용): 맵 가장자리에서 안쪽으로 조여 오는 정사각형 안전 구역.
+export const ZONE = Object.freeze({
+  WAIT: 15, // 라운드 시작 후 조여 오기 시작할 때까지
+  END: 100, // 이 시점에 최소 크기에 도달
+  MIN_HALF: 7, // 최종 안전 구역의 절반 길이 (중앙 14m × 14m)
+  GAS_TIME: 3, // 독구름 안에서 버틸 수 있는 시간
+  RECOVER: 0.5, // 안전 구역에서 초당 회복량
+});
+const MAP_HALF = 32; // shared/map.js 의 MAP_SIZE / 2
+// 라운드 경과 시간 t 에서 안전 구역의 절반 길이
+export function zoneHalf(t) {
+  const k = Math.max(0, Math.min(1, (t - ZONE.WAIT) / (ZONE.END - ZONE.WAIT)));
+  return MAP_HALF + (ZONE.MIN_HALF - MAP_HALF) * k;
+}
+
 // 게임 규칙. 각 규칙은 개인전(ffa)과 2인 팀전(duo) 모두 지원한다.
 export const RULES = Object.freeze({
   // 서바이벌: 부활 없음. 마지막 생존자/팀 승리. 시간 초과 시 생존자 수 → 킬 수.
-  survival: { respawn: false, time: 120 },
+  survival: { respawn: false, time: 120, zone: true },
   // 데스매치: 부활 있음. 제한 시간 동안 킬이 가장 많은 사람/팀 승리.
   dm: { respawn: true, time: 180 },
   // 점수제 데스매치: 부활 있음. 목표 킬을 먼저 채우면 승리. 시간 초과 시 킬 수.

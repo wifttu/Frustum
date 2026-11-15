@@ -8,10 +8,15 @@ export function botThink(bot, game, dt) {
   const ai = bot.ai;
   if (ai.wx === undefined) pickWaypoint(bot, game);
 
+  // 독구름: 구역 밖이거나 목적지가 구역 밖이면 안쪽으로 새 목적지를 잡고, 밖에 있는 동안은 싸우지 않는다
+  const half = game.zoneHalf() - 2;
+  const outside = Math.max(Math.abs(bot.x), Math.abs(bot.z)) > half;
+  if (Math.max(Math.abs(ai.wx), Math.abs(ai.wz)) > half) pickWaypoint(bot, game);
+
   let target = null;
   let best = Infinity;
   for (const q of game.players.values()) {
-    if (!q.alive || q.team === bot.team) continue;
+    if (outside || !q.alive || q.team === bot.team) continue;
     const d = Math.hypot(q.x - bot.x, q.z - bot.z);
     if (d < best && canSee(bot, q.x, q.z, cfg.PLAYER_RADIUS, game.walls, cfg)) {
       best = d;
@@ -52,7 +57,7 @@ export function botThink(bot, game, dt) {
   if (Math.hypot(dx, dz) < 1.5) pickWaypoint(bot, game);
   const yaw = Math.atan2(dx, dz);
   const diff = Math.abs(wrapAngle(yaw - bot.yaw));
-  return { mx: 0, mz: diff < 0.6 ? 0.8 : 0.2, yaw, atk: false, roll: false, flare: Math.random() < 0.003 };
+  return { mx: 0, mz: diff < 0.6 ? (outside ? 1 : 0.8) : 0.2, yaw, atk: false, roll: false, flare: Math.random() < 0.003 };
 }
 
 function pickWaypoint(bot, game) {
