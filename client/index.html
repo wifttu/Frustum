@@ -18,6 +18,16 @@
 
     <div id="hud" hidden>
       <div id="labels"></div>
+      <div id="nums"></div>
+      <div id="mePanel">
+        <div class="avatar"><i></i><b id="lvBadge">1</b></div>
+        <div class="bars">
+          <div class="who" id="statusName"></div>
+          <div class="bar hp"><div id="hpFill"></div><span id="hpText"></span></div>
+          <div class="bar xp"><div id="xpFill"></div><span id="xpText"></span></div>
+        </div>
+      </div>
+      <div id="choices" hidden><div id="choiceTitle">강화 선택</div><div id="choiceCards"></div></div>
       <div id="score"></div>
       <div id="feed"></div>
       <canvas id="minimap"></canvas>
@@ -49,6 +59,7 @@
     <div id="menu">
       <div id="logo"><i></i><h1>FRUSTUM</h1></div>
       <p>한밤의 캠핑장, 손전등 술래잡기. 불빛에 비친 친구만 보여요.</p>
+      <div id="rank"><b id="rankLv">모험가 Lv 1</b><div class="bar"><div id="rankFill"></div></div><small id="rankText"></small></div>
       <input id="name" maxlength="12" placeholder="닉네임" autocomplete="off" />
       <div id="rules" class="pick">
         <button id="ruleDm">데스매치<small>3분 · 최다 킬</small></button>
@@ -62,7 +73,7 @@
       <button id="play">혼자 하기 (봇전)</button>
       <button id="online" class="alt">온라인 접속</button>
       <button id="openSettings" class="alt">⚙️ 설정</button>
-      <small>손전등 불빛으로 상대를 비추면 잡습니다. 맵은 라운드마다 바뀌고, 곳곳에 아이템(🔋👟🛡️👻)이 생깁니다. 구르는 동안은 무적, 조명탄은 주변을 밝혀 팀에게 보여줍니다.<br />모바일: 왼쪽 드래그 이동 · 오른쪽 드래그 회전 · 버튼으로 스킬<br />PC: WASD 이동 · 마우스 드래그/←→ 회전 · Space 공격 · Shift 구르기 · F 조명탄</small>
+      <small>반딧불을 모아 레벨을 올리고, 강화를 골라 강해지세요. 손전등으로 상대의 체력을 깎아 잡습니다. 맵은 라운드마다 바뀌고, 곳곳에 아이템(🔋👟🛡️👻)이 생깁니다. 구르는 동안은 무적, 조명탄은 주변을 밝혀 팀에게 보여줍니다.<br />모바일: 왼쪽 드래그 이동 · 오른쪽 드래그 회전 · 버튼으로 스킬<br />PC: WASD 이동 · 마우스 드래그/←→ 회전 · Space 공격 · Shift 구르기 · F 조명탄</small>
       <div id="status"></div>
     </div>
 

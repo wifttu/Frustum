@@ -18,7 +18,7 @@ export const CFG = Object.freeze({
   // 손전등 빔 공격: 좁고 긴 원뿔. 벽에 막힌다.
   ATTACK_RANGE: 6,
   ATTACK_ARC: 40 * DEG,
-  ATTACK_COOLDOWN: 4,
+  ATTACK_COOLDOWN: 1.5, // 기본값. 체력제라 한 번에 쓰러지지 않으므로 4초에서 줄였다 (강화로 더 줄어든다)
   BEAM_TIME: 0.25, // 빔이 화면에 보이는 시간
 
   // 구르기: 짧은 순간이동 + 무적

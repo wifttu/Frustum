@@ -4,6 +4,7 @@ import { MAP_ROTATION, MAP_SIZE, MAPS, isFree } from '../shared/map.js';
 import { flareLanding, stepPlayer } from '../shared/sim.js';
 import { canSee, segmentBlocked, wrapAngle } from '../shared/vision.js';
 import { botThink } from './bots.js';
+import { PROGRESS, UPGRADES, rollChoices, statsOf, xpToNext } from '../shared/progress.js';
 
 const DT = 1 / CFG.TICK_RATE;
 const MAX_QUEUE = 10;
@@ -28,6 +29,10 @@ export class Game {
     this.itemT = 0;
     this.nextItem = 1;
     this.useItems = opts.items !== false;
+    this.fireflies = []; // 경험치 반딧불 {id, x, z, v}
+    this.ffT = 0;
+    this.ffVer = 0; // 반딧불 목록이 바뀔 때마다 증가 (바뀌었을 때만 전송)
+    this.hits = []; // [공격자, 대상, 피해]
     this.players = new Map();
     this.flares = [];
     this.nextId = 1;
@@ -74,7 +79,8 @@ export class Game {
     const p = {
       id, name, team: 0, isBot, send,
       x: 0, z: 0, yaw: 0,
-      alive: false, respawn: 0, gas: 0, cd: 0, speedT: 0, vest: 0, cloakT: 0, picked: [], beam: 0, score: 0, wins: 0,
+      alive: false, respawn: 0, gas: 0, cd: 0, speedT: 0, vest: 0, cloakT: 0, picked: [],
+      hp: 0, xp: 0, level: 1, ups: {}, choices: [], hurtT: 0, statsDirty: true, ffVer: -1, earned: 0, beam: 0, score: 0, wins: 0,
       rollT: 0, rollCd: 0, rollDx: 0, rollDz: 1, flareCd: 0,
       queue: [], budget: 0, ack: 0, lastSeq: 0, ai: {},
     };
@@ -82,7 +88,7 @@ export class Game {
     const seat = bots.find((q) => q.alive) || bots[0];
     if (seat) {
       this.players.delete(seat.id);
-      Object.assign(p, { team: seat.team, x: seat.x, z: seat.z, yaw: seat.yaw, alive: seat.alive, respawn: seat.respawn, score: seat.score });
+      Object.assign(p, { team: seat.team, x: seat.x, z: seat.z, yaw: seat.yaw, alive: seat.alive, respawn: seat.respawn, score: seat.score, hp: seat.hp, xp: seat.xp, level: seat.level, ups: { ...seat.ups } });
     } else {
       p.team = 1000 + id; // 개인전: 각자 고유 팀
       if (this.cfg.TEAMS > 0) {
@@ -92,6 +98,8 @@ export class Game {
       // 서바이벌은 라운드가 한창이면 다음 라운드부터 참가, 데스매치는 바로 참가
       if (this.endT <= 0 && (this.respawns || this.roundT < this.cfg.JOIN_GRACE)) this.spawn(p);
     }
+    this.applyStats(p);
+    if (!seat) p.hp = p.stats.maxHp;
     this.players.set(id, p);
     this.rosterDirty = true;
     return p;
@@ -161,6 +169,8 @@ export class Game {
     p.speedT = 0;
     p.vest = 0;
     p.cloakT = 0;
+    if (p.stats) p.hp = p.stats.maxHp;
+    p.hurtT = 99;
   }
 
   // 클라이언트 입력: [seq, mx, mz, yaw, atk, roll, flare]. 값은 신뢰하지 않고 검증/클램프한다.
@@ -192,7 +202,8 @@ export class Game {
   // 손전등 빔: 좁고 긴 원뿔 안의, 벽에 가리지 않은 적을 처치한다.
   attack(p) {
     const cfg = this.cfg;
-    p.cd = cfg.ATTACK_COOLDOWN;
+    const st = p.stats;
+    p.cd = st.cooldown;
     p.beam = cfg.BEAM_TIME;
     p.cloakT = 0; // 공격하면 망토가 벗겨진다
     const r = cfg.PLAYER_RADIUS;
@@ -202,10 +213,10 @@ export class Game {
       const dx = q.x - p.x;
       const dz = q.z - p.z;
       const d = Math.hypot(dx, dz);
-      if (d > cfg.ATTACK_RANGE + r) continue;
+      if (d > st.range + r) continue;
       // 몸통 반경만큼 각도 여유를 준다 (가까울수록 넓게 맞는다)
       const slack = d > r ? Math.asin(r / d) : Math.PI;
-      if (Math.abs(wrapAngle(Math.atan2(dx, dz) - p.yaw)) > cfg.ATTACK_ARC / 2 + slack) continue;
+      if (Math.abs(wrapAngle(Math.atan2(dx, dz) - p.yaw)) > st.arc / 2 + slack) continue;
       if (segmentBlocked(p.x, p.z, q.x, q.z, this.walls)) continue;
       if (q.vest > 0) {
         // 반사 조끼: 이번 한 번은 막는다
@@ -213,14 +224,89 @@ export class Game {
         this.blocks.push([p.id, q.id]);
         continue;
       }
+      // 피해: 체력이 0이 되면 쓰러진다
+      const dmg = Math.round(st.damage);
+      q.hp -= dmg;
+      q.hurtT = 0;
+      this.hits.push([p.id, q.id, dmg]);
+      if (st.leech) p.hp = Math.min(st.maxHp, p.hp + dmg * st.leech);
+      this.gainXp(p, PROGRESS.XP_HIT);
+      if (q.hp > 0) continue;
+      q.hp = 0;
       q.alive = false;
       q.respawn = cfg.RESPAWN_TIME;
       q.queue.length = 0;
       p.score++;
       this.kills.push([p.id, q.id]);
       this.rosterDirty = true;
+      this.gainXp(p, PROGRESS.XP_KILL + q.level * PROGRESS.XP_KILL_PER_LEVEL);
+      this.dropFireflies(q);
     }
     this.checkRoundEnd();
+  }
+
+  // ── 성장 ──
+  applyStats(p) {
+    p.stats = statsOf(p.ups, this.cfg);
+    p.spd = p.stats.speed; // 공용 시뮬레이션이 쓰는 값
+    p.rollCdMax = p.stats.rollCd;
+    p.statsDirty = true;
+  }
+
+  resetProgress(p) {
+    p.xp = 0;
+    p.level = 1;
+    p.ups = {};
+    p.choices = [];
+    this.applyStats(p);
+    p.hp = p.stats.maxHp;
+  }
+
+  gainXp(p, n) {
+    if (p.level >= PROGRESS.MAX_LEVEL) return;
+    p.xp += n;
+    p.earned += n;
+    while (p.level < PROGRESS.MAX_LEVEL && p.xp >= xpToNext(p.level)) {
+      p.xp -= xpToNext(p.level);
+      p.level++;
+      const c = rollChoices(p.ups);
+      if (c.length) p.choices.push(c);
+      this.rosterDirty = true;
+      p.statsDirty = true;
+      if (p.isBot) while (p.choices.length) this.choose(p, Math.floor(Math.random() * p.choices[0].length));
+    }
+  }
+
+  // 레벨업 카드 고르기: idx = 첫 번째 대기 중인 카드 묶음에서의 번호
+  choose(p, idx) {
+    const set = p.choices[0];
+    if (!set || !Number.isInteger(idx) || !set[idx]) return;
+    p.choices.shift();
+    const key = set[idx];
+    if ((p.ups[key] || 0) >= UPGRADES[key].max) return;
+    const before = p.stats.maxHp;
+    p.ups[key] = (p.ups[key] || 0) + 1;
+    this.applyStats(p);
+    if (p.alive) p.hp = Math.min(p.stats.maxHp, p.hp + (p.stats.maxHp - before));
+  }
+
+  spawnFirefly(x, z, v = PROGRESS.XP_FIREFLY) {
+    if (x === undefined) [x, z] = this.randomFreePoint(0.8);
+    this.fireflies.push({ id: this.nextItem++, x, z, v });
+    this.ffVer++;
+  }
+
+  // 쓰러진 자리에 경험치 일부를 반딧불로 흘린다
+  dropFireflies(q) {
+    const total = Math.floor(q.xp * PROGRESS.DEATH_DROP) + 20;
+    q.xp -= Math.floor(q.xp * PROGRESS.DEATH_DROP);
+    const n = Math.min(6, Math.max(2, Math.round(total / 15)));
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const x = q.x + Math.sin(a) * 1.4;
+      const z = q.z + Math.cos(a) * 1.4;
+      if (isFree(x, z, 0.3, this.solid)) this.spawnFirefly(x, z, Math.round(total / n));
+    }
   }
 
   throwFlare(p) {
@@ -298,6 +384,7 @@ export class Game {
     for (const p of this.players.values()) {
       p.score = 0;
       p.flareCd = 0;
+      this.resetProgress(p);
       p.queue.length = 0;
       p.alive = false; // spawn 이 다른 플레이어 시야를 피하도록 먼저 모두 비활성화
     }
@@ -308,6 +395,9 @@ export class Game {
     this.items.length = 0;
     this.itemT = 0;
     for (let i = 0; i < ITEM_RULES.START; i++) this.spawnItem();
+    this.fireflies.length = 0;
+    this.ffVer++;
+    for (let i = 0; i < PROGRESS.FIREFLY_START; i++) this.spawnFirefly();
     this.rosterDirty = true;
     this.events.push({ t: 'n', map: this.map.id });
   }
@@ -388,9 +478,33 @@ export class Game {
       });
     }
 
+    // 반딧불: 생겨나고, 가까이 오면 줍는다 (자석 강화면 더 멀리서)
+    this.ffT += DT;
+    if (this.ffT >= PROGRESS.FIREFLY_EVERY && this.fireflies.length < PROGRESS.FIREFLY_MAX) {
+      this.ffT = 0;
+      this.spawnFirefly();
+    }
+    if (this.fireflies.length) {
+      const half = this.zoneHalf();
+      const before = this.fireflies.length;
+      this.fireflies = this.fireflies.filter((f) => {
+        if (Math.max(Math.abs(f.x), Math.abs(f.z)) > half) return false;
+        for (const p of this.players.values()) {
+          if (!p.alive || Math.hypot(p.x - f.x, p.z - f.z) > p.stats.pickRadius) continue;
+          this.gainXp(p, f.v);
+          return false;
+        }
+        return true;
+      });
+      if (this.fireflies.length !== before) this.ffVer++;
+    }
+
     for (const p of this.players.values()) {
       p.cd = Math.max(0, p.cd - DT);
       p.vest = Math.max(0, p.vest - DT);
+      // 체력 회복: 한동안 맞지 않으면
+      p.hurtT += DT;
+      if (p.alive && p.hurtT >= p.stats.regenDelay && p.hp < p.stats.maxHp) p.hp = Math.min(p.stats.maxHp, p.hp + p.stats.regen * DT);
       p.cloakT = Math.max(0, p.cloakT - DT);
       p.beam = Math.max(0, p.beam - DT);
       p.flareCd = Math.max(0, p.flareCd - DT);
@@ -474,7 +588,7 @@ export class Game {
     for (const q of this.players.values()) {
       if (q === p || !q.alive) continue;
       if (q.team !== p.team && !(seen && seen.has(q.id))) continue;
-      e.push([q.id, q2(q.x), q2(q.z), q2(q.yaw), (q.beam > 0 ? 1 : 0) | (q.rollT > 0 ? 2 : 0) | (q.cloakT > 0 ? 4 : 0) | (q.vest > 0 ? 8 : 0)]);
+      e.push([q.id, q2(q.x), q2(q.z), q2(q.yaw), (q.beam > 0 ? 1 : 0) | (q.rollT > 0 ? 2 : 0) | (q.cloakT > 0 ? 4 : 0) | (q.vest > 0 ? 8 : 0), Math.ceil((q.hp / q.stats.maxHp) * 100), q.level]);
     }
     const f = [];
     for (const fl of this.flares) if (fl.team === p.team) f.push([q2(fl.x), q2(fl.z), q2(fl.t)]);
@@ -483,6 +597,12 @@ export class Game {
     if (seenItems) for (const x of this.items) if (seenItems.has(x.id)) it.push([x.id, x.type, q2(x.x), q2(x.z)]);
     const pk = p.picked;
     p.picked = [];
+    // 반딧불은 지형처럼 공개 정보: 바뀌었을 때만 통째로 보낸다
+    let ff;
+    if (p.ffVer !== this.ffVer) {
+      p.ffVer = this.ffVer;
+      ff = this.fireflies.map((f) => [f.id, q2(f.x), q2(f.z)]);
+    }
     return {
       t: 's',
       k: this.tick,
@@ -495,6 +615,9 @@ export class Game {
       f,
       it, // 보이는 아이템 [id, 종류, x, z]
       pk, // 방금 주운 아이템
+      ff,
+      hp: Math.ceil(p.hp),
+      xp: p.xp,
     };
   }
 
@@ -507,7 +630,7 @@ export class Game {
   roster() {
     return {
       t: 'r',
-      p: [...this.players.values()].map((p) => [p.id, p.name, p.team, p.score, p.alive ? 1 : 0, p.wins]),
+      p: [...this.players.values()].map((p) => [p.id, p.name, p.team, p.score, p.alive ? 1 : 0, p.wins, p.level]),
     };
   }
 
@@ -529,6 +652,16 @@ export class Game {
     if (this.blocks.length) {
       all({ t: 'b', l: this.blocks });
       this.blocks = [];
+    }
+    if (this.hits.length) {
+      all({ t: 'h', l: this.hits });
+      this.hits = [];
+    }
+    // 내 성장 정보: 바뀌었을 때만
+    for (const p of humans) {
+      if (!p.statsDirty) continue;
+      p.statsDirty = false;
+      p.send(JSON.stringify({ t: 'st', lv: p.level, next: xpToNext(p.level), ups: p.ups, ch: p.choices[0] || null, more: Math.max(0, p.choices.length - 1), st: p.stats, earned: p.earned }));
     }
     for (const ev of this.events) all(ev);
     this.events = [];

@@ -100,6 +100,8 @@ wss.on('connection', (ws) => {
       ws.send(JSON.stringify({ t: 'w', id: player.id, team: player.team, ...game.info() }));
     } else if (m.t === 'i' && player) {
       game.queueInput(player.id, m.d);
+    } else if (m.t === 'u' && player) {
+      game.choose(player, m.c); // 레벨업 카드 선택
     }
   });
 

@@ -199,6 +199,16 @@ export class Characters {
     u.ring.material = this.ring[kind];
   }
 
+  // 강화된 사거리/폭에 맞춰 빔과 조준선을 늘린다 (빔 꼭짓점은 손 위치에 고정)
+  setBeamStats(root, range, arc) {
+    const u = root.userData;
+    const sz = range / CFG.ATTACK_RANGE;
+    const sx = sz * (Math.tan(arc / 2) / Math.tan(CFG.ATTACK_ARC / 2));
+    u.beam.scale.set(sx, 1, sz);
+    u.beam.position.set(0.42 * (1 - sx), 0, 0.9 * (1 - sz));
+    if (u.aim) u.aim.scale.set(sx, 1, sz);
+  }
+
   // 등장 애니메이션을 처음부터 다시 (부활, 새 라운드)
   respawn(root) {
     root.userData.spawn = 0;
@@ -292,7 +302,7 @@ export class DeathFx {
       fx = { ring, pts, vel: new Float32Array(BURST_N * 3), t: 1 };
       this.pool.push(fx);
     }
-    const color = kind === 'shield' ? 0x9fe8ff : (COLORS[kind] ?? 0xffffff);
+    const color = kind === 'shield' ? 0x9fe8ff : kind === 'level' ? 0xffe27a : (COLORS[kind] ?? 0xffffff);
     fx.ring.material.color.set(color);
     fx.pts.material.color.set(color);
     fx.ring.position.set(x, 0.07, z);
