@@ -1,12 +1,20 @@
-// 캐릭터: 코드로 만든 저폴리 인형 + 절차적 애니메이션(걷기, 숨쉬기, 손전등 조준/발사, 구르기, 등장).
+// 캐릭터: 코드로 만든 2등신 후드 캐릭터 + 절차적 애니메이션(걷기, 숨쉬기, 손전등 조준/발사, 구르기, 등장).
 // 외부 모델 파일 없음. 캐릭터 하나는 드로우콜 7~8회 (몸통/팔2/다리2/발밑 링/그림자/빔).
 import * as THREE from 'three';
 import { CFG } from './shared/config.js';
 
-const SUIT = [1, 1, 1]; // 머티리얼 색(팀 색)이 그대로 나오는 부분
-const DARK = [0.2, 0.21, 0.24];
-const MID = [0.5, 0.52, 0.56];
-const GLOW = [3, 3, 3]; // 바이저, 손전등 렌즈: 밝게 빛나 보이게
+// 색은 정점에 직접 굽는다 (머티리얼 색은 흰색). 후드/망토만 팀 색이고 나머지는 공통.
+// 색은 sRGB 16진수로 적고 렌더링용 선형 값으로 바꿔 쓴다 (그대로 넣으면 물 빠진 색이 된다)
+const rgb = (hex) => new THREE.Color(hex).toArray();
+const SKIN = rgb(0xffcfa8);
+const CHEEK = rgb(0xff8f86);
+const EYE = rgb(0x1c1418);
+const PANTS = rgb(0x5d4332);
+const BOOT = rgb(0x3a271c);
+const PACK = rgb(0xa06c3c);
+const METAL = rgb(0x50545c);
+const GLOW = [3, 3, 2.4]; // 손전등 렌즈: 밝게 빛나 보이게
+const shade = (c, k) => c.map((v) => v * k);
 
 // 여러 지오메트리를 정점 색과 함께 하나로 합친다 (드로우콜 절약)
 function merge(parts) {
@@ -30,40 +38,55 @@ function merge(parts) {
   return out;
 }
 
-const HIP_Y = 0.74;
-const SHOULDER_Y = 1.26;
-const PIVOT_Y = 0.8; // 구를 때 회전 중심
-const BODY_SCALE = 1.3; // 위에서 내려다보는 카메라에서 잘 보이도록 몸만 키운다 (판정 크기는 그대로)
+const HIP_Y = 0.34;
+const SHOULDER_Y = 0.8;
+const HEAD_Y = 1.14;
+const PIVOT_Y = 0.62; // 구를 때 회전 중심
+const BODY_SCALE = 1.35; // 위에서 내려다보는 카메라에서 잘 보이도록 몸만 키운다 (판정 크기는 그대로)
 
-const torsoGeo = merge([
-  [new THREE.CapsuleGeometry(0.25, 0.3, 4, 10).translate(0, 1.02, 0), SUIT],
-  [new THREE.SphereGeometry(0.23, 12, 10).translate(0, 1.52, 0), SUIT],
-  [new THREE.SphereGeometry(0.245, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.45).translate(0, 1.53, 0), DARK], // 헬멧
-  [new THREE.BoxGeometry(0.33, 0.1, 0.14).translate(0, 1.53, 0.17), GLOW], // 바이저
-  [new THREE.BoxGeometry(0.32, 0.36, 0.16).translate(0, 1.06, -0.27), DARK], // 배낭
-  [new THREE.CylinderGeometry(0.265, 0.265, 0.08, 12).translate(0, 0.84, 0), DARK], // 벨트
-]);
-const legGeo = merge([
-  [new THREE.CapsuleGeometry(0.105, 0.42, 3, 8).translate(0, -0.33, 0), MID],
-  [new THREE.BoxGeometry(0.2, 0.11, 0.3).translate(0, -0.68, 0.05), DARK], // 신발
-]);
-const armParts = [
-  [new THREE.CapsuleGeometry(0.085, 0.34, 3, 8).translate(0, -0.23, 0), SUIT],
-  [new THREE.SphereGeometry(0.1, 8, 6).translate(0, -0.48, 0), DARK], // 장갑
-];
-const armLGeo = merge(armParts);
-const armRGeo = merge([
-  ...armParts,
-  [new THREE.CylinderGeometry(0.06, 0.09, 0.34, 8).translate(0, -0.68, 0), DARK], // 손전등
-  [new THREE.CylinderGeometry(0.085, 0.085, 0.03, 8).translate(0, -0.86, 0), GLOW], // 렌즈
-]);
+// 팀 색(후드, 망토, 소매)을 입힌 부위별 지오메트리
+function buildParts(teamHex) {
+  const team = rgb(teamHex);
+  const dark = shade(team, 0.72);
+  const torso = merge([
+    // 망토: 아래로 퍼지는 원뿔대 + 밑단
+    [new THREE.CylinderGeometry(0.19, 0.36, 0.52, 14).translate(0, 0.6, 0), team],
+    [new THREE.CylinderGeometry(0.37, 0.37, 0.07, 14).translate(0, 0.36, 0), dark],
+    // 큰 머리와 얼굴
+    [new THREE.SphereGeometry(0.35, 16, 12).translate(0, HEAD_Y, 0), SKIN],
+    [new THREE.SphereGeometry(0.052, 8, 6).scale(1, 1.35, 0.6).translate(0.13, HEAD_Y + 0.01, 0.325), EYE],
+    [new THREE.SphereGeometry(0.052, 8, 6).scale(1, 1.35, 0.6).translate(-0.13, HEAD_Y + 0.01, 0.325), EYE],
+    [new THREE.SphereGeometry(0.06, 8, 6).scale(1, 0.6, 0.4).translate(0.21, HEAD_Y - 0.1, 0.275), CHEEK],
+    [new THREE.SphereGeometry(0.06, 8, 6).scale(1, 0.6, 0.4).translate(-0.21, HEAD_Y - 0.1, 0.275), CHEEK],
+    // 후드: 얼굴만 내놓고 머리 위와 뒤를 덮는다 + 뾰족한 끝
+    [new THREE.SphereGeometry(0.39, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.52).rotateX(-0.72).translate(0, HEAD_Y, 0), team],
+    [new THREE.ConeGeometry(0.15, 0.34, 10).rotateX(-1.2).translate(0, HEAD_Y + 0.28, -0.3), dark],
+    [new THREE.TorusGeometry(0.2, 0.06, 6, 14).rotateX(Math.PI / 2).translate(0, 0.86, 0), dark], // 목도리
+    [new THREE.BoxGeometry(0.3, 0.3, 0.16).translate(0, 0.62, -0.3), PACK], // 배낭
+  ]);
+  const leg = merge([
+    [new THREE.CapsuleGeometry(0.1, 0.1, 3, 8).translate(0, -0.14, 0), PANTS],
+    [new THREE.SphereGeometry(0.12, 8, 6).scale(1, 0.75, 1.35).translate(0, -0.27, 0.04), BOOT],
+  ]);
+  const armParts = [
+    [new THREE.CapsuleGeometry(0.08, 0.14, 3, 8).translate(0, -0.14, 0), team],
+    [new THREE.SphereGeometry(0.085, 8, 6).translate(0, -0.3, 0), SKIN], // 손
+  ];
+  const armL = merge(armParts);
+  const armR = merge([
+    ...armParts,
+    [new THREE.CylinderGeometry(0.055, 0.085, 0.3, 8).translate(0, -0.46, 0), METAL], // 손전등
+    [new THREE.CylinderGeometry(0.08, 0.08, 0.03, 8).translate(0, -0.62, 0), GLOW], // 렌즈
+  ]);
+  return { torso, leg, armL, armR };
+}
 const ringGeo = new THREE.RingGeometry(0.5, 0.6, 28).rotateX(-Math.PI / 2).translate(0, 0.05, 0);
 const shadowGeo = new THREE.CircleGeometry(0.44, 16).rotateX(-Math.PI / 2).translate(0, 0.03, 0);
 
 // 손전등 빔: 판정 범위(ATTACK_RANGE, ATTACK_ARC)와 같은 모양의 부채꼴. 손에서 멀어질수록 흐려진다.
 function makeBeamGeometry() {
   const seg = 16;
-  const pos = [0.43, 1.5, 1.1];
+  const pos = [0.42, 1.08, 0.9];
   const col = [0.62, 0.58, 0.42];
   const idx = [];
   for (let i = 0; i <= seg; i++) {
@@ -84,16 +107,18 @@ const aimGeo = new THREE.RingGeometry(
   CFG.ATTACK_RANGE - 0.07, CFG.ATTACK_RANGE, 20, 1, -Math.PI / 2 - CFG.ATTACK_ARC / 2, CFG.ATTACK_ARC,
 ).rotateX(-Math.PI / 2).translate(0, 0.06, 0);
 
-const COLORS = { self: 0xe6eef6, ally: 0x3d9cf0, enemy: 0xf0503d };
+const COLORS = { self: 0x4fc46a, ally: 0x3d9cf0, enemy: 0xf0503d }; // 나: 초록, 아군: 파랑, 적: 빨강
 const lerp = (a, b, t) => a + (b - a) * t;
 const easeOutBack = (t) => 1 + 2.7 * Math.pow(t - 1, 3) + 1.7 * Math.pow(t - 1, 2);
 
 export class Characters {
   constructor(mask) {
-    this.body = {};
+    // 장면 조명이 밝아서(반구광 + 직사광) 색이 하얗게 날아가지 않도록 살짝 눌러 준다
+    this.bodyMat = mask.apply(new THREE.MeshLambertMaterial({ color: 0xd8d8d8, vertexColors: true }));
+    this.parts = {};
     this.ring = {};
     for (const [kind, color] of Object.entries(COLORS)) {
-      this.body[kind] = mask.apply(new THREE.MeshLambertMaterial({ color, vertexColors: true }));
+      this.parts[kind] = buildParts(color);
       this.ring[kind] = mask.apply(
         new THREE.MeshBasicMaterial({ color, transparent: true, opacity: kind === 'self' ? 0.45 : 0.8, depthWrite: false }),
       );
@@ -117,16 +142,17 @@ export class Characters {
     inner.position.y = -PIVOT_Y;
     pose.add(inner);
 
-    const m = this.body[kind];
-    const torso = new THREE.Mesh(torsoGeo, m);
-    const legL = new THREE.Mesh(legGeo, m);
-    const legR = new THREE.Mesh(legGeo, m);
-    const armL = new THREE.Mesh(armLGeo, m);
-    const armR = new THREE.Mesh(armRGeo, m);
+    const m = this.bodyMat;
+    const g = this.parts[kind];
+    const torso = new THREE.Mesh(g.torso, m);
+    const legL = new THREE.Mesh(g.leg, m);
+    const legR = new THREE.Mesh(g.leg, m);
+    const armL = new THREE.Mesh(g.armL, m);
+    const armR = new THREE.Mesh(g.armR, m);
     legL.position.set(0.13, HIP_Y, 0);
     legR.position.set(-0.13, HIP_Y, 0);
-    armL.position.set(-0.33, SHOULDER_Y, 0);
-    armR.position.set(0.33, SHOULDER_Y, 0);
+    armL.position.set(-0.29, SHOULDER_Y, 0);
+    armR.position.set(0.29, SHOULDER_Y, 0);
     inner.add(torso, legL, legR, armL, armR);
 
     const ring = new THREE.Mesh(ringGeo, this.ring[kind]);
@@ -154,7 +180,11 @@ export class Characters {
     const u = root.userData;
     if (u.kind === kind) return;
     u.kind = kind;
-    for (const part of [u.torso, u.legL, u.legR, u.armL, u.armR]) part.material = this.body[kind];
+    const g = this.parts[kind];
+    u.torso.geometry = g.torso;
+    u.legL.geometry = u.legR.geometry = g.leg;
+    u.armL.geometry = g.armL;
+    u.armR.geometry = g.armR;
     u.ring.material = this.ring[kind];
   }
 
@@ -188,11 +218,12 @@ export class Characters {
     u.legL.rotation.x = sw;
     u.legR.rotation.x = -sw;
     u.armL.rotation.x = -sw * 0.8;
-    u.armL.rotation.z = -0.12;
+    u.armL.rotation.z = -0.25;
     // 오른팔은 손전등을 앞으로 겨누고, 발사 순간 쭉 뻗는다
     u.armR.rotation.x = -1.1 - 0.47 * u.atk + sw * 0.12 + breathe * 0.03;
     u.armR.position.z = 0.02 + 0.14 * u.atk;
-    u.torso.rotation.x = 0.13 * amt - 0.1 * u.atk;
+    u.torso.rotation.x = 0.1 * amt - 0.08 * u.atk;
+    u.torso.rotation.z = Math.sin(u.phase) * 0.06 * amt; // 걸을 때 좌우로 뒤뚱
     u.torso.scale.y = 1 + breathe * 0.012;
 
     const pose = u.pose;
@@ -200,14 +231,14 @@ export class Characters {
       // 앞구르기: 몸을 말고 한 바퀴
       const tuck = Math.sin(s.roll * Math.PI);
       pose.rotation.x = s.roll * Math.PI * 2;
-      pose.position.y = PIVOT_Y - 0.32 * tuck;
+      pose.position.y = PIVOT_Y - 0.2 * tuck;
       pose.scale.setScalar(1 - 0.2 * tuck);
       u.legL.rotation.x = u.legR.rotation.x = -1.5 * tuck;
       u.armL.rotation.x = -1.2 * tuck;
     } else {
       pose.rotation.x = 0;
       pose.scale.setScalar(1);
-      pose.position.y = PIVOT_Y + Math.abs(Math.cos(u.phase)) * 0.05 * amt + breathe * 0.012;
+      pose.position.y = PIVOT_Y + Math.abs(Math.cos(u.phase)) * 0.07 * amt + breathe * 0.012;
     }
 
     u.beam.visible = !!s.beam;
