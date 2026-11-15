@@ -75,11 +75,26 @@
     </div>
 
     <div id="shop" hidden>
-      <div class="panel">
-        <h2>캐릭터 <em id="shopCoins"></em></h2>
-        <div id="shopList"></div>
-        <button id="closeShop">닫기</button>
+      <div id="shopCoins"></div>
+      <button id="closeShop" aria-label="돌아가기">↩</button>
+      <div id="shopHead"><b id="shopName"></b><span id="shopAbility"></span></div>
+      <div id="shopLocks"></div>
+      <button id="shopPrev" class="nav" aria-label="이전">‹</button>
+      <button id="shopNext" class="nav" aria-label="다음">›</button>
+      <div id="shopCount"></div>
+      <div id="shopStats">
+        <svg id="radar" viewBox="-96 -66 192 132" aria-hidden="true">
+          <polygon class="grid" points="0,-44 44,0 0,44 -44,0" />
+          <polygon class="grid" points="0,-22 22,0 0,22 -22,0" />
+          <path class="grid" d="M0,-44V44M-44,0H44" />
+          <polygon id="radarShape" points="" />
+          <text x="0" y="-50">❤️ 체력</text>
+          <text x="49" y="4" style="text-anchor: start">👟 속도</text>
+          <text x="0" y="60">💥 공격</text>
+          <text x="-49" y="4" style="text-anchor: end">사거리 🔦</text>
+        </svg>
       </div>
+      <button id="shopAct"></button>
     </div>
 
     <div id="rotate"><b>📱↻</b>화면을 가로로 돌려 주세요</div>

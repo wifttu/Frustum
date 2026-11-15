@@ -12,6 +12,7 @@ import { CHARACTERS, PROGRESS, UPGRADES, charOf, statsOf, xpToNext } from './sha
 import { Characters, DeathFx } from './character.js';
 import { Minimap } from './minimap.js';
 import { buildFloorTexture, buildItemGeos, buildWalls, buildWater } from './world.js';
+import { Showcase, radarOf } from './showcase.js';
 
 const DT = 1 / CFG.TICK_RATE;
 const INTERP_MS = 110; // 원격 플레이어 보간 지연
@@ -781,53 +782,97 @@ function drawProfile() {
   $('coins').textContent = `🪙 ${Math.floor(profile.coins)}`;
 }
 
-// 캐릭터 상점: 코인으로 사고, 가진 것 중에서 고른다
+// 캐릭터 선택 화면: 3D 캐릭터를 넘겨 보며 능력을 확인하고, 코인으로 사거나 고른다
+const showcase = new Showcase(chars);
+const CHAR_IDS = Object.keys(CHARACTERS);
+const lockEls = CHAR_IDS.map(() => {
+  const el = document.createElement('div');
+  el.textContent = '🔒';
+  return $('shopLocks').appendChild(el);
+});
 function drawShop() {
+  const id = showcase.current;
+  const c = CHARACTERS[id];
+  const owned = profile.owned.includes(id);
   $('shopCoins').textContent = `🪙 ${Math.floor(profile.coins)}`;
-  $('shopList').replaceChildren(
-    ...Object.entries(CHARACTERS).map(([id, c]) => {
-      const owned = profile.owned.includes(id);
-      const row = document.createElement('div');
-      row.className = 'char' + (profile.char === id ? ' on' : '');
-      row.innerHTML = '<i></i><div><b></b><span></span></div><button></button>';
-      row.querySelector('i').textContent = c.icon;
-      row.querySelector('b').textContent = c.name;
-      row.querySelector('span').textContent = c.desc;
-      const btn = row.querySelector('button');
-      if (profile.char === id) {
-        btn.textContent = '사용 중';
-        btn.disabled = true;
-      } else if (owned) {
-        btn.textContent = '선택';
-        btn.addEventListener('click', () => {
-          profile.char = id;
-          saveProfile();
-          drawShop();
-        });
-      } else {
-        btn.textContent = `🪙 ${c.price}`;
-        btn.className = 'buy';
-        btn.disabled = profile.coins < c.price;
-        btn.addEventListener('click', () => {
-          if (profile.coins < c.price) return;
-          profile.coins -= c.price;
-          profile.owned.push(id);
-          profile.char = id;
-          saveProfile();
-          sfx.pickup();
-          drawShop();
-          drawProfile();
-        });
-      }
-      return row;
-    }),
-  );
+  $('shopName').textContent = c.name;
+  $('shopAbility').textContent = `${c.icon} ${c.desc}`;
+  $('shopCount').textContent = `${profile.owned.length}/${CHAR_IDS.length}`;
+  $('shopPrev').disabled = showcase.index === 0;
+  $('shopNext').disabled = showcase.index === CHAR_IDS.length - 1;
+  // 능력치 그래프: 위 체력, 오른쪽 속도, 아래 공격, 왼쪽 사거리
+  const r = radarOf(id);
+  const R = 44;
+  $('radarShape').setAttribute('points', `0,${-r.hp * R} ${r.speed * R},0 0,${r.power * R} ${-r.range * R},0`);
+  const btn = $('shopAct');
+  btn.className = '';
+  btn.disabled = false;
+  if (profile.char === id) {
+    btn.textContent = '사용 중';
+    btn.disabled = true;
+  } else if (owned) btn.textContent = '선택';
+  else {
+    btn.textContent = `🪙 ${c.price} 구매`;
+    btn.className = 'buy';
+    btn.disabled = profile.coins < c.price;
+  }
+}
+function shopMove(d) {
+  const before = showcase.index;
+  showcase.move(d);
+  if (showcase.index !== before) {
+    sfx.firefly();
+    drawShop();
+  }
+}
+$('shopAct').addEventListener('click', () => {
+  const id = showcase.current;
+  const c = CHARACTERS[id];
+  if (!profile.owned.includes(id)) {
+    if (profile.coins < c.price) return;
+    profile.coins -= c.price;
+    profile.owned.push(id);
+    sfx.levelUp();
+  } else sfx.choose();
+  profile.char = id;
+  saveProfile();
+  drawShop();
+  drawProfile();
+});
+$('shopPrev').addEventListener('click', () => shopMove(-1));
+$('shopNext').addEventListener('click', () => shopMove(1));
+addEventListener('keydown', (e) => {
+  if (!showcase.active) return;
+  if (e.code === 'ArrowLeft') shopMove(-1);
+  if (e.code === 'ArrowRight') shopMove(1);
+  if (e.code === 'Escape') $('closeShop').click();
+});
+// 좌우로 밀어서 넘기기, 옆 캐릭터를 눌러서 고르기
+{
+  let startX = null;
+  $('shop').addEventListener('pointerdown', (e) => {
+    if (e.target === $('shop') || e.target.closest('#shopLocks')) startX = e.clientX;
+  });
+  $('shop').addEventListener('pointerup', (e) => {
+    if (startX === null) return;
+    const dx = e.clientX - startX;
+    startX = null;
+    if (Math.abs(dx) > 36) shopMove(dx < 0 ? 1 : -1);
+    else if (e.clientX < innerWidth * 0.36) shopMove(-1);
+    else if (e.clientX > innerWidth * 0.64) shopMove(1);
+  });
 }
 $('openShop').addEventListener('click', () => {
+  showcase.open(profile.char);
   drawShop();
   $('shop').hidden = false;
+  $('menu').style.display = 'none';
 });
-$('closeShop').addEventListener('click', () => ($('shop').hidden = true));
+$('closeShop').addEventListener('click', () => {
+  showcase.close();
+  $('shop').hidden = true;
+  $('menu').style.display = '';
+});
 
 // 버프 칩: 남은 시간이 있는 효과만 보여준다
 const BUFF_ICONS = { sneakers: '👟', vest: '🛡️', cloak: '👻' };
@@ -992,6 +1037,20 @@ function frame(now) {
   const dtMs = Math.min(100, now - lastT);
   lastT = now;
   frameEma = lerp(frameEma, dtMs, 0.05);
+  if (showcase.active) {
+    // 캐릭터 선택 화면이 열려 있으면 게임 대신 그 장면을 그린다
+    renderer.info.reset();
+    showcase.render(renderer, dtMs / 1000, now * 0.001, innerWidth, innerHeight);
+    for (let i = 0; i < lockEls.length; i++) {
+      // 고른 캐릭터는 구매 버튼이 알려 주므로 자물쇠를 띄우지 않는다
+      const locked = i !== showcase.index && !profile.owned.includes(CHAR_IDS[i]);
+      lockEls[i].style.display = locked ? '' : 'none';
+      if (!locked) continue;
+      const [x, y] = showcase.headPos(i, innerWidth, innerHeight);
+      lockEls[i].style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`;
+    }
+    return;
+  }
   input.update(dtMs / 1000);
   if (roundEnd > 0) roundEnd -= dtMs / 1000;
 
@@ -1302,7 +1361,7 @@ else if (params.has('auto')) connect($('name').value || 'Player', menuMode, menu
 
 // 디버그/자동 테스트용 핸들
 window.__frustum = {
-  ents, roster, sim, view, stats, mask, input, sfx, prefs, buffs, itemMeshes, profile, prog, drawShop,
+  ents, roster, sim, view, stats, mask, input, sfx, prefs, buffs, itemMeshes, profile, prog, drawShop, showcase,
   get map() { return curMap.id; },
   get alive() { return alive; },
   get myId() { return myId; },

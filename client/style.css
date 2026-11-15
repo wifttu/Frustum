@@ -336,38 +336,66 @@ body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
 #menu > small { color: #6f8294; line-height: 1.6; font-size: 12px; max-width: 560px; }
 #status { color: var(--enemy); min-height: 1.2em; font-size: 14px; }
 
-/* ───────── 캐릭터 상점 ───────── */
-#shop {
-  position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: safe center;
-  background: rgba(0, 0, 0, .7); overflow-y: auto; touch-action: pan-y; padding: 10px;
-  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
-}
+/* ───────── 캐릭터 선택 화면 (3D 장면 위에 얹는 UI) ───────── */
+#shop { position: fixed; inset: 0; z-index: 10; touch-action: none; }
 #shop[hidden] { display: none; }
-#shop .panel {
-  width: min(640px, 100%); margin: auto; padding: 12px 14px; border-radius: 16px; background: #121b24;
-  border: 1px solid #22303e; animation: pop .2s ease-out;
+#shop button { font-family: inherit; }
+#shopCoins {
+  position: absolute; top: calc(10px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+  min-width: 120px; padding: 5px 18px; border-radius: 999px; text-align: center; font-size: 16px; font-weight: 900;
+  background: rgba(40, 24, 20, .85); color: #ffd25a; border: 2px solid rgba(255, 210, 90, .6);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .4);
 }
-#shop h2 { margin: 0 0 8px; font-size: 17px; display: flex; justify-content: space-between; align-items: center; }
-#shopList { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.char {
-  display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 12px; background: #18232e;
-  border: 2px solid transparent; text-align: left;
-}
-.char.on { border-color: #ffd25a; background: #2a2616; }
-.char i { font-style: normal; font-size: 24px; flex: none; }
-.char div { flex: 1; min-width: 0; }
-.char b { display: block; font-size: 13px; }
-.char span { display: block; font-size: 10px; color: #9fb2c4; line-height: 1.25; }
-.char button {
-  flex: none; min-width: 62px; padding: 7px 8px; border: 0; border-radius: 9px; background: #2f8fe6; color: #fff;
-  font-weight: 800; font-size: 12px;
-}
-.char button.buy { background: linear-gradient(180deg, #ffc94d, #f08a2c); color: #3a2208; }
-.char button:disabled { background: #2a3642; color: #7f93a6; }
 #closeShop {
-  width: 100%; margin-top: 8px; padding: 10px; border: 0; border-radius: 10px; background: #26323e; color: #fff;
-  font-weight: 700; font-size: 14px;
+  position: absolute; top: calc(10px + env(safe-area-inset-top)); right: calc(12px + env(safe-area-inset-right));
+  width: 48px; height: 44px; border-radius: 10px; border: 0; background: #f4f1ea; color: #3a2a20; font-size: 24px; font-weight: 900;
+  box-shadow: 0 4px 0 #b9b2a4, 0 6px 14px rgba(0, 0, 0, .35);
 }
+#closeShop:active, #shopAct:active { transform: translateY(2px); }
+#shopHead {
+  position: absolute; top: calc(48px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); text-align: center;
+  white-space: nowrap; pointer-events: none;
+}
+#shopName {
+  display: block; font-size: 26px; font-weight: 900; letter-spacing: 2px; color: #fff; line-height: 1.15;
+  text-shadow: 0 3px 0 rgba(40, 24, 20, .8), 0 0 18px rgba(0, 0, 0, .5);
+}
+#shopAbility {
+  display: inline-block; margin-top: 2px; padding: 4px 14px; border-radius: 999px; font-size: 13px; font-weight: 700;
+  background: rgba(20, 16, 30, .78); color: #ffe9b0; border: 1px solid rgba(255, 255, 255, .2);
+}
+#shopLocks { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+#shopLocks div {
+  position: absolute; left: 0; top: 0; font-size: 22px; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .6));
+  will-change: transform;
+}
+#shop .nav {
+  position: absolute; top: 50%; width: 46px; height: 64px; margin-top: -32px; border: 0; border-radius: 14px;
+  background: rgba(20, 16, 30, .55); color: #fff; font-size: 38px; font-weight: 700; line-height: 1;
+}
+#shop .nav:disabled { opacity: .25; }
+#shopPrev { left: calc(12px + env(safe-area-inset-left)); }
+#shopNext { right: calc(12px + env(safe-area-inset-right)); }
+#shopCount {
+  position: absolute; left: calc(16px + env(safe-area-inset-left)); bottom: calc(132px + env(safe-area-inset-bottom));
+  font-size: 18px; font-weight: 900; color: #fff; text-shadow: 0 2px 0 rgba(40, 24, 20, .8);
+}
+#shopStats {
+  position: absolute; left: calc(10px + env(safe-area-inset-left)); bottom: calc(8px + env(safe-area-inset-bottom));
+  width: 168px; padding: 4px; border-radius: 14px; background: rgba(20, 16, 30, .72); border: 1px solid rgba(255, 255, 255, .15);
+  pointer-events: none;
+}
+#radar { display: block; width: 100%; }
+#radar .grid { fill: none; stroke: rgba(255, 255, 255, .28); stroke-width: 1; }
+#radarShape { fill: rgba(255, 170, 60, .55); stroke: #ffb84a; stroke-width: 2.5; stroke-linejoin: round; transition: all .25s ease-out; }
+#radar text { fill: #fff; font-size: 10px; font-weight: 700; text-anchor: middle; }
+#shopAct {
+  position: absolute; right: calc(16px + env(safe-area-inset-right)); bottom: calc(14px + env(safe-area-inset-bottom));
+  min-width: 170px; padding: 13px 22px; border: 0; border-radius: 14px; font-size: 18px; font-weight: 900; color: #fff;
+  background: linear-gradient(180deg, #45a4ff, #2476d2); box-shadow: 0 4px 0 #174f8f, 0 8px 18px rgba(0, 0, 0, .4);
+}
+#shopAct.buy { background: linear-gradient(180deg, #ffc94d, #f08a2c); color: #3a2208; box-shadow: 0 4px 0 #a85a14, 0 8px 18px rgba(0, 0, 0, .4); }
+#shopAct:disabled { background: #4a4652; color: #b9b2c4; box-shadow: 0 4px 0 #2c2932; }
 
 /* 세로로 들면 가로로 돌려 달라고 안내한다 */
 #rotate {

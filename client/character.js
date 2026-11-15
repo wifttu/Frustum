@@ -9,6 +9,8 @@ export const rgb = (hex) => new THREE.Color(hex).toArray();
 const SKIN = rgb(0xffcfa8);
 const CHEEK = rgb(0xff8f86);
 const EYE = rgb(0x1c1418);
+const HAIR = rgb(0x6a4428);
+const GOLD = rgb(0xffc83a);
 const PANTS = rgb(0x5d4332);
 const BOOT = rgb(0x3a271c);
 const PACK = rgb(0xa06c3c);
@@ -116,9 +118,19 @@ function buildParts(teamHex, charId) {
     [new THREE.SphereGeometry(0.052, 8, 6).scale(1, 1.35, 0.6).translate(-0.13, HEAD_Y + 0.01, 0.325), EYE],
     [new THREE.SphereGeometry(0.06, 8, 6).scale(1, 0.6, 0.4).translate(0.21, HEAD_Y - 0.1, 0.275), CHEEK],
     [new THREE.SphereGeometry(0.06, 8, 6).scale(1, 0.6, 0.4).translate(-0.21, HEAD_Y - 0.1, 0.275), CHEEK],
+    // 눈 반짝임, 미소, 앞머리, 망토 단추
+    [new THREE.SphereGeometry(0.02, 6, 4).translate(0.145, HEAD_Y + 0.045, 0.352), [2.5, 2.5, 2.5]],
+    [new THREE.SphereGeometry(0.02, 6, 4).translate(-0.115, HEAD_Y + 0.045, 0.352), [2.5, 2.5, 2.5]],
+    [new THREE.TorusGeometry(0.055, 0.013, 4, 10, Math.PI).rotateZ(Math.PI).translate(0, HEAD_Y - 0.1, 0.335), EYE],
+    [new THREE.SphereGeometry(0.2, 10, 6).scale(1.5, 0.42, 0.55).translate(0, HEAD_Y + 0.23, 0.2), HAIR],
+    [new THREE.SphereGeometry(0.05, 8, 6).translate(0, 0.83, 0.22), GOLD],
+    [new THREE.BoxGeometry(0.07, 0.36, 0.04).translate(0.15, 0.66, 0.2), dark], // 배낭 끈
+    [new THREE.BoxGeometry(0.07, 0.36, 0.04).translate(-0.15, 0.66, 0.2), dark],
     // 후드: 얼굴만 내놓고 머리 위와 뒤를 덮는다 + 뾰족한 끝
     [new THREE.SphereGeometry(0.39, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.52).rotateX(-0.72).translate(0, HEAD_Y, 0), team],
     [new THREE.ConeGeometry(0.15, 0.34, 10).rotateX(-1.2).translate(0, HEAD_Y + 0.28, -0.3), dark],
+    // 후드 테두리: 얼굴을 감싸는 도톰한 단
+    [new THREE.TorusGeometry(0.385, 0.05, 6, 22).rotateX(0.852).translate(0, HEAD_Y, 0), dark],
     [new THREE.TorusGeometry(0.2, 0.06, 6, 14).rotateX(Math.PI / 2).translate(0, 0.86, 0), dark], // 목도리
     [new THREE.BoxGeometry(0.3, 0.3, 0.16).translate(0, 0.62, -0.3), PACK], // 배낭
     ...accessories(charId),
@@ -168,7 +180,11 @@ const aimGeo = new THREE.RingGeometry(
   CFG.ATTACK_RANGE - 0.07, CFG.ATTACK_RANGE, 20, 1, -Math.PI / 2 - CFG.ATTACK_ARC / 2, CFG.ATTACK_ARC,
 ).rotateX(-Math.PI / 2).translate(0, 0.06, 0);
 
-const COLORS = { self: 0x4fc46a, ally: 0x3d9cf0, enemy: 0xf0503d }; // 나: 초록, 아군: 파랑, 적: 빨강
+const COLORS = { self: 0x4fc46a, ally: 0x3d9cf0, enemy: 0xf0503d }; // 아군: 파랑, 적: 빨강
+// 내 캐릭터(와 선택 화면)는 캐릭터 고유 색을 입는다. 아군 파랑/적 빨강과 헷갈리지 않는 색만 쓴다.
+export const SIGNATURE = {
+  explorer: 0x4fc46a, runner: 0xf2c230, bear: 0xa9744a, owl: 0x8a68d8, collector: 0xf2903a, ninja: 0x4a4f5c, healer: 0x3cc4a8,
+};
 const lerp = (a, b, t) => a + (b - a) * t;
 const easeOutBack = (t) => 1 + 2.7 * Math.pow(t - 1, 3) + 1.7 * Math.pow(t - 1, 2);
 
@@ -176,6 +192,7 @@ export class Characters {
   constructor(mask) {
     // 장면 조명이 밝아서(반구광 + 직사광) 색이 하얗게 날아가지 않도록 살짝 눌러 준다
     this.bodyMat = mask.apply(new THREE.MeshLambertMaterial({ color: 0xd8d8d8, vertexColors: true }));
+    this.showMat = new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true });
     this.parts = {};
     this.ring = {};
     for (const [kind, color] of Object.entries(COLORS)) {
@@ -206,11 +223,12 @@ export class Characters {
   // 팀 종류 × 캐릭터 조합별 지오메트리 (처음 쓸 때 한 번 만든다)
   partsFor(kind, char) {
     const key = `${kind}:${char}`;
-    if (!this.parts[key]) this.parts[key] = buildParts(COLORS[kind], char);
+    if (!this.parts[key]) this.parts[key] = buildParts(kind === 'self' ? (SIGNATURE[char] ?? COLORS.self) : COLORS[kind], char);
     return this.parts[key];
   }
 
-  make(kind, char = 'explorer') {
+  // show: 선택 화면용 (시야 마스크를 타지 않는 머티리얼, 발밑 링 없음)
+  make(kind, char = 'explorer', show = false) {
     const root = new THREE.Group();
     const pose = new THREE.Group(); // 구르기/들썩임이 적용되는 그룹
     const inner = new THREE.Group();
@@ -218,7 +236,7 @@ export class Characters {
     inner.position.y = -PIVOT_Y;
     pose.add(inner);
 
-    const m = this.bodyMat;
+    const m = show ? this.showMat : this.bodyMat;
     const g = this.partsFor(kind, char);
     const torso = new THREE.Mesh(g.torso, m);
     const legL = new THREE.Mesh(g.leg, m);
@@ -240,13 +258,14 @@ export class Characters {
     const vest = new THREE.Mesh(this.vestGeo, this.vestMat);
     vest.visible = false;
     root.add(body, shadow, ring, beam, vest);
+    if (show) ring.visible = false;
     let aim = null;
     if (kind === 'self') {
       aim = new THREE.Mesh(aimGeo, this.aim);
       root.add(aim);
     }
     root.userData = {
-      kind, char, body, pose, torso, legL, legR, armL, armR, ring, beam, aim, vest, cloaked: false,
+      mat: m, kind, char, body, pose, torso, legL, legR, armL, armR, ring, beam, aim, vest, cloaked: false,
       phase: Math.random() * 6, seed: Math.random() * 6, atk: 0, spawn: 0, speed: 0, lx: null, lz: 0,
     };
     // 그룹 단위로 컬링하므로 자식의 자동 컬링은 끈다
@@ -336,7 +355,7 @@ export class Characters {
     const cloak = !!s.cloak;
     if (cloak !== u.cloaked) {
       u.cloaked = cloak;
-      for (const part of [u.torso, u.legL, u.legR, u.armL, u.armR]) part.material = cloak ? this.cloakMat : this.bodyMat;
+      for (const part of [u.torso, u.legL, u.legR, u.armL, u.armR]) part.material = cloak ? this.cloakMat : u.mat;
       u.ring.visible = !cloak;
     }
     if (u.aim) u.aim.visible = !!s.aimReady;
