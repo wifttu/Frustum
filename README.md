@@ -115,6 +115,8 @@ client/
   main.js     렌더링, 예측/보간, 컬링, HUD
   fog.js      시야 마스크(Fog of War)
   input.js    터치/키보드 입력
+  character.js 캐릭터 모델, 절차적 애니메이션, 처치 이펙트
+  prefs.js    사용자 설정 저장
   audio.js    효과음 합성
   settings.js Pages에서 쓸 기본 서버 주소
 ```

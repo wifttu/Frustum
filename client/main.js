@@ -8,6 +8,7 @@ import { Input } from './input.js';
 import { Sfx } from './audio.js';
 import { DEFAULT_SERVER } from './settings.js';
 import { prefs, savePrefs } from './prefs.js';
+import { Characters, DeathFx } from './character.js';
 
 const DT = 1 / CFG.TICK_RATE;
 const INTERP_MS = 110; // 원격 플레이어 보간 지연
@@ -112,70 +113,20 @@ const wallSpheres = WALLS.map((w, i) => {
   return new THREE.Sphere(new THREE.Vector3(w.cx, WALL_HEIGHT / 2, w.cz), Math.hypot(w.w, WALL_HEIGHT, w.d) / 2);
 });
 
-// 손전등 빔: 판정 범위(ATTACK_RANGE, ATTACK_ARC)와 똑같은 모양의 부채꼴. 손에서 멀어질수록 흐려진다.
-function makeBeamGeometry() {
-  const seg = 16;
-  const pos = [0.35, 0.9, 0.5];
-  const col = [0.62, 0.58, 0.42];
-  const idx = [];
-  for (let i = 0; i <= seg; i++) {
-    const a = -CFG.ATTACK_ARC / 2 + (CFG.ATTACK_ARC * i) / seg;
-    pos.push(Math.sin(a) * CFG.ATTACK_RANGE, 0.5, Math.cos(a) * CFG.ATTACK_RANGE);
-    col.push(0.05, 0.045, 0.025);
-    if (i > 0) idx.push(0, i, i + 1);
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  g.setIndex(idx);
-  return g;
-}
+// 캐릭터(모델 + 애니메이션)와 처치 이펙트
+const chars = new Characters(mask);
+const deathFx = new DeathFx(scene);
+const makePlayerMesh = (kind) => chars.make(kind);
+const setKind = (mesh, kind) => chars.setKind(mesh, kind);
 
-// 플레이어 메시 (지오메트리/머티리얼 공유)
 const geo = {
-  body: new THREE.CylinderGeometry(0.42, 0.45, 1.2, 12).translate(0, 0.6, 0),
-  head: new THREE.SphereGeometry(0.3, 12, 8).translate(0, 1.5, 0),
-  visor: new THREE.BoxGeometry(0.36, 0.12, 0.2).translate(0, 1.52, 0.24),
-  torch: new THREE.CylinderGeometry(0.07, 0.11, 0.5, 8).rotateX(Math.PI / 2).translate(0.38, 0.9, 0.35),
-  beam: makeBeamGeometry(),
   flare: new THREE.SphereGeometry(0.16, 8, 6).translate(0, 0.16, 0),
   glow: new THREE.CircleGeometry(1.2, 20).rotateX(-Math.PI / 2).translate(0, 0.03, 0),
 };
 const mat = {
-  self: mask.apply(new THREE.MeshLambertMaterial({ color: 0xf2f6fa })),
-  ally: mask.apply(new THREE.MeshLambertMaterial({ color: 0x3d9cf0 })),
-  enemy: mask.apply(new THREE.MeshLambertMaterial({ color: 0xf0503d })),
-  dark: mask.apply(new THREE.MeshLambertMaterial({ color: 0x1b2026 })),
-  beam: mask.apply(
-    new THREE.MeshBasicMaterial({
-      vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false,
-    }),
-  ),
   flare: new THREE.MeshBasicMaterial({ color: 0xffb070 }),
   glow: new THREE.MeshBasicMaterial({ color: 0x3c1c08, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }),
 };
-function makePlayerMesh(kind) {
-  const g = new THREE.Group();
-  const body = new THREE.Mesh(geo.body, mat[kind]);
-  const head = new THREE.Mesh(geo.head, mat[kind]);
-  g.add(body, head, new THREE.Mesh(geo.visor, mat.dark), new THREE.Mesh(geo.torch, mat.dark));
-  const beam = new THREE.Mesh(geo.beam, mat.beam);
-  beam.visible = false;
-  g.add(beam);
-  g.userData = { body, head, beam, kind };
-  // 그룹 단위로 컬링하므로 자식의 자동 컬링은 끈다
-  g.traverse((o) => (o.frustumCulled = false));
-  return g;
-}
-function setKind(mesh, kind) {
-  if (mesh.userData.kind === kind) return;
-  mesh.userData.kind = kind;
-  mesh.userData.body.material = mesh.userData.head.material = mat[kind];
-}
-// 구르는 중에는 몸을 납작하게
-function setRolling(mesh, rolling) {
-  mesh.scale.set(rolling ? 1.15 : 1, rolling ? 0.55 : 1, rolling ? 1.15 : 1);
-}
 
 // 조명탄 메시 풀
 const flareMeshes = [];
@@ -214,6 +165,8 @@ let localCd = 0;
 let localBeam = 0;
 let flareCd = 0;
 let killedBy = '';
+let streak = 0; // 죽지 않고 이어간 처치 수
+let lastCount = 0; // 라운드 시작 카운트다운 표시용
 let winnerText = '';
 let roundEnd = 0; // 라운드 종료 배너 남은 시간
 let stepT = 0;
@@ -348,11 +301,18 @@ function onMessage(m) {
     drawScore();
   } else if (m.t === 'k') {
     for (const [k, v] of m.l) {
+      // 내가 보고 있던 플레이어가 쓰러지면 그 자리에 이펙트 (위치는 이미 알고 있던 것만 쓴다)
+      const seen = ents.get(v);
+      if (seen) deathFx.spawn(seen.x, seen.z, kindOf(v));
       if (v === myId) {
         killedBy = k ? (roster.get(k)?.name ?? '') : '독구름';
+        deathFx.spawn(view.x, view.z, 'self');
+        streak = 0;
         sfx.death();
         buzz(200);
       } else if (k === myId) {
+        streak++;
+        toast(streak > 1 ? `${streak}연속 처치!` : '처치!', roster.get(v)?.name ?? '');
         sfx.kill();
         buzz(40);
       }
@@ -373,6 +333,7 @@ function onMessage(m) {
     snapNext = true;
     $('banner').hidden = true;
     killedBy = '';
+    streak = 0;
   } else if (m.t === 's') {
     onSnapshot(m);
   }
@@ -399,6 +360,7 @@ function onSnapshot(m) {
     Object.assign(prev, sim);
     input.yaw = sim.yaw;
     localCd = 0;
+    chars.respawn(selfMesh);
     if (everAlive) sfx.respawn();
     everAlive = true;
   }
@@ -409,7 +371,8 @@ function onSnapshot(m) {
   for (const [id, ex, ez, eyaw, flags] of m.e) {
     let e = ents.get(id);
     if (!e) {
-      e = { mesh: makePlayerMesh(kindOf(id)), buf: [], x: ex, z: ez, yaw: eyaw, flags: 0, stamp: 0 };
+      e = { mesh: makePlayerMesh(kindOf(id)), buf: [], x: ex, z: ez, yaw: eyaw, flags: 0, stamp: 0, rollP: -1, label: null };
+      e.mesh.position.set(ex, 0, ez);
       scene.add(e.mesh);
       ents.set(id, e);
       // 적이 시야에 새로 들어오면 짧은 경고음
@@ -435,6 +398,7 @@ function removeEnt(id) {
   const e = ents.get(id);
   if (!e) return;
   scene.remove(e.mesh);
+  if (e.label) freeLabel(e.label);
   ents.delete(id);
 }
 
@@ -466,7 +430,7 @@ function drawScore() {
     if (mode === 'ffa') right = `${me?.wins ?? 0}승`;
   }
   $('score').innerHTML =
-    `<span class="ally">${left}</span> <span class="enemy">${time}</span><span class="me">${right}</span>`;
+    `<span class="ally">${left}</span><span class="time${roundLeft <= 10 ? ' low' : ''}">${time}</span><span class="me">${right}</span>`;
 }
 function addFeed(k, v) {
   const row = document.createElement('div');
@@ -480,10 +444,55 @@ function addFeed(k, v) {
   while ($('feed').children.length > 5) $('feed').lastChild.remove();
   setTimeout(() => row.remove(), 6000);
 }
+// 이름표: 화면에 보이는 플레이어 머리 위에 이름을 띄운다 (DOM 풀 재사용)
+const labelPool = [];
+const projV = new THREE.Vector3();
+function freeLabel(el) {
+  el.style.display = 'none';
+  labelPool.push(el);
+}
+function drawLabels() {
+  const w = innerWidth;
+  const h = innerHeight;
+  for (const [id, e] of ents) {
+    if (!e.mesh.visible) {
+      if (e.label) e.label.style.display = 'none';
+      continue;
+    }
+    if (!e.label) {
+      e.label = labelPool.pop() || $('labels').appendChild(document.createElement('div'));
+      e.label.textContent = '';
+    }
+    const name = roster.get(id)?.name ?? '';
+    if (e.label.textContent !== name) e.label.textContent = name;
+    const cls = kindOf(id);
+    if (e.label.className !== cls) e.label.className = cls;
+    projV.set(e.x, 2.6, e.z).project(camera);
+    e.label.style.display = '';
+    e.label.style.transform = `translate(${((projV.x + 1) * 0.5 * w).toFixed(1)}px, ${((1 - projV.y) * 0.5 * h).toFixed(1)}px) translate(-50%, -100%)`;
+  }
+}
+
+// 화면 중앙 알림 (처치 확인, 라운드 시작)
+let toastTimer = 0;
+function toast(title, sub = '', cls = '') {
+  const el = $('toast');
+  el.className = cls;
+  $('toastTitle').textContent = title;
+  $('toastSub').textContent = sub;
+  el.hidden = false;
+  // 애니메이션 재시작
+  el.style.animation = 'none';
+  void el.offsetWidth;
+  el.style.animation = '';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (el.hidden = true), 1300);
+}
+
 // 스킬 버튼: 쿨다운 중에는 남은 시간을 숫자로 보여준다
 function drawSkill(id, remain, total, usable) {
   const el = $(id);
-  const label = el.firstElementChild;
+  const label = el.querySelector('span');
   const cooling = remain > 0.05;
   el.style.setProperty('--cd', usable ? Math.max(0, Math.min(1, remain / total)).toFixed(3) : 1);
   el.classList.toggle('off', !usable);
@@ -593,8 +602,15 @@ function frame(now) {
   selfMesh.visible = alive;
   selfMesh.position.set(view.x, 0, view.z);
   selfMesh.rotation.y = view.yaw;
-  selfMesh.userData.beam.visible = localBeam > 0;
-  setRolling(selfMesh, sim.rollT > 0);
+  const dt = dtMs / 1000;
+  const tSec = now * 0.001;
+  const canActNow = alive && roundEnd <= 0;
+  chars.animate(selfMesh, dt, tSec, {
+    beam: localBeam > 0,
+    roll: sim.rollT > 0 ? 1 - sim.rollT / CFG.ROLL_TIME : -1,
+    aimReady: canActNow && localCd <= 0 && sim.rollT <= 0,
+  });
+  deathFx.update(dt);
 
   // 원격 플레이어 보간
   const rt = now - INTERP_MS;
@@ -610,8 +626,8 @@ function frame(now) {
     e.yaw = lerpAngle(p0.yaw, p1.yaw, t);
     e.mesh.position.set(e.x, 0, e.z);
     e.mesh.rotation.y = e.yaw;
-    e.mesh.userData.beam.visible = !!(e.flags & 1);
-    setRolling(e.mesh, !!(e.flags & 2));
+    e.rollP = e.flags & 2 ? Math.min(1, Math.max(0, e.rollP) + dt / CFG.ROLL_TIME) : -1;
+    chars.animate(e.mesh, dt, tSec, { beam: !!(e.flags & 1), roll: e.rollP });
   }
 
   // 조명탄: 깜빡이는 불꽃
@@ -681,6 +697,7 @@ function frame(now) {
     e.mesh.visible = frustum.intersectsSphere(sphere);
     if (e.mesh.visible) nPlayers++;
   }
+  drawLabels();
 
   renderer.render(scene, camera);
 
@@ -713,10 +730,17 @@ function frame(now) {
       resize();
     }
     $('dead').hidden = alive || !myId || roundEnd > 0;
-    $('deadBy').textContent = killedBy ? ` — ${killedBy}` : '';
+    $('deadBy').textContent = killedBy ? `처치자: ${killedBy}` : '';
     $('respawn').textContent = rule === 'survival' ? '다음 라운드까지 대기' : `${Math.ceil(respawnIn)}초 후 부활`;
     if (roundEnd > 0) $('bannerSub').textContent = `${winnerText} · ${Math.ceil(roundEnd)}초 후 다음 라운드`;
     if (myId) drawScore();
+    // 라운드 시작 카운트다운 (공격 금지 시간)
+    const count = roundEnd > 0 || !alive ? 0 : Math.max(0, roundLeft - (roundTime - CFG.START_GRACE));
+    if (count !== lastCount) {
+      if (count > 0) toast(String(count), '준비', 'count');
+      else if (lastCount > 0) toast('시작!', '', 'count');
+      lastCount = count;
+    }
   }
 }
 requestAnimationFrame(frame);
