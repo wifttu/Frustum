@@ -1,5 +1,6 @@
 // 간단한 봇. 사람과 동일한 입력 구조를 만들고, 자기 시야에 들어온 적만 인지한다.
 import { canSee, wrapAngle } from '../shared/vision.js';
+import { findPath } from './nav.js';
 
 const REACTION = 0.6; // 적을 본 뒤 반응하기까지의 시간
 
@@ -25,6 +26,7 @@ export function botThink(bot, game, dt) {
   }
   ai.seenFor = target ? (ai.seenFor || 0) + dt : 0;
 
+  if (target) ai.hunt = [target.x, target.z]; // 놓치면 마지막으로 본 곳을 수색한다
   if (target && ai.seenFor >= REACTION) {
     const yaw = Math.atan2(target.x - bot.x, target.z - bot.z);
     const aligned = Math.abs(wrapAngle(yaw - bot.yaw)) < cfg.ATTACK_ARC / 2;
@@ -44,7 +46,13 @@ export function botThink(bot, game, dt) {
     };
   }
 
-  // 순찰: 웨이포인트로 이동, 막히면 새 목적지. 가끔 조명탄으로 앞을 밝힌다.
+  // 적을 놓쳤으면 마지막으로 본 위치로 간다
+  if (!target && ai.hunt && !outside) {
+    setGoal(bot, ai.hunt[0], ai.hunt[1]);
+    ai.hunt = null;
+  }
+
+  // 순찰: A* 경로의 경유점을 차례로 따라간다. 막히면 새 목적지. 가끔 조명탄으로 앞을 밝힌다.
   ai.stuckT = (ai.stuckT || 0) + dt;
   if (ai.stuckT > 1) {
     if (Math.hypot(bot.x - ai.lx, bot.z - ai.lz) < 0.8) pickWaypoint(bot, game);
@@ -52,18 +60,30 @@ export function botThink(bot, game, dt) {
     ai.lx = bot.x;
     ai.lz = bot.z;
   }
-  const dx = ai.wx - bot.x;
-  const dz = ai.wz - bot.z;
-  if (Math.hypot(dx, dz) < 1.5) pickWaypoint(bot, game);
-  const yaw = Math.atan2(dx, dz);
+  let node = ai.path[ai.pi];
+  while (node && Math.hypot(node[0] - bot.x, node[1] - bot.z) < 0.8) node = ai.path[++ai.pi];
+  if (!node) {
+    pickWaypoint(bot, game);
+    node = ai.path[ai.pi] || [ai.wx, ai.wz];
+  }
+  const yaw = Math.atan2(node[0] - bot.x, node[1] - bot.z);
   const diff = Math.abs(wrapAngle(yaw - bot.yaw));
   return { mx: 0, mz: diff < 0.6 ? (outside ? 1 : 0.8) : 0.2, yaw, atk: false, roll: false, flare: Math.random() < 0.003 };
 }
 
-function pickWaypoint(bot, game) {
+// 목적지와 그곳까지의 경로를 정한다
+function setGoal(bot, x, z) {
   const ai = bot.ai;
-  [ai.wx, ai.wz] = game.randomFreePoint();
+  ai.wx = x;
+  ai.wz = z;
+  ai.path = findPath(bot.x, bot.z, x, z) || [[x, z]];
+  ai.pi = 0;
   ai.lx = bot.x;
   ai.lz = bot.z;
   ai.stuckT = 0;
+}
+
+function pickWaypoint(bot, game) {
+  const [x, z] = game.randomFreePoint();
+  setGoal(bot, x, z);
 }

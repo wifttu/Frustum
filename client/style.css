@@ -49,10 +49,22 @@ button { font-family: inherit; }
 }
 #feed .ally { color: var(--ally); font-weight: 600; } #feed .enemy { color: var(--enemy); font-weight: 600; }
 
-#stats {
+/* 화면 가장자리를 살짝 어둡게 */
+#hud::before {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 50% 55%, transparent 55%, rgba(0, 0, 0, .5));
+}
+#minimap {
   position: absolute; top: calc(8px + env(safe-area-inset-top)); left: calc(8px + env(safe-area-inset-left));
+  width: 104px; height: 104px; border-radius: 12px; border: 1px solid var(--line);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .5);
+}
+#minimap[hidden] { display: none; }
+#stats {
+  position: absolute; top: calc(118px + env(safe-area-inset-top)); left: calc(8px + env(safe-area-inset-left));
   font: 11px/1.45 ui-monospace, Menlo, monospace; color: var(--dim); white-space: pre; text-shadow: 0 1px 2px #000;
 }
+#flash { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse, rgba(255, 60, 40, .15), rgba(255, 40, 30, .7)); }
 
 /* 이름표 */
 #labels { position: absolute; inset: 0; overflow: hidden; }
@@ -96,7 +108,7 @@ button { font-family: inherit; }
 
 /* 라운드 결과 */
 #banner {
-  position: absolute; top: 22%; left: 50%; transform: translateX(-50%); text-align: center; white-space: nowrap;
+  position: absolute; top: 14%; left: 50%; transform: translateX(-50%); text-align: center; white-space: nowrap;
   padding: 18px 34px; border-radius: 18px; background: var(--glass); border: 1px solid var(--line);
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 10px 40px rgba(0, 0, 0, .6);
   animation: pop .35s cubic-bezier(.2, 1.4, .4, 1);
@@ -104,7 +116,14 @@ button { font-family: inherit; }
 #banner b { display: block; font-size: 40px; font-weight: 900; letter-spacing: 8px; margin-right: -8px; }
 #banner b.win { color: var(--gold); text-shadow: 0 0 26px rgba(255, 200, 80, .55); }
 #banner b.lose { color: var(--enemy); }
-#banner span { color: #b9c8d6; font-size: 13px; }
+#banner > span { color: #b9c8d6; font-size: 13px; }
+#bannerList { margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 14px; text-align: left; font-size: 13px; }
+#bannerList div { display: flex; gap: 8px; padding: 2px 8px; border-radius: 6px; background: rgba(255, 255, 255, .05); }
+#bannerList span:first-child { width: 12px; color: var(--dim); }
+#bannerList span:nth-child(2) { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+#bannerList span:last-child { font-weight: 700; }
+#bannerList .ally { color: var(--ally); } #bannerList .enemy { color: var(--enemy); }
+#bannerList .me { color: #fff; background: rgba(255, 210, 90, .2); }
 #dead[hidden], #banner[hidden], #toast[hidden], #gasText[hidden] { display: none; }
 
 /* 조이스틱 */
@@ -238,6 +257,7 @@ body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
 #settings button[hidden] { display: none; }
 
 /* ───────── 애니메이션 ───────── */
+@keyframes flash { from { opacity: 1; } to { opacity: 0; } }
 @keyframes pulse { 50% { opacity: .55; } }
 @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } }
 @keyframes pop { from { opacity: 0; scale: .8; } }
@@ -255,7 +275,8 @@ body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
 /* ───────── 화면 방향별 조정 ───────── */
 @media (orientation: portrait) {
   #score { font-size: 12px; gap: 8px; padding: 5px 10px; top: calc(50px + env(safe-area-inset-top)); }
-  #stats { top: calc(92px + env(safe-area-inset-top)); }
+  #minimap { top: calc(92px + env(safe-area-inset-top)); }
+  #stats { top: calc(202px + env(safe-area-inset-top)); }
   #feed { top: calc(92px + env(safe-area-inset-top)); }
 }
 /* 가로로 든 휴대폰: 메뉴를 압축 */

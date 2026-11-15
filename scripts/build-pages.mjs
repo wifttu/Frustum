@@ -16,6 +16,7 @@ for (const f of fs.readdirSync(path.join(root, 'client'))) copy(`client/${f}`, f
 copy('shared', 'shared');
 copy('server/game.js', 'server/game.js'); // 오프라인 모드가 서버 로직을 그대로 사용
 copy('server/bots.js', 'server/bots.js');
+copy('server/nav.js', 'server/nav.js');
 copy('node_modules/three/build/three.module.min.js', 'vendor/three/three.module.min.js');
 fs.writeFileSync(path.join(dist, '.nojekyll'), '');
 console.log('built', dist);

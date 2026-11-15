@@ -6,6 +6,7 @@ const defaults = {
   sens: 1, // 회전 감도 배율
   volume: 0.8, // 효과음 크기 0..1
   vibrate: true, // 처치/사망 시 진동
+  showMinimap: true, // 미니맵 표시
   showStats: false, // 성능 정보(fps 등) 표시
 };
 let saved = {};
