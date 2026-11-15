@@ -30,7 +30,7 @@ export function botThink(bot, game, dt) {
   if (target && ai.seenFor >= REACTION) {
     const yaw = Math.atan2(target.x - bot.x, target.z - bot.z);
     const aligned = Math.abs(wrapAngle(yaw - bot.yaw)) < cfg.ATTACK_ARC / 2;
-    const inRange = best < cfg.ATTACK_RANGE;
+    const inRange = best < bot.stats.range;
     // 상대가 나를 정면으로 겨누고 있으면 가끔 옆으로 구른다
     const threatened =
       best < cfg.ATTACK_RANGE + 1 &&
@@ -48,7 +48,7 @@ export function botThink(bot, game, dt) {
 
   // 가까이 보이는 아이템이 있으면 주우러 간다
   if (!target && !outside && !ai.item) {
-    for (const it of game.items) {
+    for (const it of [...game.items, ...game.fireflies]) {
       if (Math.hypot(it.x - bot.x, it.z - bot.z) > 9) continue;
       if (!canSee(bot, it.x, it.z, 0.3, game.walls, cfg)) continue;
       ai.item = it.id;
@@ -56,7 +56,7 @@ export function botThink(bot, game, dt) {
       break;
     }
   }
-  if (ai.item && !game.items.some((it) => it.id === ai.item)) ai.item = null;
+  if (ai.item && !game.items.some((it) => it.id === ai.item) && !game.fireflies.some((f) => f.id === ai.item)) ai.item = null;
 
   // 적을 놓쳤으면 마지막으로 본 위치로 간다
   if (!target && ai.hunt && !outside) {

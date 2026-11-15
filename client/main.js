@@ -8,6 +8,7 @@ import { Input } from './input.js';
 import { Sfx } from './audio.js';
 import { DEFAULT_SERVER } from './settings.js';
 import { prefs, savePrefs } from './prefs.js';
+import { PROGRESS, UPGRADES, statsOf, xpToNext } from './shared/progress.js';
 import { Characters, DeathFx } from './character.js';
 import { Minimap } from './minimap.js';
 import { buildFloorTexture, buildItemGeos, buildWalls, buildWater } from './world.js';
@@ -218,6 +219,9 @@ const pending = []; // 서버가 아직 확인하지 않은 입력
 const roster = new Map(); // id → {name, team, score}  (위치 정보 없음)
 // 서버가 보내준(= 시야 안의) 플레이어만 존재한다. 시야에서 벗어나면 즉시 삭제.
 const ents = new Map();
+// 내 성장 상태 (서버가 바뀔 때마다 't:st' 로 알려준다)
+const prog = { hp: PROGRESS.BASE_HP, xp: 0, level: 1, next: xpToNext(1), ups: {}, choices: null, more: 0, stats: statsOf({}, CFG), earned: 0 };
+let fireflies = []; // [id, x, z]
 let flares = []; // 우리 팀 조명탄 [x, z, 남은 시간]
 let snapCount = 0;
 
@@ -274,6 +278,9 @@ function showMenu(msg) {
   alive = false;
   roundEnd = 0;
   flares = [];
+  fireflies = [];
+  prog.choices = null;
+  $('choices').hidden = true;
   zoneTarget = 0;
   gas = 0;
   pending.length = 0;
@@ -324,6 +331,9 @@ async function startOffline(name, gameMode, gameRule) {
 
 function onMessage(m) {
   if (m.t === 'w') {
+    Object.assign(prog, { hp: PROGRESS.BASE_HP, xp: 0, level: 1, next: xpToNext(1), ups: {}, choices: null, more: 0, stats: statsOf({}, CFG), earned: 0 });
+    applyMyStats();
+    drawChoices();
     myId = m.id;
     myTeam = m.team;
     mode = m.m || 'duo';
@@ -337,7 +347,7 @@ function onMessage(m) {
     $('status').textContent = '방이 가득 찼습니다.';
   } else if (m.t === 'r') {
     roster.clear();
-    for (const [id, name, team, score, al, wins] of m.p) roster.set(id, { name, team, score, alive: !!al, wins });
+    for (const [id, name, team, score, al, wins, level] of m.p) roster.set(id, { name, team, score, alive: !!al, wins, level: level || 1 });
     for (const [id, e] of ents) setKind(e.mesh, kindOf(id));
     drawScore();
   } else if (m.t === 'k') {
@@ -391,6 +401,35 @@ function onMessage(m) {
     $('banner').hidden = true;
     killedBy = '';
     streak = 0;
+  } else if (m.t === 'st') {
+    // 내 성장 정보
+    const leveled = m.lv > prog.level;
+    addProfileXp(m.earned - prog.earned);
+    Object.assign(prog, { level: m.lv, next: m.next, ups: m.ups, choices: m.ch, more: m.more, stats: m.st, earned: m.earned });
+    applyMyStats();
+    drawChoices();
+    if (leveled) {
+      toast('레벨 업!', `Lv ${m.lv} · 강화를 골라 주세요`, 'level');
+      sfx.levelUp();
+      deathFx.spawn(view.x, view.z, 'level');
+      buzz(30);
+    }
+  } else if (m.t === 'h') {
+    // 손전등 피해: 보이는 대상에게만 숫자를 띄운다
+    for (const [k, v, dmg] of m.l) {
+      const at = v === myId ? view : ents.get(v);
+      if (!at) continue;
+      popNumber(at.x, at.z, dmg, v === myId ? 'hurt' : k === myId ? 'deal' : 'other');
+      if (v === myId) {
+        sfx.hurt();
+        shake = Math.max(shake, 0.45);
+        flash();
+      } else if (k === myId) {
+        sfx.hit();
+        const e = ents.get(v);
+        if (e) e.hitT = 0.15;
+      }
+    }
   } else if (m.t === 's') {
     onSnapshot(m);
   }
@@ -429,7 +468,7 @@ function onSnapshot(m) {
 
   snapCount++;
   const now = performance.now();
-  for (const [id, ex, ez, eyaw, flags] of m.e) {
+  for (const [id, ex, ez, eyaw, flags, hpPct, lv] of m.e) {
     let e = ents.get(id);
     if (!e) {
       e = { mesh: makePlayerMesh(kindOf(id)), buf: [], x: ex, z: ez, yaw: eyaw, flags: 0, stamp: 0, rollP: -1, label: null };
@@ -448,12 +487,18 @@ function onSnapshot(m) {
     if (flags & 1 && !(e.flags & 1)) sfx.beam(...spatial(ex, ez));
     if (flags & 2 && !(e.flags & 2)) sfx.roll(...spatial(ex, ez));
     e.flags = flags;
+    e.hpPct = hpPct ?? 100;
+    e.lv = lv || 1;
     e.stamp = snapCount;
   }
   // 이번 스냅샷에 없는 플레이어 = 시야 밖 또는 사망 → 클라이언트에서 완전히 제거
   for (const [id, e] of ents) if (e.stamp !== snapCount) removeEnt(id);
   flares = m.f || [];
   syncItems(m.it || []);
+  if (m.hp !== undefined) prog.hp = m.hp;
+  if (m.xp !== undefined && m.xp > prog.xp && m.xp - prog.xp <= PROGRESS.XP_FIREFLY * 3) sfx.firefly();
+  if (m.xp !== undefined) prog.xp = m.xp;
+  if (m.ff) syncFireflies(m.ff);
   for (const type of m.pk || []) {
     toast(ITEMS[type].name, ITEMS[type].desc, 'buff');
     sfx.pickup();
@@ -527,17 +572,174 @@ function drawLabels() {
       continue;
     }
     if (!e.label) {
-      e.label = labelPool.pop() || $('labels').appendChild(document.createElement('div'));
-      e.label.textContent = '';
+      e.label = labelPool.pop();
+      if (!e.label) {
+        e.label = $('labels').appendChild(document.createElement('div'));
+        e.label.innerHTML = '<span><b></b><i></i></span><s><u></u></s>';
+      }
+      e.label.dataset.k = '';
     }
     const name = roster.get(id)?.name ?? '';
-    if (e.label.textContent !== name) e.label.textContent = name;
-    const cls = kindOf(id);
-    if (e.label.className !== cls) e.label.className = cls;
+    const key = `${name}|${e.lv}|${e.hpPct}|${kindOf(id)}`;
+    if (e.label.dataset.k !== key) {
+      e.label.dataset.k = key;
+      e.label.className = kindOf(id);
+      e.label.querySelector('b').textContent = e.lv;
+      e.label.querySelector('i').textContent = name;
+      e.label.querySelector('u').style.transform = `scaleX(${(e.hpPct / 100).toFixed(2)})`;
+    }
     projV.set(e.x, 2.45, e.z).project(camera);
     e.label.style.display = '';
     e.label.style.transform = `translate(${((projV.x + 1) * 0.5 * w).toFixed(1)}px, ${((1 - projV.y) * 0.5 * h).toFixed(1)}px) translate(-50%, -100%)`;
   }
+}
+
+// ── 성장 UI ──
+// 내 강화 수치를 예측과 화면에 반영
+function applyMyStats() {
+  sim.spd = prog.stats.speed;
+  sim.rollCdMax = prog.stats.rollCd;
+  chars.setBeamStats(selfMesh, prog.stats.range, prog.stats.arc);
+}
+
+// 레벨업 카드
+function drawChoices() {
+  const box = $('choices');
+  if (!prog.choices || !myId) {
+    box.hidden = true;
+    return;
+  }
+  box.hidden = false;
+  $('choiceTitle').textContent = prog.more ? `강화 선택 (+${prog.more})` : '강화 선택';
+  $('choiceCards').replaceChildren(
+    ...prog.choices.map((key, i) => {
+      const u = UPGRADES[key];
+      const b = document.createElement('button');
+      b.className = 'card';
+      const lvl = (prog.ups[key] || 0) + 1;
+      b.innerHTML = `<i>${u.icon}</i><b></b><span></span><em>${'●'.repeat(lvl)}${'○'.repeat(u.max - lvl)}</em>`;
+      b.querySelector('b').textContent = u.name;
+      b.querySelector('span').textContent = u.desc;
+      b.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        pickChoice(i);
+      });
+      return b;
+    }),
+  );
+}
+function pickChoice(i) {
+  if (!prog.choices || !prog.choices[i]) return;
+  sfx.choose();
+  // 서버 응답(다음 카드 묶음)이 오기 전까지 숨긴다. 오프라인은 응답이 즉시 오므로 먼저 숨겨야 한다.
+  prog.choices = null;
+  $('choices').hidden = true;
+  if (offline) {
+    offline.game.choose(offline.player, i);
+    offline.game.broadcast();
+  } else if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'u', c: i }));
+}
+addEventListener('keydown', (e) => {
+  const n = { Digit1: 0, Digit2: 1, Digit3: 2 }[e.code];
+  if (n !== undefined && prog.choices) pickChoice(n);
+});
+
+// 상태창: 체력, 경험치, 레벨
+function drawStatus() {
+  const hpR = Math.max(0, Math.min(1, prog.hp / prog.stats.maxHp));
+  $('hpFill').style.transform = `scaleX(${hpR.toFixed(3)})`;
+  $('hpFill').classList.toggle('low', hpR < 0.35);
+  $('hpText').textContent = `${Math.ceil(prog.hp)} / ${prog.stats.maxHp}`;
+  const maxed = prog.level >= PROGRESS.MAX_LEVEL;
+  $('xpFill').style.transform = `scaleX(${maxed ? 1 : Math.min(1, prog.xp / prog.next).toFixed(3)})`;
+  $('xpText').textContent = maxed ? 'MAX' : `${prog.xp} / ${prog.next}`;
+  $('lvBadge').textContent = prog.level;
+  $('statusName').textContent = roster.get(myId)?.name ?? '';
+}
+
+// 떠오르는 피해 숫자
+const numPool = [];
+function popNumber(x, z, dmg, kind) {
+  const el = numPool.pop() || $('nums').appendChild(document.createElement('div'));
+  el.textContent = kind === 'hurt' ? `-${dmg}` : dmg;
+  el.className = 'num ' + kind;
+  projV.set(x + (Math.random() - 0.5) * 0.6, 2.2, z).project(camera);
+  el.style.left = `${((projV.x + 1) * 0.5 * innerWidth).toFixed(0)}px`;
+  el.style.top = `${((1 - projV.y) * 0.5 * innerHeight).toFixed(0)}px`;
+  el.style.display = '';
+  el.style.animation = 'none';
+  void el.offsetWidth;
+  el.style.animation = '';
+  setTimeout(() => {
+    el.style.display = 'none';
+    numPool.push(el);
+  }, 800);
+}
+
+// 반딧불: 어둠 속에서도 빛나 보이는 작은 불빛 (지형처럼 공개된 정보)
+const FF_MAX = 64;
+const ffMesh = new THREE.InstancedMesh(
+  new THREE.SphereGeometry(0.11, 8, 6),
+  new THREE.MeshBasicMaterial({ color: 0xfff27a }),
+  FF_MAX,
+);
+const ffGlow = new THREE.InstancedMesh(
+  new THREE.SphereGeometry(0.42, 10, 8),
+  new THREE.MeshBasicMaterial({ color: 0x8a7a10, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }),
+  FF_MAX,
+);
+ffMesh.frustumCulled = ffGlow.frustumCulled = false;
+ffMesh.count = ffGlow.count = 0;
+scene.add(ffMesh, ffGlow);
+const ffMat = new THREE.Matrix4();
+function syncFireflies(list) {
+  fireflies = list.slice(0, FF_MAX);
+}
+function drawFireflies(t) {
+  ffMesh.count = ffGlow.count = fireflies.length;
+  for (let i = 0; i < fireflies.length; i++) {
+    const [id, x, z] = fireflies[i];
+    const ph = id * 2.399;
+    const fx = x + Math.sin(t * 1.3 + ph) * 0.25;
+    const fz = z + Math.cos(t * 1.1 + ph) * 0.25;
+    const fy = 0.9 + Math.sin(t * 2.1 + ph) * 0.25;
+    const pulse = 0.75 + 0.35 * Math.sin(t * 4 + ph);
+    ffMat.makeScale(pulse, pulse, pulse).setPosition(fx, fy, fz);
+    ffMesh.setMatrixAt(i, ffMat);
+    ffGlow.setMatrixAt(i, ffMat);
+  }
+  ffMesh.instanceMatrix.needsUpdate = ffGlow.instanceMatrix.needsUpdate = true;
+}
+
+// 모험가 레벨: 기기에 쌓이는 누적 경험치
+const PROFILE_KEY = 'frustum.profile';
+const profile = (() => {
+  try {
+    return { xp: 0, ...JSON.parse(localStorage.getItem(PROFILE_KEY)) };
+  } catch {
+    return { xp: 0 };
+  }
+})();
+const rankNeed = (lv) => 200 + (lv - 1) * 150;
+function rankOf(xp) {
+  let lv = 1;
+  while (xp >= rankNeed(lv)) xp -= rankNeed(lv++);
+  return { lv, xp, need: rankNeed(lv) };
+}
+function addProfileXp(n) {
+  if (!(n > 0)) return;
+  profile.xp += n;
+  try {
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+  } catch {}
+  drawProfile();
+}
+function drawProfile() {
+  const r = rankOf(profile.xp);
+  $('rankLv').textContent = `모험가 Lv ${r.lv}`;
+  $('rankFill').style.transform = `scaleX(${(r.xp / r.need).toFixed(3)})`;
+  $('rankText').textContent = `${r.xp} / ${r.need}`;
 }
 
 // 버프 칩: 남은 시간이 있는 효과만 보여준다
@@ -568,7 +770,7 @@ function drawResults() {
     ...rows.map(([id, p], i) => {
       const row = document.createElement('div');
       row.className = id === myId ? 'me' : p.team === myTeam ? 'ally' : 'enemy';
-      for (const text of [i + 1, p.name, `${p.score}킬`]) {
+      for (const text of [i + 1, `Lv${p.level} ${p.name}`, `${p.score}킬`]) {
         const cell = document.createElement('span');
         cell.textContent = text;
         row.append(cell);
@@ -629,7 +831,7 @@ function fixedStep() {
   const grace = roundLeft > roundTime - CFG.START_GRACE;
   if (!canAct || sim.rollT > 0 || grace) atk = false;
   if (atk && localCd <= 0) {
-    localCd = CFG.ATTACK_COOLDOWN;
+    localCd = prog.stats.cooldown;
     localBeam = CFG.BEAM_TIME; // 즉시 피드백 (판정은 서버)
     shake = Math.max(shake, 0.22);
     sfx.beam();
@@ -746,6 +948,12 @@ function frame(now) {
     e.mesh.rotation.y = e.yaw;
     e.rollP = e.flags & 2 ? Math.min(1, Math.max(0, e.rollP) + dt / CFG.ROLL_TIME) : -1;
     chars.animate(e.mesh, dt, tSec, { beam: !!(e.flags & 1), roll: e.rollP, cloak: !!(e.flags & 4), vest: !!(e.flags & 8) });
+    if (e.hitT > 0) {
+      // 맞으면 잠깐 움찔
+      e.hitT -= dt;
+      const k = 1 + Math.max(0, e.hitT) * 1.6;
+      e.mesh.scale.set(k, 1 / k, k);
+    } else e.mesh.scale.set(1, 1, 1);
   }
 
   // 아이템: 둥실둥실 떠서 돈다
@@ -755,8 +963,10 @@ function frame(now) {
     b.position.y = Math.sin(tSec * 3 + g.userData.seed) * 0.12;
   }
 
-  // 버프 표시
+  // 버프, 상태창, 반딧불
   drawBuffs();
+  if (myId) drawStatus();
+  drawFireflies(tSec);
 
   // 조명탄: 깜빡이는 불꽃
   flareSources.length = 0;
@@ -847,8 +1057,8 @@ function frame(now) {
 
   // 스킬 버튼 쿨다운 (매 프레임)
   const canAct = alive && roundEnd <= 0;
-  drawSkill('attack', localCd, CFG.ATTACK_COOLDOWN, canAct);
-  drawSkill('roll', sim.rollCd, CFG.ROLL_COOLDOWN, canAct);
+  drawSkill('attack', localCd, prog.stats.cooldown, canAct);
+  drawSkill('roll', sim.rollCd, prog.stats.rollCd, canAct);
   drawSkill('flare', flareCd, CFG.FLARE_COOLDOWN, canAct);
 
   // HUD / 통계 / 적응형 해상도
@@ -951,6 +1161,7 @@ function applyPrefs() {
   $('volVal').textContent = `${Math.round(prefs.volume * 100)}%`;
   $('zoomVal').textContent = `x${prefs.zoom.toFixed(2)}`;
 }
+drawProfile();
 const CHECKS = { setFixed: 'fixedStick', setLefty: 'lefty', setVibrate: 'vibrate', setStats: 'showStats', setMinimap: 'showMinimap' };
 const RANGES = { setSens: 'sens', setVol: 'volume', setZoom: 'zoom' };
 for (const [id, key] of Object.entries(CHECKS)) {

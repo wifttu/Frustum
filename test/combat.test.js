@@ -15,7 +15,8 @@ function setup(opts) {
     sent.set(p.id, box);
     return p;
   };
-  const place = (p, x, z, yaw) => Object.assign(p, { x, z, yaw, alive: true });
+  // 기존 테스트는 한 방 판정을 검증하므로 체력을 1로 둔다 (체력/성장은 progress.test.js)
+  const place = (p, x, z, yaw) => Object.assign(p, { x, z, yaw, alive: true, hp: 1 });
   return { game, add, place, sent };
 }
 const at = (deg, d) => [Math.sin((deg * Math.PI) / 180) * d, Math.cos((deg * Math.PI) / 180) * d];

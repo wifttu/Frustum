@@ -148,6 +148,38 @@ export class Sfx {
     this.tone('square', 150, 120, 0.12, 0.1);
   }
 
+  // 반딧불 줍기: 아주 작은 반짝
+  firefly() {
+    if (!this.ready) return;
+    const f = 1500 + Math.random() * 400;
+    this.tone('sine', f, f * 1.5, 0.08, 0.06);
+  }
+
+  // 빛이 상대에게 맞음
+  hit(vol = 1, pan = 0) {
+    if (!this.ready) return;
+    this.tone('triangle', 520, 260, 0.12, 0.2 * vol, pan);
+    this.hiss(3000, 800, 1, 0.08, 0.15 * vol, pan);
+  }
+
+  // 내가 맞음
+  hurt() {
+    if (!this.ready) return;
+    this.tone('sawtooth', 220, 110, 0.18, 0.18);
+  }
+
+  // 레벨 업: 올라가는 아르페지오
+  levelUp() {
+    if (!this.ready) return;
+    [523, 659, 784, 1047, 1319].forEach((f, i) => this.tone('triangle', f, f, 0.22, 0.17, 0, i * 0.07));
+  }
+
+  // 강화 선택
+  choose() {
+    if (!this.ready) return;
+    this.tone('sine', 880, 1760, 0.18, 0.18);
+  }
+
   // 아이템 줍기: 반짝 3음
   pickup() {
     if (!this.ready) return;

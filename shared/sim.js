@@ -30,10 +30,10 @@ export function stepPlayer(p, input, dt, walls) {
     p.rollDx = vl > 0.2 ? vx / vl : s;
     p.rollDz = vl > 0.2 ? vz / vl : c;
     p.rollT = CFG.ROLL_TIME;
-    p.rollCd = CFG.ROLL_COOLDOWN;
+    p.rollCd = p.rollCdMax || CFG.ROLL_COOLDOWN; // 강화로 짧아질 수 있다
   }
 
-  let step = CFG.PLAYER_SPEED * dt;
+  let step = CFG.PLAYER_SPEED * (p.spd || 1) * dt; // spd: 이동 속도 강화 배율
   if (p.speedT > 0) {
     step *= ITEMS.sneakers.speed; // 운동화
     p.speedT = Math.max(0, p.speedT - dt);
