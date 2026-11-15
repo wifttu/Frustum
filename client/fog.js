@@ -40,9 +40,7 @@ void main() {
 export class VisionMask {
   constructor(mapSize, walls, cfg, { maxSources = 14, res = 512 } = {}) {
     this.mapSize = mapSize;
-    this.walls = walls;
     this.cfg = cfg;
-    this.seen = new Uint8Array(walls.length); // 이번 프레임에 시야에 걸린 벽
     this.pts = new Float32Array(MAX_FAN_POINTS * 2);
 
     const rtOpts = {
@@ -95,15 +93,8 @@ export class VisionMask {
     // 벽은 고정 지형이라 숨길 정보가 아니고, 이렇게 해야 지붕이나 나무 꼭대기까지 색이 보인다.
     // 맵을 두르는 긴 외곽 벽(처음 4개)은 제외한다.
     {
-      const geo = new THREE.BufferGeometry();
-      const pos = new THREE.BufferAttribute(new Float32Array(walls.length * 12), 3);
-      pos.setUsage(THREE.DynamicDrawUsage);
-      geo.setAttribute('position', pos);
-      const idx = new Uint16Array(walls.length * 6);
-      for (let i = 0; i < walls.length; i++) idx.set([0, 1, 2, 0, 2, 3].map((v) => v + i * 4), i * 6);
-      geo.setIndex(new THREE.BufferAttribute(idx, 1));
       this.props = new THREE.Mesh(
-        geo,
+        new THREE.BufferGeometry(),
         new THREE.ShaderMaterial({
           vertexShader: fanVert,
           fragmentShader: 'void main() { gl_FragColor = vec4(1.0); }',
@@ -120,6 +111,7 @@ export class VisionMask {
       this.props.frustumCulled = false;
       this.scene.add(this.props);
     }
+    this.setWalls(walls);
 
     this.blurScene = new THREE.Scene();
     const blur = new THREE.Mesh(
@@ -134,6 +126,21 @@ export class VisionMask {
     );
     blur.frustumCulled = false;
     this.blurScene.add(blur);
+  }
+
+  // 맵이 바뀌면 시야를 막는 벽 목록을 바꾼다
+  setWalls(walls) {
+    this.walls = walls;
+    this.seen = new Uint8Array(walls.length); // 이번 프레임에 시야에 걸린 벽
+    const geo = new THREE.BufferGeometry();
+    const pos = new THREE.BufferAttribute(new Float32Array(walls.length * 12), 3);
+    pos.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('position', pos);
+    const idx = new Uint16Array(walls.length * 6);
+    for (let i = 0; i < walls.length; i++) idx.set([0, 1, 2, 0, 2, 3].map((v) => v + i * 4), i * 6);
+    geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    this.props.geometry.dispose();
+    this.props.geometry = geo;
   }
 
   // sources: [{x,z,yaw, view?}] — 나 + 살아있는 팀원 + 팀 조명탄(view: 시야 설정 덮어쓰기)

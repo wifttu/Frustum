@@ -125,6 +125,11 @@ function dress(w, i) {
   const L = Math.max(w.w, w.d);
   const T = Math.min(w.w, w.d);
   const k = Math.round(Math.abs(w.cx) * 3 + Math.abs(w.cz) * 5) + (w.cx > 0 ? 1 : 0) + (w.cz > 0 ? 2 : 0);
+  const kinds = {
+    palisade: () => palisade(L, T), cabin, tent: () => tent(k), tree: () => tree(k), rock: () => rock(k), crates,
+    hedge: () => hedge(L, T, k), fence: () => logFence(L, T), stone: () => stoneWall(L, T),
+  };
+  if (w.kind && kinds[w.kind]) return kinds[w.kind]();
   if (i < 4) return palisade(L, T);
   if (w.w === w.d) {
     if (w.w >= 5) return cabin();
@@ -150,7 +155,9 @@ export function buildWalls(walls, material) {
 }
 
 // 바닥 텍스처: 맵 전체를 한 장으로 그린다 (잔디, 흙길, 벽 주변 흙, 꽃과 풀).
-export function buildFloorTexture(walls, mapSize) {
+export function buildFloorTexture(map, mapSize) {
+  const walls = map.walls;
+  const G = map.ground;
   const S = 1024;
   const k = S / mapSize;
   const c = document.createElement('canvas');
@@ -162,11 +169,11 @@ export function buildFloorTexture(walls, mapSize) {
   let seed = 7;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 
-  g.fillStyle = '#86b356';
+  g.fillStyle = G.base;
   g.fillRect(0, 0, S, S);
   // 잔디 얼룩
   for (let i = 0; i < 520; i++) {
-    g.fillStyle = ['rgba(120,170,70,.35)', 'rgba(150,195,95,.3)', 'rgba(95,150,70,.3)'][i % 3];
+    g.fillStyle = G.patches[i % 3];
     g.beginPath();
     g.ellipse(rnd() * S, rnd() * S, 14 + rnd() * 46, 10 + rnd() * 30, rnd() * 3, 0, 7);
     g.fill();
@@ -181,11 +188,14 @@ export function buildFloorTexture(walls, mapSize) {
     pts.forEach(([x, z], i) => (i ? g.lineTo(px(x), pz(z)) : g.moveTo(px(x), pz(z))));
     g.stroke();
   };
-  for (const [col, wd] of [['#b8935c', 3.6], ['#d2b07a', 3.0]]) {
+  for (const [col, wd] of [[G.road[0], 3.6], [G.road[1], 3.0]]) {
     g.strokeStyle = col;
-    road([[-30, 5], [-12, 6], [-6, 6], [6, 6], [12, 5], [30, 6]], wd);
-    road([[5, -30], [6, -12], [6, 6], [5, 12], [6, 30]], wd);
-    road([[-21, -21], [21, -21], [21, 21], [-21, 21], [-21, -21]], wd * 0.8);
+    for (const [pts, scale] of map.roads) road(pts, wd * scale);
+  }
+  // 호숫가 모래
+  for (const w of map.water) {
+    g.fillStyle = '#e2cf95';
+    g.fillRect(px(w.minX - 1.4), pz(w.minZ - 1.4), (w.w + 2.8) * k, (w.d + 2.8) * k);
   }
   // 벽(소품) 밑은 다져진 흙
   for (const w of walls.slice(4)) {
@@ -221,4 +231,55 @@ export function buildFloorTexture(walls, mapSize) {
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
   return tex;
+}
+
+// 물: 바닥보다 살짝 위의 파란 판 + 연잎. 판정상 들어갈 수 없지만 시야는 막지 않는다.
+export function buildWater(map, material) {
+  if (!map.water.length) return null;
+  const parts = [];
+  for (const w of map.water) parts.push([new THREE.BoxGeometry(w.w, 0.1, w.d).translate(w.cx, 0.04, w.cz), rgb(0x3f8fc4)]);
+  for (const w of map.water) parts.push([new THREE.BoxGeometry(w.w - 0.5, 0.1, w.d - 0.5).translate(w.cx, 0.06, w.cz), rgb(0x2f74a8)]);
+  let seed = 11;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 14; i++) {
+    const w = map.water[i % map.water.length];
+    const x = w.minX + 0.8 + rnd() * (w.w - 1.6);
+    const z = w.minZ + 0.8 + rnd() * (w.d - 1.6);
+    parts.push([new THREE.CylinderGeometry(0.35 + rnd() * 0.25, 0.4, 0.04, 9).translate(x, 0.13, z), rgb(0x5aa84a)]);
+    if (i % 4 === 0) parts.push([new THREE.SphereGeometry(0.12, 6, 4).translate(x + 0.15, 0.2, z), rgb(0xffb3d0)]);
+  }
+  const mesh = new THREE.Mesh(merge(parts), material);
+  mesh.frustumCulled = false;
+  return mesh;
+}
+
+// 아이템 모양 (바닥에서 떠서 빙글빙글 돈다)
+export function buildItemGeos() {
+  const Y = 0.75;
+  return {
+    battery: merge([
+      [new THREE.CylinderGeometry(0.2, 0.2, 0.55, 12).translate(0, Y, 0), rgb(0x2b2b30)],
+      [new THREE.CylinderGeometry(0.205, 0.205, 0.25, 12).translate(0, Y + 0.13, 0), rgb(0xffc63a)],
+      [new THREE.CylinderGeometry(0.08, 0.08, 0.08, 8).translate(0, Y + 0.31, 0), rgb(0xd8d8d8)],
+      [new THREE.BoxGeometry(0.06, 0.18, 0.02).translate(0, Y - 0.05, 0.2), rgb(0xffe27a)],
+    ]),
+    sneakers: merge([
+      [new THREE.BoxGeometry(0.3, 0.16, 0.62).translate(-0.18, Y - 0.1, 0), rgb(0xff5d5d)],
+      [new THREE.BoxGeometry(0.31, 0.06, 0.64).translate(-0.18, Y - 0.2, 0), rgb(0xffffff)],
+      [new THREE.BoxGeometry(0.3, 0.16, 0.62).translate(0.18, Y - 0.04, 0.06), rgb(0xff5d5d)],
+      [new THREE.BoxGeometry(0.31, 0.06, 0.64).translate(0.18, Y - 0.14, 0.06), rgb(0xffffff)],
+    ]),
+    vest: merge([
+      [new THREE.BoxGeometry(0.62, 0.62, 0.22).translate(0, Y, 0), rgb(0xf2a03a)],
+      [new THREE.BoxGeometry(0.64, 0.08, 0.24).translate(0, Y + 0.1, 0), rgb(0xe8f6ff)],
+      [new THREE.BoxGeometry(0.64, 0.08, 0.24).translate(0, Y - 0.12, 0), rgb(0xe8f6ff)],
+      [new THREE.BoxGeometry(0.2, 0.3, 0.24).translate(0, Y + 0.38, 0), rgb(0xf2a03a)],
+    ]),
+    cloak: merge([
+      [new THREE.ConeGeometry(0.38, 0.75, 10).translate(0, Y, 0), rgb(0x6a4fd0)],
+      [new THREE.SphereGeometry(0.17, 10, 8).translate(0, Y + 0.32, 0), rgb(0x8a72f0)],
+      [new THREE.SphereGeometry(0.04, 6, 4).translate(0.07, Y + 0.33, 0.14), [3, 3, 3]],
+      [new THREE.SphereGeometry(0.04, 6, 4).translate(-0.07, Y + 0.33, 0.14), [3, 3, 3]],
+    ]),
+  };
 }

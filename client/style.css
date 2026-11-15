@@ -96,6 +96,20 @@ button { font-family: inherit; }
 #toast span { font-size: 13px; color: #fff; text-shadow: 0 1px 3px #000; }
 #toast.count b { font-size: 64px; color: #fff; text-shadow: 0 0 24px rgba(120, 190, 255, .8), 0 3px 6px #000; }
 
+/* 버프 칩 (스킬 버튼 위) */
+#buffs {
+  position: absolute; right: calc(20px + env(safe-area-inset-right)); bottom: calc(206px + env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+}
+body.lefty #buffs { right: auto; left: calc(20px + env(safe-area-inset-left)); align-items: flex-start; }
+.buff {
+  padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap;
+  background: var(--glass); border: 1px solid var(--line); animation: slideIn .2s ease-out;
+}
+.buff.sneakers { color: #ff9b9b; } .buff.vest { color: #9fe8ff; } .buff.cloak { color: #c8b8ff; }
+#toast.buff b { font-size: 26px; color: #fff3c4; }
+#toast.map b { font-size: 34px; color: #fff; letter-spacing: 4px; text-shadow: 0 0 20px rgba(255, 210, 120, .6), 0 2px 4px #000; }
+
 /* 탈락 */
 #dead {
   position: absolute; top: 32%; left: 50%; transform: translateX(-50%); text-align: center; white-space: nowrap;

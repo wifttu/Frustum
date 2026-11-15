@@ -45,6 +45,22 @@ export const CFG = Object.freeze({
   BOT_FILL: 8, // 접속 인원이 이보다 적으면 봇으로 채운다
 });
 
+// 아이템: 맵 곳곳에 생기고, 밟으면 줍는다. 시야 안에 있을 때만 보인다.
+export const ITEMS = Object.freeze({
+  battery: { name: '배터리', desc: '손전등·조명탄 즉시 충전' },
+  sneakers: { name: '운동화', desc: '6초 동안 빨라짐', time: 6, speed: 1.4 },
+  vest: { name: '반사 조끼', desc: '빛을 한 번 막아 줌', time: 20 },
+  cloak: { name: '그림자 망토', desc: '6초 동안 상대에게 안 보임', time: 6 },
+});
+export const ITEM_TYPES = Object.keys(ITEMS);
+export const ITEM_RULES = Object.freeze({
+  MAX: 6, // 맵 위 최대 개수
+  EVERY: 7, // 새로 생기는 간격(초)
+  START: 3, // 라운드 시작 때 개수
+  PICK_RADIUS: 1.1,
+  CLOAK_NEAR: 2.2, // 망토를 써도 이 거리 안에서는 보인다
+});
+
 // 독구름(서바이벌 전용): 맵 가장자리에서 안쪽으로 조여 오는 정사각형 안전 구역.
 export const ZONE = Object.freeze({
   WAIT: 15, // 라운드 시작 후 조여 오기 시작할 때까지

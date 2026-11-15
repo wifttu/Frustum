@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { CFG, FLARE_VIEW, ZONE } from './shared/config.js';
-import { MAP_SIZE, WALLS } from './shared/map.js';
+import { CFG, FLARE_VIEW, ITEMS, ZONE } from './shared/config.js';
+import { MAP_SIZE, MAPS } from './shared/map.js';
 import { stepPlayer } from './shared/sim.js';
 import { wrapAngle } from './shared/vision.js';
 import { VisionMask } from './fog.js';
@@ -10,7 +10,7 @@ import { DEFAULT_SERVER } from './settings.js';
 import { prefs, savePrefs } from './prefs.js';
 import { Characters, DeathFx } from './character.js';
 import { Minimap } from './minimap.js';
-import { buildFloorTexture, buildWalls } from './world.js';
+import { buildFloorTexture, buildItemGeos, buildWalls, buildWater } from './world.js';
 
 const DT = 1 / CFG.TICK_RATE;
 const INTERP_MS = 110; // 원격 플레이어 보간 지연
@@ -34,16 +34,13 @@ const sun = new THREE.DirectionalLight(0xfff2dc, 1.25);
 sun.position.set(0.4, 1, 0.25);
 scene.add(sun);
 
-const mask = new VisionMask(MAP_SIZE, WALLS, CFG);
+let curMap = MAPS.camp; // 현재 맵 (라운드마다 바뀐다)
+const mask = new VisionMask(MAP_SIZE, curMap.walls, CFG);
 const sfx = new Sfx();
 
 // 바닥: 잔디와 흙길. 시야 밖에서는 달빛 아래처럼 아주 희미하게만 보인다(지형 정보만, 플레이어 정보 없음)
-scene.add(
-  new THREE.Mesh(
-    new THREE.PlaneGeometry(MAP_SIZE, MAP_SIZE).rotateX(-Math.PI / 2),
-    mask.apply(new THREE.MeshLambertMaterial({ map: buildFloorTexture(WALLS, MAP_SIZE) }), 0.09),
-  ),
-);
+const floorMat = mask.apply(new THREE.MeshLambertMaterial({ map: buildFloorTexture(curMap, MAP_SIZE) }), 0.09);
+scene.add(new THREE.Mesh(new THREE.PlaneGeometry(MAP_SIZE, MAP_SIZE).rotateX(-Math.PI / 2), floorMat));
 
 // 독구름: 안전 구역(정사각형) 바깥을 덮는 초록 안개. 시야와 무관하게 항상 보인다.
 // 높이가 다른 두 장을 겹쳐 위에서 볼 때 부피감이 나게 한다 (드로우콜 2회, 텍스처 없음).
@@ -86,8 +83,71 @@ const gasLayers = [0.08, 1.7].map((y) => {
 });
 
 // 벽(캠핑장 소품): 벽마다 메시 하나. 매 프레임 "시야에 걸렸고 화면 안에 있는" 것만 그린다.
-const wallProps = buildWalls(WALLS, mask.apply(new THREE.MeshLambertMaterial({ color: 0xd8d8d8, vertexColors: true })));
+const propMat = mask.apply(new THREE.MeshLambertMaterial({ color: 0xd8d8d8, vertexColors: true }));
+const waterMat = mask.apply(new THREE.MeshLambertMaterial({ color: 0xd8d8d8, vertexColors: true }), 0.12);
+let wallProps = buildWalls(curMap.walls, propMat);
 for (const p of wallProps) scene.add(p.mesh);
+let waterMesh = null;
+
+// 맵 교체: 소품, 바닥, 물, 시야 마스크, 미니맵을 새 맵으로 다시 만든다
+function setMap(id) {
+  const next = MAPS[id];
+  if (!next || next === curMap) return;
+  curMap = next;
+  for (const p of wallProps) {
+    scene.remove(p.mesh);
+    p.mesh.geometry.dispose();
+  }
+  wallProps = buildWalls(curMap.walls, propMat);
+  for (const p of wallProps) scene.add(p.mesh);
+  if (waterMesh) {
+    scene.remove(waterMesh);
+    waterMesh.geometry.dispose();
+  }
+  waterMesh = buildWater(curMap, waterMat);
+  if (waterMesh) scene.add(waterMesh);
+  floorMat.map.dispose();
+  floorMat.map = buildFloorTexture(curMap, MAP_SIZE);
+  floorMat.needsUpdate = true;
+  mask.setWalls(curMap.walls);
+  minimap.setMap(curMap);
+  for (const m of itemMeshes.values()) scene.remove(m);
+  itemMeshes.clear();
+}
+
+// 아이템 메시: 서버가 보내준(= 시야 안의) 아이템만 존재한다
+const itemGeos = buildItemGeos();
+const itemMat = mask.apply(new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true }));
+const itemGlowGeo = new THREE.CircleGeometry(0.6, 20).rotateX(-Math.PI / 2).translate(0, 0.04, 0);
+const itemGlowMat = mask.apply(
+  new THREE.MeshBasicMaterial({ color: 0xffd25a, transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending }),
+);
+const itemMeshes = new Map(); // id → Group
+let itemsSeen = []; // [id, type, x, z]
+function syncItems(list) {
+  itemsSeen = list;
+  const keep = new Set();
+  for (const [id, type, x, z] of list) {
+    keep.add(id);
+    let g = itemMeshes.get(id);
+    if (!g) {
+      g = new THREE.Group();
+      const body = new THREE.Mesh(itemGeos[type], itemMat);
+      g.add(body, new THREE.Mesh(itemGlowGeo, itemGlowMat));
+      g.userData.body = body;
+      g.userData.seed = id * 1.7;
+      g.position.set(x, 0, z);
+      g.traverse((o) => (o.frustumCulled = false));
+      scene.add(g);
+      itemMeshes.set(id, g);
+    }
+  }
+  for (const [id, g] of itemMeshes) {
+    if (keep.has(id)) continue;
+    scene.remove(g);
+    itemMeshes.delete(id);
+  }
+}
 
 // 캐릭터(모델 + 애니메이션)와 처치 이펙트
 const chars = new Characters(mask);
@@ -150,7 +210,8 @@ let cricketT = 2;
 let roundEnd = 0; // 라운드 종료 배너 남은 시간
 let stepT = 0;
 let lastSpot = 0;
-const sim = { x: 0, z: 0, yaw: 0, rollT: 0, rollCd: 0, rollDx: 0, rollDz: 1 }; // 예측된 내 상태
+const sim = { x: 0, z: 0, yaw: 0, rollT: 0, rollCd: 0, rollDx: 0, rollDz: 1, speedT: 0 }; // 예측된 내 상태
+const buffs = { vest: 0, cloak: 0 }; // 서버가 알려준 내 버프 남은 시간
 const prev = { x: 0, z: 0, yaw: 0 };
 const view = { x: 0, z: 0, yaw: 0 }; // 렌더용 보간 상태
 const pending = []; // 서버가 아직 확인하지 않은 입력
@@ -269,6 +330,7 @@ function onMessage(m) {
     rule = m.r || 'survival';
     target = m.g || 0;
     roundTime = m.rtm || CFG.ROUND_TIME;
+    if (m.map) setMap(m.map);
     $('menu').style.display = 'none';
     $('hud').hidden = false;
   } else if (m.t === 'full') {
@@ -313,7 +375,17 @@ function onMessage(m) {
     drawResults();
     $('banner').hidden = false;
     won ? sfx.win() : sfx.lose();
+  } else if (m.t === 'b') {
+    // 반사 조끼가 빛을 막았다
+    for (const [k, v] of m.l) {
+      const at = v === myId ? view : ents.get(v);
+      if (at) deathFx.spawn(at.x, at.z, 'shield');
+      if (v === myId || k === myId) sfx.block();
+      if (v === myId) toast('막았다!', '반사 조끼가 빛을 튕겨냈어요', 'buff');
+      else if (k === myId) toast('막혔다!', '상대가 반사 조끼를 입었어요');
+    }
   } else if (m.t === 'n') {
+    if (m.map) setMap(m.map);
     roundEnd = 0;
     snapNext = true;
     $('banner').hidden = true;
@@ -327,7 +399,7 @@ function onMessage(m) {
 const kindOf = (id) => (roster.get(id)?.team === myTeam ? 'ally' : 'enemy');
 
 function onSnapshot(m) {
-  const [x, z, yaw, al, resp, , rollT, rollCd, rollDx, rollDz, fcd, gasT] = m.me;
+  const [x, z, yaw, al, resp, cdNow, rollT, rollCd, rollDx, rollDz, fcd, gasT, speedT, vestT, cloakT] = m.me;
   const wasAlive = alive;
   alive = !!al;
   roundLeft = m.rt ?? 0;
@@ -335,10 +407,14 @@ function onSnapshot(m) {
   gas = gasT || 0;
   zoneTarget = m.zh || 0;
   flareCd = fcd;
+  buffs.vest = vestT || 0;
+  buffs.cloak = cloakT || 0;
+  // 배터리를 주우면 서버 쿨다운이 0이 되므로 따라간다
+  if (cdNow === 0 && localCd > 0 && m.pk?.includes('battery')) localCd = 0;
   // 서버 상태로 되돌린 뒤 미확인 입력을 다시 적용 (클라이언트 예측 보정)
-  Object.assign(sim, { x, z, yaw, rollT, rollCd, rollDx, rollDz });
+  Object.assign(sim, { x, z, yaw, rollT, rollCd, rollDx, rollDz, speedT: speedT || 0 });
   while (pending.length && pending[0].seq <= m.a) pending.shift();
-  if (alive) for (const inp of pending) stepPlayer(sim, inp, DT, WALLS);
+  if (alive) for (const inp of pending) stepPlayer(sim, inp, DT, curMap.solid);
   else pending.length = 0;
   if (alive && (!wasAlive || snapNext)) {
     // 새 라운드: 보간 없이 순간이동, 조준 방향과 쿨다운도 초기화
@@ -377,6 +453,12 @@ function onSnapshot(m) {
   // 이번 스냅샷에 없는 플레이어 = 시야 밖 또는 사망 → 클라이언트에서 완전히 제거
   for (const [id, e] of ents) if (e.stamp !== snapCount) removeEnt(id);
   flares = m.f || [];
+  syncItems(m.it || []);
+  for (const type of m.pk || []) {
+    toast(ITEMS[type].name, ITEMS[type].desc, 'buff');
+    sfx.pickup();
+    buzz(25);
+  }
 }
 
 function removeEnt(id) {
@@ -456,6 +538,27 @@ function drawLabels() {
     e.label.style.display = '';
     e.label.style.transform = `translate(${((projV.x + 1) * 0.5 * w).toFixed(1)}px, ${((1 - projV.y) * 0.5 * h).toFixed(1)}px) translate(-50%, -100%)`;
   }
+}
+
+// 버프 칩: 남은 시간이 있는 효과만 보여준다
+const BUFF_ICONS = { sneakers: '👟', vest: '🛡️', cloak: '👻' };
+let buffKey = '';
+function drawBuffs() {
+  const list = [];
+  if (alive && sim.speedT > 0) list.push(['sneakers', sim.speedT]);
+  if (alive && buffs.vest > 0) list.push(['vest', buffs.vest]);
+  if (alive && buffs.cloak > 0) list.push(['cloak', buffs.cloak]);
+  const key = list.map(([t, r]) => t + Math.ceil(r)).join();
+  if (key === buffKey) return;
+  buffKey = key;
+  $('buffs').replaceChildren(
+    ...list.map(([t, r]) => {
+      const el = document.createElement('div');
+      el.className = 'buff ' + t;
+      el.textContent = `${BUFF_ICONS[t]} ${ITEMS[t].name} ${Math.ceil(r)}`;
+      return el;
+    }),
+  );
 }
 
 // 라운드 결과표: 킬 순위
@@ -548,7 +651,7 @@ function fixedStep() {
     pending.push(inp);
     if (pending.length > 60) pending.shift();
     const wasRolling = sim.rollT > 0;
-    stepPlayer(sim, inp, DT, WALLS);
+    stepPlayer(sim, inp, DT, curMap.solid);
     if (sim.rollT > 0 && !wasRolling) sfx.roll();
     // 발소리
     if (Math.hypot(inp.mx, inp.mz) > 0.3 && sim.rollT <= 0) {
@@ -571,7 +674,7 @@ const projView = new THREE.Matrix4();
 const sphere = new THREE.Sphere(new THREE.Vector3(), 1.3);
 const sources = [];
 const flareSources = [];
-const minimap = new Minimap($('minimap'), WALLS, MAP_SIZE);
+const minimap = new Minimap($('minimap'), curMap, MAP_SIZE);
 const mapEnts = [];
 const stats = { fps: 0, walls: 0, players: 0, calls: 0, tris: 0 };
 let acc = 0;
@@ -622,6 +725,8 @@ function frame(now) {
     beam: localBeam > 0,
     roll: sim.rollT > 0 ? 1 - sim.rollT / CFG.ROLL_TIME : -1,
     aimReady: canActNow && localCd <= 0 && sim.rollT <= 0,
+    vest: buffs.vest > 0,
+    cloak: buffs.cloak > 0,
   });
   deathFx.update(dt);
 
@@ -640,8 +745,18 @@ function frame(now) {
     e.mesh.position.set(e.x, 0, e.z);
     e.mesh.rotation.y = e.yaw;
     e.rollP = e.flags & 2 ? Math.min(1, Math.max(0, e.rollP) + dt / CFG.ROLL_TIME) : -1;
-    chars.animate(e.mesh, dt, tSec, { beam: !!(e.flags & 1), roll: e.rollP });
+    chars.animate(e.mesh, dt, tSec, { beam: !!(e.flags & 1), roll: e.rollP, cloak: !!(e.flags & 4), vest: !!(e.flags & 8) });
   }
+
+  // 아이템: 둥실둥실 떠서 돈다
+  for (const g of itemMeshes.values()) {
+    const b = g.userData.body;
+    b.rotation.y = tSec * 1.8 + g.userData.seed;
+    b.position.y = Math.sin(tSec * 3 + g.userData.seed) * 0.12;
+  }
+
+  // 버프 표시
+  drawBuffs();
 
   // 조명탄: 깜빡이는 불꽃
   flareSources.length = 0;
@@ -727,7 +842,7 @@ function frame(now) {
     mapT = now;
     mapEnts.length = 0;
     for (const [id, e] of ents) mapEnts.push({ x: e.x, z: e.z, kind: kindOf(id) });
-    minimap.draw({ me: view, alive, ents: mapEnts, flares, zone: zoneTarget ? zoneNow : 0, fov: CFG.FOV, range: CFG.VIEW_RANGE });
+    minimap.draw({ me: view, alive, ents: mapEnts, flares, items: itemsSeen.map(([, , x, z]) => ({ x, z })), zone: zoneTarget ? zoneNow : 0, fov: CFG.FOV, range: CFG.VIEW_RANGE });
   }
 
   // 스킬 버튼 쿨다운 (매 프레임)
@@ -749,7 +864,7 @@ function frame(now) {
     if (prefs.showStats) $('stats').textContent =
       `${stats.fps} fps  x${resScale.toFixed(2)}\n` +
       `draw ${stats.calls}  tri ${stats.tris}\n` +
-      `벽 ${nWalls}/${WALLS.length}  플레이어 ${nPlayers}/${Math.max(0, roster.size - 1)}`;
+      `벽 ${nWalls}/${curMap.walls.length}  플레이어 ${nPlayers}/${Math.max(0, roster.size - 1)}`;
     // 프레임이 떨어지면 해상도를 낮추고, 여유가 있으면 되돌린다
     if (frameEma > 24 && resScale > 0.55) {
       resScale -= 0.1;
@@ -766,7 +881,7 @@ function frame(now) {
     // 라운드 시작 카운트다운 (공격 금지 시간)
     const count = roundEnd > 0 || !alive ? 0 : Math.max(0, roundLeft - (roundTime - CFG.START_GRACE));
     if (count !== lastCount) {
-      if (count > 0) toast(String(count), '준비', 'count');
+      if (count > 0) toast(String(count), curMap.name, 'count');
       else if (lastCount > 0) toast('시작!', '', 'count');
       lastCount = count;
     }
@@ -883,7 +998,8 @@ else if (params.has('auto')) connect($('name').value || 'Player', menuMode, menu
 
 // 디버그/자동 테스트용 핸들
 window.__frustum = {
-  ents, roster, sim, view, stats, mask, input, sfx, prefs,
+  ents, roster, sim, view, stats, mask, input, sfx, prefs, buffs, itemMeshes,
+  get map() { return curMap.id; },
   get alive() { return alive; },
   get myId() { return myId; },
   get flares() { return flares; },
