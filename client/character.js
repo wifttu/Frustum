@@ -132,6 +132,15 @@ export class Characters {
     this.aim = mask.apply(
       new THREE.MeshBasicMaterial({ color: 0xffe9a0, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false }),
     );
+    // 그림자 망토: 나와 아군에게만 반투명하게 보인다 (적에게는 서버가 위치를 보내지 않는다)
+    this.cloakMat = mask.apply(
+      new THREE.MeshLambertMaterial({ color: 0xb8a8ff, vertexColors: true, transparent: true, opacity: 0.35, depthWrite: false }),
+    );
+    // 반사 조끼: 몸을 감싸는 은빛 보호막
+    this.vestMat = mask.apply(
+      new THREE.MeshBasicMaterial({ color: 0x9fe8ff, transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending }),
+    );
+    this.vestGeo = new THREE.SphereGeometry(1.05, 18, 12).scale(1, 0.95, 1).translate(0, 0.95, 0);
   }
 
   make(kind) {
@@ -161,14 +170,16 @@ export class Characters {
     beam.visible = false;
     const body = new THREE.Group();
     body.add(pose);
-    root.add(body, shadow, ring, beam);
+    const vest = new THREE.Mesh(this.vestGeo, this.vestMat);
+    vest.visible = false;
+    root.add(body, shadow, ring, beam, vest);
     let aim = null;
     if (kind === 'self') {
       aim = new THREE.Mesh(aimGeo, this.aim);
       root.add(aim);
     }
     root.userData = {
-      kind, body, pose, torso, legL, legR, armL, armR, ring, beam, aim,
+      kind, body, pose, torso, legL, legR, armL, armR, ring, beam, aim, vest, cloaked: false,
       phase: Math.random() * 6, seed: Math.random() * 6, atk: 0, spawn: 0, speed: 0, lx: null, lz: 0,
     };
     // 그룹 단위로 컬링하므로 자식의 자동 컬링은 끈다
@@ -242,6 +253,14 @@ export class Characters {
     }
 
     u.beam.visible = !!s.beam;
+    u.vest.visible = !!s.vest;
+    if (s.vest) u.vest.scale.setScalar(1 + Math.sin(t * 5) * 0.03);
+    const cloak = !!s.cloak;
+    if (cloak !== u.cloaked) {
+      u.cloaked = cloak;
+      for (const part of [u.torso, u.legL, u.legR, u.armL, u.armR]) part.material = cloak ? this.cloakMat : this.bodyMat;
+      u.ring.visible = !cloak;
+    }
     if (u.aim) u.aim.visible = !!s.aimReady;
   }
 }
@@ -273,7 +292,7 @@ export class DeathFx {
       fx = { ring, pts, vel: new Float32Array(BURST_N * 3), t: 1 };
       this.pool.push(fx);
     }
-    const color = COLORS[kind] ?? 0xffffff;
+    const color = kind === 'shield' ? 0x9fe8ff : (COLORS[kind] ?? 0xffffff);
     fx.ring.material.color.set(color);
     fx.pts.material.color.set(color);
     fx.ring.position.set(x, 0.07, z);

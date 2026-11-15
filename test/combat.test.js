@@ -239,3 +239,65 @@ test('독구름은 서바이벌에만 있다', () => {
   assert.equal(new Game({ rule: 'dm' }).zoneHalf(), Infinity);
   assert.equal(new Game({ rule: 'survival' }).zoneHalf(), 32);
 });
+
+test('아이템: 밟으면 효과가 적용되고 사라진다', () => {
+  const { game, add, place } = setup({ TEAMS: 0, START_GRACE: 0 });
+  const a = add('A');
+  const b = add('B');
+  place(a, 0, 0, 0);
+  place(b, 20, 20, 0);
+  a.cd = 3;
+  a.flareCd = 9;
+  game.items = [{ id: 1, type: 'battery', x: 0.3, z: 0 }, { id: 2, type: 'sneakers', x: 0, z: 0.4 }];
+  game.step();
+  assert.equal(game.items.length, 0);
+  assert.equal(a.cd, 0);
+  assert.equal(a.flareCd, 0);
+  assert.ok(a.speedT > 5);
+});
+
+test('아이템: 반사 조끼는 한 번 막고 사라진다', () => {
+  const { game, add, place, sent } = setup({ TEAMS: 0 });
+  const a = add('A');
+  const b = add('B');
+  place(a, 0, 0, 0);
+  place(b, 0, 3, 0);
+  b.vest = 10;
+  game.attack(a);
+  assert.equal(b.alive, true);
+  assert.equal(b.vest, 0);
+  game.broadcast();
+  assert.ok(sent.get(b.id).some((m) => m.t === 'b'));
+  a.cd = 0;
+  game.attack(a);
+  assert.equal(b.alive, false);
+});
+
+test('아이템: 망토를 쓰면 가까이 오기 전에는 위치가 전송되지 않는다', () => {
+  const { game, add, place } = setup({ TEAMS: 0 });
+  const a = add('A');
+  const b = add('B');
+  place(a, 0, 0, 0);
+  place(b, 0, 6, Math.PI);
+  b.cloakT = 5;
+  assert.equal(game.computeVisibility().get(a.team).has(b.id), false);
+  place(b, 0, 1.5, Math.PI);
+  assert.equal(game.computeVisibility().get(a.team).has(b.id), true);
+  // 공격하면 벗겨진다
+  place(b, 0, 6, Math.PI);
+  game.attack(b);
+  assert.equal(b.cloakT, 0);
+});
+
+test('맵: 라운드마다 다음 맵으로 바뀌고, 클라이언트에 알린다', () => {
+  const { game, add, sent } = setup({ TEAMS: 0 });
+  add('A');
+  const ids = [game.map.id];
+  for (let i = 0; i < 3; i++) {
+    game.newRound();
+    ids.push(game.map.id);
+  }
+  assert.deepEqual(ids, ['camp', 'forest', 'lake', 'camp']);
+  game.broadcast();
+  assert.ok(sent.get(1).some((m) => m.t === 'n' && m.map === 'forest'));
+});

@@ -1,5 +1,5 @@
 // 플레이어 이동 시뮬레이션. 서버(권위)와 클라이언트(예측)가 같은 코드를 실행한다.
-import { CFG } from './config.js';
+import { CFG, ITEMS } from './config.js';
 import { MAP_SIZE } from './map.js';
 import { rayAabb, wrapAngle } from './vision.js';
 
@@ -34,6 +34,10 @@ export function stepPlayer(p, input, dt, walls) {
   }
 
   let step = CFG.PLAYER_SPEED * dt;
+  if (p.speedT > 0) {
+    step *= ITEMS.sneakers.speed; // 운동화
+    p.speedT = Math.max(0, p.speedT - dt);
+  }
   if (p.rollT > 0) {
     vx = p.rollDx;
     vz = p.rollDz;

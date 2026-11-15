@@ -46,9 +46,21 @@ export function botThink(bot, game, dt) {
     };
   }
 
+  // 가까이 보이는 아이템이 있으면 주우러 간다
+  if (!target && !outside && !ai.item) {
+    for (const it of game.items) {
+      if (Math.hypot(it.x - bot.x, it.z - bot.z) > 9) continue;
+      if (!canSee(bot, it.x, it.z, 0.3, game.walls, cfg)) continue;
+      ai.item = it.id;
+      setGoal(bot, it.x, it.z, game);
+      break;
+    }
+  }
+  if (ai.item && !game.items.some((it) => it.id === ai.item)) ai.item = null;
+
   // 적을 놓쳤으면 마지막으로 본 위치로 간다
   if (!target && ai.hunt && !outside) {
-    setGoal(bot, ai.hunt[0], ai.hunt[1]);
+    setGoal(bot, ai.hunt[0], ai.hunt[1], game);
     ai.hunt = null;
   }
 
@@ -72,11 +84,11 @@ export function botThink(bot, game, dt) {
 }
 
 // 목적지와 그곳까지의 경로를 정한다
-function setGoal(bot, x, z) {
+function setGoal(bot, x, z, game) {
   const ai = bot.ai;
   ai.wx = x;
   ai.wz = z;
-  ai.path = findPath(bot.x, bot.z, x, z) || [[x, z]];
+  ai.path = findPath(game.solid, bot.x, bot.z, x, z) || [[x, z]];
   ai.pi = 0;
   ai.lx = bot.x;
   ai.lz = bot.z;
@@ -85,5 +97,5 @@ function setGoal(bot, x, z) {
 
 function pickWaypoint(bot, game) {
   const [x, z] = game.randomFreePoint();
-  setGoal(bot, x, z);
+  setGoal(bot, x, z, game);
 }

@@ -1,4 +1,4 @@
-// 봇 길찾기: 1m 격자 위의 A*. 벽은 고정이라 격자는 한 번만 만든다.
+// 봇 길찾기: 1m 격자 위의 A*. 맵마다 격자를 한 번만 만들어 캐시한다.
 import { MAP_SIZE, isFree } from '../shared/map.js';
 
 const N = MAP_SIZE; // 격자 한 변의 칸 수 (칸 크기 1m)
@@ -6,10 +6,19 @@ const HALF = MAP_SIZE / 2;
 const CLEAR = 0.6; // 몸 반경 + 여유
 const SQRT2 = Math.SQRT2;
 
-const blocked = new Uint8Array(N * N);
-for (let cz = 0; cz < N; cz++) {
-  for (let cx = 0; cx < N; cx++) blocked[cz * N + cx] = isFree(cx - HALF + 0.5, cz - HALF + 0.5, CLEAR) ? 0 : 1;
+const grids = new WeakMap(); // 충돌 목록(배열) → 막힌 칸 격자
+function gridFor(solid) {
+  let g = grids.get(solid);
+  if (!g) {
+    g = new Uint8Array(N * N);
+    for (let cz = 0; cz < N; cz++) {
+      for (let cx = 0; cx < N; cx++) g[cz * N + cx] = isFree(cx - HALF + 0.5, cz - HALF + 0.5, CLEAR, solid) ? 0 : 1;
+    }
+    grids.set(solid, g);
+  }
+  return g;
 }
+let blocked = null; // 현재 탐색 중인 격자
 const cellOf = (v) => Math.max(0, Math.min(N - 1, Math.floor(v + HALF)));
 const center = (c) => c - HALF + 0.5;
 
@@ -30,12 +39,12 @@ function nearestFree(cx, cz) {
 }
 
 // 두 점 사이를 몸이 지나갈 수 있는가 (경로 단순화용)
-export function walkable(ax, az, bx, bz) {
+export function walkable(ax, az, bx, bz, solid) {
   const d = Math.hypot(bx - ax, bz - az);
   const steps = Math.ceil(d / 0.4);
   for (let i = 1; i < steps; i++) {
     const t = i / steps;
-    if (!isFree(ax + (bx - ax) * t, az + (bz - az) * t, CLEAR - 0.1)) return false;
+    if (!isFree(ax + (bx - ax) * t, az + (bz - az) * t, CLEAR - 0.1, solid)) return false;
   }
   return true;
 }
@@ -48,7 +57,8 @@ const heap = new Int32Array(N * N * 4);
 const DIRS = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, SQRT2], [1, -1, SQRT2], [-1, 1, SQRT2], [-1, -1, SQRT2]];
 
 // 출발점에서 도착점까지의 경유점 [[x,z], ...] (도착점 포함). 길이 없으면 null.
-export function findPath(sx, sz, tx, tz) {
+export function findPath(solid, sx, sz, tx, tz) {
+  blocked = gridFor(solid);
   const start = nearestFree(cellOf(sx), cellOf(sz));
   const goal = nearestFree(cellOf(tx), cellOf(tz));
   if (start < 0 || goal < 0) return null;
@@ -128,7 +138,7 @@ export function findPath(sx, sz, tx, tz) {
   let i = 0;
   while (i < cells.length) {
     let j = cells.length - 1;
-    while (j > i && !walkable(ax, az, cells[j][0], cells[j][1])) j--;
+    while (j > i && !walkable(ax, az, cells[j][0], cells[j][1], solid)) j--;
     out.push(cells[j]);
     [ax, az] = cells[j];
     i = j + 1;

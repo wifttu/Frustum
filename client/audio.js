@@ -148,6 +148,19 @@ export class Sfx {
     this.tone('square', 150, 120, 0.12, 0.1);
   }
 
+  // 아이템 줍기: 반짝 3음
+  pickup() {
+    if (!this.ready) return;
+    [988, 1319, 1760].forEach((f, i) => this.tone('triangle', f, f, 0.12, 0.16, 0, i * 0.06));
+  }
+
+  // 반사 조끼가 빛을 막음: 쨍
+  block() {
+    if (!this.ready) return;
+    this.tone('square', 1800, 900, 0.18, 0.14);
+    this.tone('sine', 2600, 2400, 0.3, 0.12);
+  }
+
   // 밤 분위기: 풀벌레 소리 (가끔, 아주 작게)
   cricket() {
     if (!this.ready) return;
