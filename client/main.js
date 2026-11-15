@@ -504,7 +504,7 @@ function drawLabels() {
     if (e.label.textContent !== name) e.label.textContent = name;
     const cls = kindOf(id);
     if (e.label.className !== cls) e.label.className = cls;
-    projV.set(e.x, 2.6, e.z).project(camera);
+    projV.set(e.x, 2.45, e.z).project(camera);
     e.label.style.display = '';
     e.label.style.transform = `translate(${((projV.x + 1) * 0.5 * w).toFixed(1)}px, ${((1 - projV.y) * 0.5 * h).toFixed(1)}px) translate(-50%, -100%)`;
   }
@@ -741,11 +741,11 @@ function frame(now) {
   shake = Math.max(0, shake - dt * 2.6);
   const sk = shake * shake * 1.1;
   camera.position.set(
-    view.x - s * 9 + (Math.random() - 0.5) * sk,
-    17 + (Math.random() - 0.5) * sk,
-    view.z - c * 9 + (Math.random() - 0.5) * sk,
+    view.x - s * 9 * prefs.zoom + (Math.random() - 0.5) * sk,
+    17 * prefs.zoom + (Math.random() - 0.5) * sk,
+    view.z - c * 9 * prefs.zoom + (Math.random() - 0.5) * sk,
   );
-  camera.lookAt(view.x + s * 6, 0, view.z + c * 6);
+  camera.lookAt(view.x + s * 6 * prefs.zoom, 0, view.z + c * 6 * prefs.zoom);
   camera.updateMatrixWorld();
   projView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
   frustum.setFromProjectionMatrix(projView);
@@ -886,9 +886,10 @@ function applyPrefs() {
   $('minimap').hidden = !prefs.showMinimap;
   $('sensVal').textContent = `x${prefs.sens.toFixed(1)}`;
   $('volVal').textContent = `${Math.round(prefs.volume * 100)}%`;
+  $('zoomVal').textContent = `x${prefs.zoom.toFixed(2)}`;
 }
 const CHECKS = { setFixed: 'fixedStick', setLefty: 'lefty', setVibrate: 'vibrate', setStats: 'showStats', setMinimap: 'showMinimap' };
-const RANGES = { setSens: 'sens', setVol: 'volume' };
+const RANGES = { setSens: 'sens', setVol: 'volume', setZoom: 'zoom' };
 for (const [id, key] of Object.entries(CHECKS)) {
   $(id).checked = prefs[key];
   $(id).addEventListener('change', () => {
@@ -934,7 +935,7 @@ else if (params.has('auto')) connect($('name').value || 'Player', menuMode, menu
 
 // 디버그/자동 테스트용 핸들
 window.__frustum = {
-  ents, roster, sim, view, stats, mask, input, sfx,
+  ents, roster, sim, view, stats, mask, input, sfx, prefs,
   get alive() { return alive; },
   get myId() { return myId; },
   get flares() { return flares; },
