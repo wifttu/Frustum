@@ -148,6 +148,15 @@ export class Sfx {
     this.tone('square', 150, 120, 0.12, 0.1);
   }
 
+  // 밤 분위기: 풀벌레 소리 (가끔, 아주 작게)
+  cricket() {
+    if (!this.ready) return;
+    const pan = Math.random() * 1.6 - 0.8;
+    const f = 4200 + Math.random() * 900;
+    const n = 2 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < n; i++) this.tone('sine', f, f * 0.98, 0.045, 0.022, pan, i * 0.075);
+  }
+
   step(vol = 1) {
     if (!this.ready) return;
     this.hiss(260, 140, 1, 0.07, 0.12 * vol, 0, 0, 'lowpass');

@@ -192,8 +192,8 @@ body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
   position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: safe center;
   gap: 10px; padding: 20px; text-align: center; overflow-y: auto; touch-action: pan-y;
   background:
-    radial-gradient(ellipse 60% 50% at 50% 0%, rgba(60, 130, 220, .22), transparent 70%),
-    radial-gradient(circle at 50% 40%, #121c27, #020304 75%);
+    radial-gradient(ellipse 55% 45% at 50% 8%, rgba(255, 200, 110, .2), transparent 70%),
+    radial-gradient(circle at 50% 45%, #14233a, #05070d 78%);
 }
 /* 로고: 위에서 비추는 손전등 불빛 */
 #logo { position: relative; padding-top: 6px; }
@@ -204,7 +204,7 @@ body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
 }
 #logo h1 {
   position: relative; margin: 0; font-size: 42px; font-weight: 900; letter-spacing: 10px; margin-right: -10px;
-  background: linear-gradient(180deg, #fff 30%, #8fb6dc); -webkit-background-clip: text; background-clip: text; color: transparent;
+  background: linear-gradient(180deg, #fff6dc 30%, #ffc56a); -webkit-background-clip: text; background-clip: text; color: transparent;
 }
 #menu p { margin: 0 0 4px; color: #9fb2c4; font-size: 14px; }
 #menu input, #menu > button {
@@ -217,7 +217,7 @@ body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
 #menu input:focus { border-color: #2f8fe6; }
 #menu > button { border: 0; color: #fff; font-weight: 800; transition: transform .08s; }
 #menu > button:active { transform: scale(.97); }
-#play { background: linear-gradient(180deg, #45a4ff, #2476d2); box-shadow: 0 6px 20px rgba(47, 143, 230, .35); }
+#play { background: linear-gradient(180deg, #ffc94d, #f08a2c); color: #3a2208 !important; box-shadow: 0 6px 22px rgba(255, 170, 60, .4); }
 #menu > button.alt { background: #1c2733; color: #cfe0f0; border: 1px solid #2b3d4e; font-weight: 600; padding: 10px 14px; }
 .pick { display: flex; gap: 6px; width: min(280px, 82vw); }
 #menu .pick button {
