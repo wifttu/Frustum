@@ -47,6 +47,13 @@ export class Rooms {
     return g;
   }
 
+  // 공개 방별 접속 중인 사람 수 (봇 제외). 비공개 방은 코드를 아는 사람만 쓰므로 알리지 않는다.
+  summary() {
+    const out = {};
+    for (const [key, g] of this.games) if (!g.room) out[key] = g.humanCount;
+    return out;
+  }
+
   // 사람이 모두 나간 비공개 방은 없앤다
   cleanup(g) {
     if (!g.room || g.humanCount > 0) return;

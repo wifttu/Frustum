@@ -38,6 +38,11 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' }).end('ok');
     return;
   }
+  if (url === '/rooms') {
+    // 공개 방별 접속 인원 (로비의 "사람 많은 방" 표시용)
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' }).end(JSON.stringify(rooms.summary()));
+    return;
+  }
   if (url === '/') url = '/index.html';
   for (const [prefix, dir] of MOUNTS) {
     if (!url.startsWith(prefix)) continue;

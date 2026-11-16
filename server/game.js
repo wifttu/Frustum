@@ -122,7 +122,7 @@ export class Game {
   balanceBots() {
     const want = Math.max(0, this.cfg.BOT_FILL - this.humanCount);
     const bots = [...this.players.values()].filter((p) => p.isBot);
-    for (let i = bots.length; i < want; i++) this.addPlayer(`BOT-${this.nextId}`, null, true);
+    for (let i = bots.length; i < want; i++) this.addPlayer(`AI-${this.nextId}`, null, true);
     for (let i = bots.length; i > want; i--) {
       bots.sort((a, b) => this.teamSize(b.team) - this.teamSize(a.team));
       this.removePlayer(bots.shift().id);

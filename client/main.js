@@ -1035,6 +1035,7 @@ function drawLobby() {
   $('roomTag').hidden = !(lobby.online && lobby.room);
   $('roomTag').textContent = `친구 방 ${lobby.room}`;
   for (const [m, id] of Object.entries(MAP_BTNS)) $(id).classList.toggle('on', lobby.map === m);
+  drawOnline();
 }
 // 프로필 아이콘 고르기
 function drawIcons() {
@@ -1100,7 +1101,52 @@ for (const [m, id] of Object.entries(MAP_BTNS)) {
     drawLobby();
   });
 }
-$('modeCard').addEventListener('click', () => ($('modePanel').hidden = false));
+// 온라인 방 현황: 규칙·인원 조합마다 접속 중인 사람 수. 사람이 모자란 자리는 AI 가 채운다.
+let roomCounts = null;
+async function loadRooms() {
+  roomCounts = null;
+  if (!lobby.online) return drawOnline();
+  drawOnline('불러오는 중…');
+  try {
+    const res = await fetch(`${serverBase()}/rooms`, { cache: 'no-store' });
+    roomCounts = await res.json();
+  } catch {
+    return drawOnline('서버가 깨어나는 중이거나 닿지 않아요');
+  }
+  drawOnline();
+}
+function drawOnline(msg = '') {
+  const box = $('onlineBox');
+  box.hidden = !lobby.online;
+  if (!lobby.online) return;
+  const key = `${menuRule}-${menuMode}`;
+  const total = roomCounts ? Object.values(roomCounts).reduce((a, b) => a + b, 0) : 0;
+  $('onlineText').textContent =
+    msg || (roomCounts ? `지금 접속 ${total}명 · 이 모드 ${roomCounts[key] ?? 0}명 (빈자리는 AI가 채워요)` : '');
+  $('busiest').disabled = !roomCounts || total === 0;
+  // 버튼마다 그 조합의 인원 표시
+  for (const [r, id] of Object.entries(RULE_BTNS)) $(id).dataset.n = roomCounts ? roomCounts[`${r}-${menuMode}`] ?? 0 : '';
+  for (const [m, id] of Object.entries(MODES)) $(id).dataset.n = roomCounts ? roomCounts[`${menuRule}-${m}`] ?? 0 : '';
+}
+$('busiest').addEventListener('click', () => {
+  if (!roomCounts) return;
+  const [best] = Object.entries(roomCounts).sort((a, b) => b[1] - a[1])[0] ?? [];
+  if (!best) return;
+  const [r, m] = best.split('-');
+  menuRule = r;
+  menuMode = m;
+  try {
+    localStorage.setItem('frustum.rule', r);
+    localStorage.setItem('frustum.mode', m);
+  } catch {}
+  drawPicks();
+  drawLobby();
+  drawOnline();
+});
+$('modeCard').addEventListener('click', () => {
+  $('modePanel').hidden = false;
+  loadRooms();
+});
 $('closeModes').addEventListener('click', () => {
   $('modePanel').hidden = true;
   drawLobby();
@@ -1185,7 +1231,7 @@ function noteRecent() {
   if (offline || !myId) return;
   let changed = false;
   for (const [id, p] of roster) {
-    if (id === myId || /^BOT-\d+$/.test(p.name) || profile.recent[0] === p.name) continue;
+    if (id === myId || /^AI-\d+$/.test(p.name) || profile.recent[0] === p.name) continue;
     profile.recent = [p.name, ...profile.recent.filter((n) => n !== p.name)].slice(0, 12);
     changed = true;
   }

@@ -51,3 +51,18 @@ test('스킨: 서버는 목록에 있는 스킨만 받아 로스터에 싣는다
   assert.equal(b.skin, 'default');
   assert.equal(g.roster().p.find((r) => r[0] === a.id)[8], 'gold');
 });
+
+test('방 현황: 공개 방의 접속 인원만 알리고, 봇은 세지 않는다', () => {
+  const rooms = new Rooms();
+  const g = rooms.find({ rule: 'dm', mode: 'ffa' });
+  assert.equal(g.humanCount, 0);
+  g.addPlayer('A', () => {});
+  g.addPlayer('B', () => {});
+  g.balanceBots();
+  const priv = rooms.find({ rule: 'dm', mode: 'ffa', room: 'SECRET' });
+  priv.addPlayer('C', () => {});
+  const sum = rooms.summary();
+  assert.equal(sum['dm-ffa'], 2);
+  assert.equal(Object.keys(sum).length, 6, '비공개 방은 목록에 없다');
+  assert.ok(g.players.size === 8 && [...g.players.values()].filter((p) => p.isBot).every((p) => /^AI-\d+$/.test(p.name)));
+});
