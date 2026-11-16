@@ -8,6 +8,7 @@ const defaults = {
   volume: 0.8, // 효과음 크기 0..1
   vibrate: true, // 처치/사망 시 진동
   showMinimap: true, // 미니맵 표시
+  server: '', // 온라인 서버 주소 (비우면 기본값)
   showStats: false, // 성능 정보(fps 등) 표시
 };
 let saved = {};

@@ -7,6 +7,8 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icon.svg" />
     <title>Frustum</title>
     <link rel="stylesheet" href="style.css" />
     <script type="importmap">
@@ -55,7 +57,7 @@
 
     <div id="menu">
       <div id="profileChip">
-        <i id="avatar">🧭</i>
+        <button id="avatar" aria-label="아이콘 바꾸기">🧭</button>
         <div>
           <input id="name" maxlength="12" placeholder="닉네임 입력" autocomplete="off" aria-label="닉네임" />
           <div id="rank"><b id="rankLv">모험가 Lv 1</b><div class="bar"><div id="rankFill"></div></div><small id="rankText"></small></div>
@@ -102,6 +104,15 @@
         </div>
         <p class="note">맵 고르기는 혼자 하기와 친구 방(방 코드)에서 적용됩니다. 공개 온라인 방은 맵이 순환합니다.</p>
         <button id="closeModes">확인</button>
+      </div>
+    </div>
+
+    <div id="iconPanel" class="sheet" hidden>
+      <div class="panel">
+        <h2>프로필 아이콘</h2>
+        <div id="iconGrid"></div>
+        <div id="iconHint" class="note"></div>
+        <button id="closeIcons">확인</button>
       </div>
     </div>
 
@@ -164,6 +175,10 @@
     <div id="settings" hidden>
       <div class="panel">
         <h2>설정</h2>
+        <div class="serverRow">
+          <span>온라인 서버 주소<small id="serverState"></small></span>
+          <div><input id="setServer" placeholder="예: frustum.onrender.com" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="온라인 서버 주소" /><button id="testServer">연결</button></div>
+        </div>
         <label><span>조이스틱 고정<small>항상 같은 자리에 표시</small></span><input type="checkbox" id="setFixed" /></label>
         <label><span>왼손 모드<small>조이스틱과 버튼 좌우 반전</small></span><input type="checkbox" id="setLefty" /></label>
         <label><span>회전 감도 <b id="sensVal"></b></span><input type="range" id="setSens" min="0.4" max="2.5" step="0.1" /></label>

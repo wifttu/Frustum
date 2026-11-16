@@ -16,6 +16,17 @@ export const SKINS = Object.freeze({
 export const SKIN_KEYS = Object.keys(SKINS);
 export const skinOf = (id) => (Object.hasOwn(SKINS, id) ? id : 'default');
 
+// 프로필 아이콘: 기본 제공 + 가진 캐릭터의 아이콘 + 가진 의상의 아이콘
+export const FREE_ICONS = Object.freeze(['🔦', '🏕️', '🌲', '🔥', '🌙', '⭐', '🦊', '🐱', '🐶', '🐼', '🐰', '🦔']);
+export const SKIN_ICONS = Object.freeze({ strawberry: '🍓', lime: '🐸', pumpkin: '🎃', snow: '⛄', night: '🚀', gold: '👑' });
+// [{ icon, locked, how }] — locked 이면 how 에 얻는 방법
+export function iconsFor(profile) {
+  const out = FREE_ICONS.map((icon) => ({ icon, locked: false, how: '' }));
+  for (const [id, c] of Object.entries(CHARACTERS)) out.push({ icon: c.icon, locked: !profile.owned.includes(id), how: `${c.name} 캐릭터를 얻으면 열려요` });
+  for (const [id, icon] of Object.entries(SKIN_ICONS)) out.push({ icon, locked: !profile.skins.includes(id), how: `${SKINS[id].name} 의상을 얻으면 열려요` });
+  return out;
+}
+
 export const TIERS = Object.freeze({
   common: { name: '일반', p: 0.6, color: '#9fb2c4' },
   rare: { name: '희귀', p: 0.28, color: '#5ab4ff' },
@@ -36,7 +47,7 @@ export const DAILY = Object.freeze({ BASE: 60, PER_STREAK: 15, MAX_STREAK: 7 });
 export const charTier = (id) => (CHARACTERS[id].price > 450 ? 'legend' : 'epic');
 
 export function newProfile() {
-  return { xp: 0, coins: 0, owned: ['explorer'], char: 'explorer', skins: ['default'], skin: 'default', pity: 0, daily: '', streak: 0, friends: [], recent: [] };
+  return { xp: 0, coins: 0, owned: ['explorer'], char: 'explorer', skins: ['default'], skin: 'default', pity: 0, daily: '', streak: 0, friends: [], recent: [], icon: '' };
 }
 
 // 저장된 값을 안전하게 정리한다 (오래된 저장 데이터, 손상된 값 대비)
@@ -54,6 +65,8 @@ export function normalizeProfile(raw) {
   const names = (v, max) => (Array.isArray(v) ? [...new Set(v.filter((x) => typeof x === 'string' && x).map((x) => x.slice(0, 12)))].slice(0, max) : []);
   p.friends = names(p.friends, 30);
   p.recent = names(p.recent, 12);
+  // 아이콘: 지금 쓸 수 있는 것만 인정한다 ('' = 고른 캐릭터의 아이콘)
+  if (!iconsFor(p).some((x) => !x.locked && x.icon === p.icon)) p.icon = '';
   return p;
 }
 
