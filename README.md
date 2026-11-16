@@ -40,7 +40,7 @@ npm test
 3. `https://frustum-xxxx.onrender.com` 같은 주소가 생긴다.
 4. 게임의 **설정 → 온라인 서버 주소**에 그 주소를 붙여 넣고 **연결**을 누른다. "연결됐어요"가 뜨면 로비에서 온라인으로 시작한다.
    주소는 그 기기에 저장된다. 초대 링크에는 서버 주소가 함께 담긴다.
-5. 모든 사용자에게 기본으로 적용하려면 `client/settings.js` 의 `DEFAULT_SERVER` 에 주소를 넣고 푸시한다.
+5. 기본 서버는 `client/settings.js` 의 `DEFAULT_SERVER` 로 정해져 있다(현재 `frustum.onrender.com`). 다른 서버를 쓰려면 이 값을 바꾸고 푸시한다.
 
 무료 플랜은 15분간 접속이 없으면 잠들고, 다시 깨어나는 데 최대 1분 걸린다(클라이언트가 자동으로 재시도한다).
 Render 주소를 직접 열어도 서버가 서빙하는 같은 게임이 뜨고, 거기서는 주소 설정 없이 온라인이 된다.
@@ -124,7 +124,7 @@ Render 주소를 직접 열어도 서버가 서빙하는 같은 게임이 뜨고
 
 `render.yaml`(Blueprint)이 들어 있다. render.com 가입 → **New → Blueprint** → 이 저장소 선택 → Apply.
 몇 분 뒤 `https://frustum-xxxx.onrender.com` 같은 주소가 생기고, 그 주소를 열면 서버가 직접 서빙하는 게임에서 "온라인 접속"이 바로 된다.
-GitHub Pages에서도 온라인 접속을 쓰려면 `client/settings.js`의 `DEFAULT_SERVER`에 그 주소를 넣는다.
+GitHub Pages 에서도 온라인이 되도록 `client/settings.js` 의 `DEFAULT_SERVER` 에 서버 주소가 들어 있다.
 무료 플랜은 15분간 접속이 없으면 잠들고, 다시 깨어나는 데 최대 1분 걸린다(클라이언트가 자동으로 재시도한다).
 
 ## GitHub Pages 배포
