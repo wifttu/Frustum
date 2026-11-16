@@ -4,6 +4,15 @@
   "start_url": "./",
   "display": "fullscreen",
   "orientation": "landscape",
-  "background_color": "#000000",
-  "theme_color": "#000000"
+  "background_color": "#1b2a52",
+  "theme_color": "#1b2a52",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "description": "한밤의 캠핑장, 손전등 술래잡기"
 }

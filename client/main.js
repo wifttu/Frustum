@@ -6,14 +6,14 @@ import { wrapAngle } from './shared/vision.js';
 import { VisionMask } from './fog.js';
 import { Input } from './input.js';
 import { Sfx } from './audio.js';
-import { DEFAULT_SERVER } from './settings.js';
+import { DEFAULT_SERVER, normalizeServer } from './settings.js';
 import { prefs, savePrefs } from './prefs.js';
 import { CHARACTERS, PROGRESS, SKILLS, UPGRADES, charOf, statsOf, xpToNext } from './shared/progress.js';
 import { Characters, DeathFx } from './character.js';
 import { Minimap } from './minimap.js';
 import { buildFloorTexture, buildItemGeos, buildWalls, buildWater } from './world.js';
 import { Showcase, radarOf } from './showcase.js';
-import { DAILY, GACHA, SKINS, TIERS, claimDaily, dayKey, gacha, normalizeProfile, skinOf } from './shared/shop.js';
+import { DAILY, GACHA, SKINS, TIERS, claimDaily, dayKey, gacha, iconsFor, normalizeProfile, skinOf } from './shared/shop.js';
 
 const DT = 1 / CFG.TICK_RATE;
 const INTERP_MS = 110; // 원격 플레이어 보간 지연
@@ -266,8 +266,10 @@ function spatial(x, z) {
 const params = new URLSearchParams(location.search);
 const STATIC_HOST = location.hostname.endsWith('github.io');
 // ?server= > (정적 호스팅이면 settings.js 의 기본 서버) > 페이지를 서빙한 서버
-const REMOTE = params.get('server') || (STATIC_HOST ? DEFAULT_SERVER : '');
+// 우선순위: 주소의 ?server= > 설정에서 넣은 주소 > (정적 호스팅이면) 기본 서버 > 페이지를 서빙한 서버
+const remote = () => normalizeServer(params.get('server')) || normalizeServer(prefs.server) || (STATIC_HOST ? normalizeServer(DEFAULT_SERVER) : '');
 function serverBase() {
+  const REMOTE = remote();
   if (!REMOTE) return `${location.protocol}//${location.host}`;
   const u = REMOTE.replace(/\/$/, '');
   return /^(https?|wss?):\/\//.test(u) ? u.replace(/^ws/, 'http') : `https://${u}`;
@@ -293,6 +295,7 @@ function showMenu(msg) {
 }
 
 function connect(name, gameMode, gameRule) {
+  const REMOTE = remote();
   if (STATIC_HOST && !REMOTE) {
     $('status').textContent = '온라인 서버 주소가 설정되지 않았습니다. 혼자 하기는 서버 없이 됩니다.';
     return;
@@ -1022,7 +1025,7 @@ function enterLobby() {
 function drawLobby() {
   const c = CHARACTERS[profile.char];
   const sk = SKILLS[c.skill];
-  $('avatar').textContent = c.icon;
+  $('avatar').textContent = profile.icon || c.icon;
   $('lobbyCharName').textContent = profile.skin === 'default' ? c.name : `${c.name} · ${SKINS[profile.skin].name}`;
   $('lobbySkill').textContent = `${sk.icon} ${sk.name} · ${c.desc}`;
   $('modeText').textContent = `${RULE_NAMES[menuRule]} · ${MODE_NAMES[menuMode]}`;
@@ -1033,6 +1036,63 @@ function drawLobby() {
   $('roomTag').textContent = `친구 방 ${lobby.room}`;
   for (const [m, id] of Object.entries(MAP_BTNS)) $(id).classList.toggle('on', lobby.map === m);
 }
+// 프로필 아이콘 고르기
+function drawIcons() {
+  $('iconHint').textContent = '';
+  $('iconGrid').replaceChildren(
+    ...[{ icon: '', locked: false, how: '' }, ...iconsFor(profile)].map((x) => {
+      const b = document.createElement('button');
+      b.textContent = x.icon || CHARACTERS[profile.char].icon;
+      if (!x.icon) b.dataset.auto = '1';
+      b.className = (profile.icon === x.icon ? 'on' : '') + (x.locked ? ' locked' : '');
+      b.addEventListener('click', () => {
+        if (x.locked) return ($('iconHint').textContent = `🔒 ${x.how}`);
+        profile.icon = x.icon;
+        saveProfile();
+        sfx.choose();
+        drawIcons();
+        drawLobby();
+      });
+      return b;
+    }),
+  );
+}
+$('avatar').addEventListener('click', () => {
+  drawIcons();
+  $('iconPanel').hidden = false;
+});
+$('closeIcons').addEventListener('click', () => ($('iconPanel').hidden = true));
+
+// 온라인 서버 주소: 설정에서 붙여 넣고 연결을 확인한다
+function drawServer(msg = '') {
+  const cur = remote();
+  $('serverState').textContent = msg || (cur ? `연결 대상: ${cur.replace(/^https?:\/\//, '')}` : STATIC_HOST ? '아직 서버가 없어요. 혼자 하기는 서버 없이 됩니다.' : '이 페이지를 띄운 서버에 접속합니다.');
+}
+$('setServer').value = prefs.server;
+$('testServer').addEventListener('click', async () => {
+  const raw = $('setServer').value;
+  const url = normalizeServer(raw);
+  if (raw.trim() && !url) return drawServer('주소를 확인해 주세요. 예: frustum.onrender.com');
+  prefs.server = url;
+  savePrefs();
+  $('setServer').value = url.replace(/^https?:\/\//, '');
+  if (!url) return drawServer();
+  drawServer('확인 중… (잠든 무료 서버는 1분까지 걸려요)');
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 70000);
+    const res = await fetch(`${url}/healthz`, { signal: ctl.signal });
+    clearTimeout(timer);
+    if (!res.ok || (await res.text()).trim() !== 'ok') throw new Error();
+    drawServer('✅ 연결됐어요! 로비에서 온라인으로 시작하세요.');
+    lobby.online = true;
+    drawLobby();
+  } catch {
+    drawServer('❌ 서버에 닿지 않아요. 주소와 서버 상태를 확인해 주세요.');
+  }
+});
+drawServer();
+
 const MAP_BTNS = { '': 'mapAuto', camp: 'mapCamp', forest: 'mapForest', lake: 'mapLake' };
 for (const [m, id] of Object.entries(MAP_BTNS)) {
   $(id).addEventListener('click', () => {
@@ -1108,7 +1168,7 @@ $('roomShare').addEventListener('click', async () => {
   const u = new URL(location.href);
   u.search = '';
   u.searchParams.set('room', lobby.room);
-  if (REMOTE) u.searchParams.set('server', REMOTE);
+  if (remote()) u.searchParams.set('server', remote());
   const text = `Frustum 같이 하자! 방 코드 ${lobby.room}`;
   try {
     if (navigator.share) await navigator.share({ title: 'Frustum', text, url: u.href });

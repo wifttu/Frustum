@@ -33,10 +33,17 @@ npm test
 
 ## Render 배포 (멀티플레이 서버)
 
-`render.yaml`(Blueprint)이 들어 있다. render.com 가입 → **New → Blueprint** → 이 저장소 선택 → Apply.
-몇 분 뒤 `https://frustum-xxxx.onrender.com` 같은 주소가 생기고, 그 주소를 열면 서버가 직접 서빙하는 게임에서 "온라인 접속"이 바로 된다.
-GitHub Pages에서도 온라인 접속을 쓰려면 `client/settings.js`의 `DEFAULT_SERVER`에 그 주소를 넣는다.
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/wifttu/Frustum)
+
+1. 위 버튼을 누르고 Render 에 GitHub 계정으로 로그인한다(저장소가 비공개면 Render 에 저장소 접근을 허용한다).
+2. `render.yaml`(Blueprint) 설정이 그대로 뜬다. **Apply** 를 누르고 몇 분 기다린다.
+3. `https://frustum-xxxx.onrender.com` 같은 주소가 생긴다.
+4. 게임의 **설정 → 온라인 서버 주소**에 그 주소를 붙여 넣고 **연결**을 누른다. "연결됐어요"가 뜨면 로비에서 온라인으로 시작한다.
+   주소는 그 기기에 저장된다. 초대 링크에는 서버 주소가 함께 담긴다.
+5. 모든 사용자에게 기본으로 적용하려면 `client/settings.js` 의 `DEFAULT_SERVER` 에 주소를 넣고 푸시한다.
+
 무료 플랜은 15분간 접속이 없으면 잠들고, 다시 깨어나는 데 최대 1분 걸린다(클라이언트가 자동으로 재시도한다).
+Render 주소를 직접 열어도 서버가 서빙하는 같은 게임이 뜨고, 거기서는 주소 설정 없이 온라인이 된다.
 
 ## GitHub Pages 배포
 
@@ -86,6 +93,7 @@ GitHub Pages에서도 온라인 접속을 쓰려면 `client/settings.js`의 `DEF
   이동에 영향을 주는 구르기·질주는 공용 시뮬레이션에서, 나머지는 서버에서 효과를 적용한다.
 - **로비**: 가운데에 내 캐릭터(3D), 왼쪽 위 프로필(닉네임, 모험가 레벨), 오른쪽 위 코인과 설정, 왼쪽에 캐릭터·상점·친구·출석,
   아래에 모드·맵 선택 카드와 게임 시작 버튼(혼자/온라인 전환).
+- **프로필 아이콘**: 로비의 아이콘을 눌러 고른다. 기본 12종에 더해 가진 캐릭터와 의상의 아이콘이 열린다.
 - **친구와 함께**: 계정 없이 방 코드(영문·숫자 4~6자)로 같은 방에 모인다. 방을 처음 만든 사람의 규칙·모드·맵을 따르고,
   모두 나가면 방이 사라진다(`server/rooms.js`). 초대 링크(`?room=코드`)를 공유할 수 있다.
   친구 목록과 최근 함께한 플레이어는 이름만 기기에 저장한다. 온라인 상태 확인이나 초대 알림은 계정이 없어 지원하지 않는다.
