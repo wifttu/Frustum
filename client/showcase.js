@@ -11,6 +11,7 @@ export class Showcase {
   constructor(chars) {
     this.chars = chars;
     this.active = false;
+    this.lobby = false; // 로비: 고른 캐릭터 하나만 가까이서 보여준다
     this.index = 0; // 고른 캐릭터
     this.pos = 0; // 화면이 따라가는 위치 (부드럽게 index 로 이동)
     this.scene = new THREE.Scene();
@@ -71,9 +72,9 @@ export class Showcase {
     this.active = false;
   }
 
-  // 고른 캐릭터에 스킨 색을 입혀 보여준다 (null = 고유 색)
-  setSkin(color) {
-    for (const it of this.items) this.chars.setKind(it.mesh, 'self', it.id, it.id === this.current ? color : null);
+  // 고른 캐릭터에 스킨(의상)을 입혀 보여준다
+  setSkin(skin = 'default') {
+    for (const it of this.items) this.chars.setKind(it.mesh, 'self', it.id, it.id === this.current ? skin : 'default');
   }
 
   get current() {
@@ -96,11 +97,17 @@ export class Showcase {
     const cam = this.camera;
     cam.aspect = w / h;
     cam.updateProjectionMatrix();
-    cam.position.set(this.pos * GAP, 1.9, 9.6);
-    cam.lookAt(this.pos * GAP, 1.55, 0);
+    if (this.lobby) {
+      cam.position.set(this.pos * GAP, 1.9, 10.4);
+      cam.lookAt(this.pos * GAP, 1.3, 0);
+    } else {
+      cam.position.set(this.pos * GAP, 1.9, 10.2);
+      cam.lookAt(this.pos * GAP, 1.75, 0);
+    }
     for (let i = 0; i < this.items.length; i++) {
       const it = this.items[i];
       const sel = i === this.index;
+      it.mesh.visible = sel || !this.lobby;
       it.scale = lerp(it.scale, sel ? 1.12 : 0.72, Math.min(1, dt * 10));
       it.mesh.scale.setScalar(it.scale);
       // 고른 캐릭터는 천천히 좌우로 몸을 돌리며 손전등을 든다

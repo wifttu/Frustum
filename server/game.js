@@ -4,6 +4,7 @@ import { MAP_ROTATION, MAP_SIZE, MAPS, isFree } from '../shared/map.js';
 import { flareLanding, stepPlayer } from '../shared/sim.js';
 import { canSee, segmentBlocked, wrapAngle } from '../shared/vision.js';
 import { botThink } from './bots.js';
+import { SKIN_KEYS, skinOf } from '../shared/shop.js';
 import { CHARACTER_KEYS, PROGRESS, SKILLS, UPGRADES, charOf, rollChoices, statsOf, xpToNext } from '../shared/progress.js';
 
 const DT = 1 / CFG.TICK_RATE;
@@ -75,7 +76,7 @@ export class Game {
   }
 
   // 사람은 봇의 자리(팀, 위치, 생존 상태)를 이어받아 라운드 중에도 바로 플레이한다.
-  addPlayer(name, send = null, isBot = false, char = null) {
+  addPlayer(name, send = null, isBot = false, char = null, skin = null) {
     const id = this.nextId++;
     const p = {
       id, name, team: 0, isBot, send,
@@ -84,7 +85,9 @@ export class Game {
       dashT: 0, shieldT: 0, scanT: 0, cast: null,
       hp: 0, xp: 0, level: 1, ups: {}, choices: [], hurtT: 0, statsDirty: true, ffVer: -1, earned: 0,
       // 캐릭터: 봇은 무작위. (계정이 없어 구매 여부는 클라이언트가 관리한다)
-      char: isBot ? CHARACTER_KEYS[Math.floor(Math.random() * CHARACTER_KEYS.length)] : charOf(char), beam: 0, score: 0, wins: 0,
+      char: isBot ? CHARACTER_KEYS[Math.floor(Math.random() * CHARACTER_KEYS.length)] : charOf(char),
+      // 스킨(의상): 모자와 소품은 다른 플레이어에게도 보인다. 봇은 가끔 입는다.
+      skin: isBot ? (Math.random() < 0.3 ? SKIN_KEYS[1 + Math.floor(Math.random() * (SKIN_KEYS.length - 1))] : 'default') : skinOf(skin), beam: 0, score: 0, wins: 0,
       rollT: 0, rollCd: 0, rollDx: 0, rollDz: 1, flareCd: 0,
       queue: [], budget: 0, ack: 0, lastSeq: 0, ai: {},
     };
@@ -682,7 +685,7 @@ export class Game {
   roster() {
     return {
       t: 'r',
-      p: [...this.players.values()].map((p) => [p.id, p.name, p.team, p.score, p.alive ? 1 : 0, p.wins, p.level, p.char]),
+      p: [...this.players.values()].map((p) => [p.id, p.name, p.team, p.score, p.alive ? 1 : 0, p.wins, p.level, p.char, p.skin]),
     };
   }
 
