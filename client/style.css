@@ -286,59 +286,136 @@ body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
   font-weight: 800; font-size: 18px; white-space: nowrap; animation: pulse .6s ease-in-out infinite;
 }
 
-/* ───────── 메뉴 ───────── */
-#menu {
-  position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: safe center;
-  gap: 10px; padding: 20px; text-align: center; overflow-y: auto; touch-action: pan-y;
-  background:
-    radial-gradient(ellipse 55% 45% at 50% 8%, rgba(255, 200, 110, .2), transparent 70%),
-    radial-gradient(circle at 50% 45%, #14233a, #05070d 78%);
+/* ───────── 로비 (3D 캐릭터 장면 위에 얹는 UI) ───────── */
+#menu { position: fixed; inset: 0; touch-action: none; }
+#menu button, .sheet button, .sheet input { font-family: inherit; }
+.chip { background: rgba(20, 16, 30, .78); border: 1px solid rgba(255, 255, 255, .16); box-shadow: 0 4px 14px rgba(0, 0, 0, .35); }
+#profileChip {
+  position: absolute; top: calc(8px + env(safe-area-inset-top)); left: calc(10px + env(safe-area-inset-left));
+  display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 16px;
+  background: rgba(20, 16, 30, .78); border: 1px solid rgba(255, 255, 255, .16); box-shadow: 0 4px 14px rgba(0, 0, 0, .35);
 }
-/* 로고: 위에서 비추는 손전등 불빛 */
-#logo { position: relative; padding-top: 6px; }
-#logo i {
-  position: absolute; left: 50%; top: 50%; width: 340px; height: 90px; transform: translate(-50%, -50%);
-  background: radial-gradient(ellipse, rgba(255, 225, 150, .22), transparent 68%);
-  animation: sweep 4s ease-in-out infinite; pointer-events: none;
+#avatar {
+  flex: none; width: 46px; height: 46px; border-radius: 12px; font-style: normal; font-size: 26px; line-height: 46px; text-align: center;
+  background: linear-gradient(180deg, #ffd98a, #f0965a); border: 2px solid #fff3c4;
 }
-#logo h1 {
-  position: relative; margin: 0; font-size: 42px; font-weight: 900; letter-spacing: 10px; margin-right: -10px;
-  background: linear-gradient(180deg, #fff6dc 30%, #ffc56a); -webkit-background-clip: text; background-clip: text; color: transparent;
+#name {
+  display: block; width: 150px; padding: 2px 4px; border: 0; border-bottom: 1px dashed rgba(255, 255, 255, .3); background: transparent;
+  color: #fff; font-size: 15px; font-weight: 800; outline: none; -webkit-user-select: text; user-select: text;
 }
-#menu p { margin: 0 0 4px; color: #9fb2c4; font-size: 14px; }
-#rank { width: min(280px, 82vw); display: flex; align-items: center; gap: 8px; }
-#rank b { font-size: 13px; color: #ffd25a; white-space: nowrap; }
-#rank .bar { flex: 1; height: 8px; }
+#name:focus { border-bottom-color: #ffd25a; }
+#rank { display: flex; align-items: center; gap: 6px; margin-top: 4px; width: 150px; }
+#rank b { font-size: 11px; color: #ffd25a; white-space: nowrap; }
+#rank .bar { flex: 1; height: 7px; }
 #rank .bar > div { background: linear-gradient(90deg, #ffd25a, #fff3a0); }
-#rank small { font-size: 10px; color: var(--dim); white-space: nowrap; }
-#rank em, #shop h2 em { font-style: normal; font-size: 13px; font-weight: 800; color: #ffd25a; white-space: nowrap; }
-.pair { display: flex; gap: 6px; width: min(280px, 82vw); }
-#menu .pair button {
-  flex: 1; padding: 10px 6px; border-radius: 12px; font-size: 15px; font-weight: 600; font-family: inherit;
-  background: #1c2733; color: #cfe0f0; border: 1px solid #2b3d4e;
+#rank small { display: none; }
+#lobbyLogo {
+  position: absolute; top: calc(10px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); text-align: center;
+  font-size: 24px; font-weight: 900; letter-spacing: 8px; margin-right: -8px; color: #fff6dc; white-space: nowrap; pointer-events: none;
+  text-shadow: 0 3px 0 rgba(40, 24, 20, .7), 0 0 20px rgba(255, 200, 110, .5);
 }
-#menu input, #menu > button {
-  width: min(280px, 82vw); padding: 13px 14px; border-radius: 12px; font-size: 16px; font-family: inherit;
+#lobbyLogo small { display: block; font-size: 10px; letter-spacing: 2px; font-weight: 600; color: #ffe9c0; text-shadow: 0 1px 3px #000; }
+#lobbyRight {
+  position: absolute; top: calc(10px + env(safe-area-inset-top)); right: calc(12px + env(safe-area-inset-right));
+  display: flex; align-items: center; gap: 8px;
 }
-#menu input {
-  border: 1px solid #2b3d4e; background: rgba(8, 14, 20, .8); color: #fff; text-align: center;
-  -webkit-user-select: text; user-select: text; outline: none;
+#coins, #shopCoins {
+  min-width: 96px; padding: 7px 14px; border-radius: 999px; text-align: center; font-size: 15px; font-weight: 900; font-style: normal;
+  background: rgba(40, 24, 20, .85); color: #ffd25a; border: 2px solid rgba(255, 210, 90, .6); box-shadow: 0 4px 14px rgba(0, 0, 0, .4);
 }
-#menu input:focus { border-color: #2f8fe6; }
-#menu > button { border: 0; color: #fff; font-weight: 800; transition: transform .08s; }
-#menu > button:active { transform: scale(.97); }
-#play { background: linear-gradient(180deg, #ffc94d, #f08a2c); color: #3a2208 !important; box-shadow: 0 6px 22px rgba(255, 170, 60, .4); }
-#menu > button#daily { background: linear-gradient(180deg, #3a2f5c, #2a2244); color: #ffe27a; border-color: #6a5a9a; }
-#menu > button.alt { background: #1c2733; color: #cfe0f0; border: 1px solid #2b3d4e; font-weight: 600; padding: 10px 14px; }
-.pick { display: flex; gap: 6px; width: min(280px, 82vw); }
-#menu .pick button {
-  flex: 1; padding: 9px 2px; border-radius: 12px; font-size: 14px; font-weight: 700;
-  background: #121b24; color: #8fa3b5; border: 2px solid #1d2a37; transition: all .12s;
+#openSettings {
+  width: 44px; height: 40px; border-radius: 10px; border: 0; background: #f4f1ea; font-size: 19px; box-shadow: 0 4px 0 #b9b2a4;
 }
-#menu .pick button.on { border-color: #2f8fe6; color: #fff; background: #17304a; box-shadow: 0 0 14px rgba(47, 143, 230, .3); }
-#menu .pick small { display: block; margin-top: 2px; font-weight: 400; font-size: 10px; opacity: .8; }
-#menu > small { color: #6f8294; line-height: 1.6; font-size: 12px; max-width: 560px; }
-#status { color: var(--enemy); min-height: 1.2em; font-size: 14px; }
+#lobbySide {
+  position: absolute; left: calc(10px + env(safe-area-inset-left)); top: calc(84px + env(safe-area-inset-top));
+  display: flex; flex-direction: column; gap: 8px;
+}
+#lobbySide button {
+  width: 76px; padding: 6px 2px 5px; border: 0; border-radius: 14px; color: #fff; font-size: 12px; font-weight: 800;
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  background: linear-gradient(180deg, #4a6fd8, #2f4fae); box-shadow: 0 4px 0 #1f3478, 0 6px 14px rgba(0, 0, 0, .35);
+}
+#lobbySide button i { font-style: normal; font-size: 22px; line-height: 1.1; }
+#lobbySide button:active, #play:active, #modeCard:active { transform: translateY(2px); }
+#lobbySide #openShop { background: linear-gradient(180deg, #ffb84a, #f08a2c); box-shadow: 0 4px 0 #a85a14, 0 6px 14px rgba(0, 0, 0, .35); color: #3a2208; }
+#lobbySide #openFriends { background: linear-gradient(180deg, #4fc88a, #2f9a64); box-shadow: 0 4px 0 #1c6a42, 0 6px 14px rgba(0, 0, 0, .35); }
+#lobbySide #daily { background: linear-gradient(180deg, #b98bff, #7a4fd8); box-shadow: 0 4px 0 #4a2f8a, 0 6px 14px rgba(0, 0, 0, .35); animation: pulse 1.4s ease-in-out infinite; }
+#lobbySide #daily[hidden] { display: none; }
+#lobbyChar {
+  position: absolute; left: 50%; bottom: calc(92px + env(safe-area-inset-bottom)); transform: translateX(-50%); text-align: center;
+  white-space: nowrap; pointer-events: none;
+}
+#lobbyCharName { display: block; font-size: 22px; font-weight: 900; color: #fff; text-shadow: 0 3px 0 rgba(40, 24, 20, .8); }
+#lobbySkill {
+  display: inline-block; padding: 3px 12px; border-radius: 999px; font-size: 12px; font-weight: 700;
+  background: rgba(30, 60, 90, .82); color: #cfeaff; border: 1px solid rgba(140, 205, 255, .45);
+}
+#modeCard {
+  position: absolute; left: 50%; bottom: calc(12px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  min-width: 270px; padding: 8px 18px 9px; border: 0; border-radius: 14px; text-align: left; color: #fff;
+  background: rgba(20, 16, 30, .86); border-top: 2px solid rgba(255, 255, 255, .18); box-shadow: 0 4px 0 #0c0a14, 0 8px 18px rgba(0, 0, 0, .4);
+}
+#modeCard:active { transform: translate(-50%, 2px); }
+#modeCard small { display: block; font-size: 10px; color: #9fb2c4; }
+#modeCard b { display: block; font-size: 18px; }
+#modeCard span { font-size: 12px; color: #9be4a4; font-weight: 700; }
+#lobbyStart {
+  position: absolute; right: calc(14px + env(safe-area-inset-right)); bottom: calc(12px + env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; align-items: stretch; gap: 6px; width: 210px;
+}
+#netToggle { display: flex; padding: 3px; border-radius: 12px; background: rgba(20, 16, 30, .8); }
+#netToggle button { flex: 1; padding: 6px 2px; border: 0; border-radius: 9px; background: transparent; color: #b9b2c4; font-size: 12px; font-weight: 800; }
+#netToggle button.on { background: #f4f1ea; color: #3a2a20; }
+#play {
+  padding: 15px 10px; border: 0; border-radius: 16px; font-size: 24px; font-weight: 900; letter-spacing: 2px; color: #3a2208;
+  background: linear-gradient(180deg, #ffe04d, #ffb21a); box-shadow: 0 5px 0 #b3760a, 0 10px 22px rgba(0, 0, 0, .45);
+}
+#roomTag { padding: 3px 10px; border-radius: 999px; text-align: center; font-size: 12px; font-weight: 800; background: rgba(47, 154, 100, .9); color: #fff; }
+#roomTag[hidden] { display: none; }
+#status {
+  position: absolute; left: 50%; top: calc(64px + env(safe-area-inset-top)); transform: translateX(-50%); padding: 3px 14px; border-radius: 999px;
+  background: rgba(20, 16, 30, .85); color: #ffb3aa; font-size: 13px; font-weight: 700; white-space: nowrap;
+}
+#status:empty { display: none; }
+
+/* 로비에서 여는 창 (모드·맵, 친구) */
+.sheet {
+  position: fixed; inset: 0; z-index: 12; display: flex; align-items: center; justify-content: safe center; padding: 10px;
+  background: rgba(0, 0, 0, .6); overflow-y: auto; touch-action: pan-y; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+}
+.sheet[hidden] { display: none; }
+.sheet .panel {
+  width: min(520px, 100%); margin: auto; padding: 12px 16px 14px; border-radius: 16px; background: #171425;
+  border: 1px solid #332c4a; animation: pop .2s ease-out;
+}
+.sheet h2 { margin: 0 0 4px; font-size: 18px; }
+.sheet h3 { margin: 8px 0 4px; font-size: 12px; color: #b9b2c4; font-weight: 700; }
+.sheet .note { margin: 6px 0; font-size: 11px; line-height: 1.4; color: #9fb2c4; }
+.sheet .panel > button {
+  width: 100%; margin-top: 8px; padding: 10px; border: 0; border-radius: 10px; background: #f4f1ea; color: #3a2a20;
+  font-weight: 800; font-size: 15px; box-shadow: 0 3px 0 #b9b2a4;
+}
+.pick { display: flex; gap: 6px; }
+.pick button {
+  flex: 1; padding: 7px 2px; border-radius: 12px; font-size: 14px; font-weight: 800;
+  background: #221d36; color: #9f98b4; border: 2px solid #332c4a;
+}
+.pick button.on { border-color: #ffd25a; color: #fff; background: #3a3018; }
+.pick small { display: block; margin-top: 1px; font-weight: 500; font-size: 10px; opacity: .85; }
+.roomRow { display: flex; gap: 6px; }
+.roomRow input {
+  flex: 1; min-width: 0; padding: 9px 10px; border-radius: 10px; border: 2px solid #332c4a; background: #0f0d1a; color: #fff;
+  font-size: 18px; font-weight: 900; letter-spacing: 4px; text-align: center; text-transform: uppercase; outline: none;
+  -webkit-user-select: text; user-select: text;
+}
+.roomRow input:focus { border-color: #4fc88a; }
+.roomRow button { flex: none; padding: 0 12px; border: 0; border-radius: 10px; background: #2f9a64; color: #fff; font-weight: 800; font-size: 13px; }
+#roomState { min-height: 1.3em; margin-top: 5px; font-size: 12px; font-weight: 700; color: #9be4a4; }
+.names { display: flex; flex-wrap: wrap; gap: 5px; min-height: 26px; }
+.names button {
+  padding: 4px 10px; border: 0; border-radius: 999px; background: #262040; color: #e8e2f8; font-size: 12px; font-weight: 700;
+}
+.names em { font-style: normal; font-size: 11px; color: #6f6a84; padding: 4px 0; }
 
 /* ───────── 캐릭터 선택 화면 (3D 장면 위에 얹는 UI) ───────── */
 #shop { position: fixed; inset: 0; z-index: 10; touch-action: none; }
@@ -346,9 +423,6 @@ body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
 #shop button { font-family: inherit; }
 #shopCoins {
   position: absolute; top: calc(10px + env(safe-area-inset-top)); right: calc(72px + env(safe-area-inset-right));
-  min-width: 96px; padding: 7px 14px; border-radius: 999px; text-align: center; font-size: 15px; font-weight: 900;
-  background: rgba(40, 24, 20, .85); color: #ffd25a; border: 2px solid rgba(255, 210, 90, .6);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, .4);
 }
 #closeShop {
   position: absolute; top: calc(10px + env(safe-area-inset-top)); right: calc(12px + env(safe-area-inset-right));
@@ -526,16 +600,11 @@ body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
 }
 
 /* ───────── 화면 방향별 조정 ───────── */
-/* 가로로 든 휴대폰: 메뉴를 압축 */
-@media (max-height: 480px) {
-  #menu { gap: 6px; padding: 8px 16px; }
-  #logo h1 { font-size: 24px; letter-spacing: 6px; margin-right: -6px; }
-  #logo i { height: 50px; }
-  #menu p { display: none; }
-  #menu input, #menu > button { padding: 8px 12px; font-size: 15px; }
-  #menu > button.alt { padding: 7px 12px; }
-  #menu .pair button { padding: 6px; font-size: 14px; }
-  #menu > button#daily { padding: 6px 12px; font-size: 13px; }
-  #menu .pick button { padding: 5px 2px; }
-  #menu > small { font-size: 10.5px; line-height: 1.4; }
+/* 낮은 화면(작은 가로 폰): 로비 요소를 조금 줄인다 */
+@media (max-height: 360px) {
+  #lobbySide { gap: 5px; top: calc(74px + env(safe-area-inset-top)); }
+  #lobbySide button { width: 66px; padding: 4px 2px; }
+  #lobbySide button i { font-size: 18px; }
+  #play { padding: 11px 10px; font-size: 21px; }
+  #lobbyChar { bottom: calc(80px + env(safe-area-inset-bottom)); }
 }

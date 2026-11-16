@@ -2,17 +2,19 @@
 // 화면과 분리된 순수 로직이라 테스트할 수 있다. 재화는 게임으로 버는 코인뿐이고 실제 결제는 없다.
 import { CHARACTERS } from './progress.js';
 
-// 스킨: 내 캐릭터의 후드/망토 색. 아군 파랑, 적 빨강과 헷갈리지 않는 색만 쓴다.
-// (다른 플레이어에게는 팀 색으로 보이므로 스킨은 내 화면과 선택 화면에서 보인다)
+// 스킨(의상): 컨셉마다 모자와 소품이 달라진다. 모자·소품은 모든 플레이어에게 보이고,
+// color 는 내 화면에서의 후드/망토 색이다(다른 사람에게는 아군 파랑, 적 빨강으로 보인다).
 export const SKINS = Object.freeze({
-  default: { name: '기본', color: null, tier: 'common' },
-  strawberry: { name: '딸기우유', color: 0xff8fc0, tier: 'rare' },
-  lime: { name: '라임', color: 0xb4e03a, tier: 'rare' },
-  pumpkin: { name: '호박', color: 0xff9a2e, tier: 'rare' },
-  snow: { name: '눈꽃', color: 0xf2f4f8, tier: 'epic' },
-  night: { name: '밤하늘', color: 0x39407e, tier: 'epic' },
-  gold: { name: '황금', color: 0xffcf3a, tier: 'legend' },
+  default: { name: '기본', desc: '캐릭터 본래 모습', color: null, tier: 'common' },
+  strawberry: { name: '딸기 요정', desc: '잎사귀 왕관과 씨앗 무늬 후드', color: 0xff5d7a, tier: 'rare' },
+  lime: { name: '개구리', desc: '눈이 툭 튀어나온 개구리 후드', color: 0x7fcf3a, tier: 'rare' },
+  pumpkin: { name: '호박 마법사', desc: '뾰족한 마법사 모자', color: 0xff8a2e, tier: 'rare' },
+  snow: { name: '눈사람', desc: '중절모, 당근 코, 빨간 목도리', color: 0xf2f4f8, tier: 'epic' },
+  night: { name: '우주비행사', desc: '헬멧 테와 안테나, 산소통', color: 0x39407e, tier: 'epic' },
+  gold: { name: '황금 왕', desc: '보석 박힌 왕관과 털 망토', color: 0xffcf3a, tier: 'legend' },
 });
+export const SKIN_KEYS = Object.keys(SKINS);
+export const skinOf = (id) => (Object.hasOwn(SKINS, id) ? id : 'default');
 
 export const TIERS = Object.freeze({
   common: { name: '일반', p: 0.6, color: '#9fb2c4' },
@@ -34,7 +36,7 @@ export const DAILY = Object.freeze({ BASE: 60, PER_STREAK: 15, MAX_STREAK: 7 });
 export const charTier = (id) => (CHARACTERS[id].price > 450 ? 'legend' : 'epic');
 
 export function newProfile() {
-  return { xp: 0, coins: 0, owned: ['explorer'], char: 'explorer', skins: ['default'], skin: 'default', pity: 0, daily: '', streak: 0 };
+  return { xp: 0, coins: 0, owned: ['explorer'], char: 'explorer', skins: ['default'], skin: 'default', pity: 0, daily: '', streak: 0, friends: [], recent: [] };
 }
 
 // 저장된 값을 안전하게 정리한다 (오래된 저장 데이터, 손상된 값 대비)
@@ -48,6 +50,10 @@ export function normalizeProfile(raw) {
   if (!p.skins.includes(p.skin)) p.skin = 'default';
   p.pity = Number.isInteger(p.pity) ? p.pity : 0;
   p.streak = Number.isInteger(p.streak) ? p.streak : 0;
+  // 친구/최근 함께한 플레이어: 이름 목록 (계정이 없어 기기에만 저장)
+  const names = (v, max) => (Array.isArray(v) ? [...new Set(v.filter((x) => typeof x === 'string' && x).map((x) => x.slice(0, 12)))].slice(0, max) : []);
+  p.friends = names(p.friends, 30);
+  p.recent = names(p.recent, 12);
   return p;
 }
 

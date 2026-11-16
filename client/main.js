@@ -13,7 +13,7 @@ import { Characters, DeathFx } from './character.js';
 import { Minimap } from './minimap.js';
 import { buildFloorTexture, buildItemGeos, buildWalls, buildWater } from './world.js';
 import { Showcase, radarOf } from './showcase.js';
-import { DAILY, GACHA, SKINS, TIERS, claimDaily, dayKey, gacha, normalizeProfile } from './shared/shop.js';
+import { DAILY, GACHA, SKINS, TIERS, claimDaily, dayKey, gacha, normalizeProfile, skinOf } from './shared/shop.js';
 
 const DT = 1 / CFG.TICK_RATE;
 const INTERP_MS = 110; // 원격 플레이어 보간 지연
@@ -155,8 +155,8 @@ function syncItems(list) {
 // 캐릭터(모델 + 애니메이션)와 처치 이펙트
 const chars = new Characters(mask);
 const deathFx = new DeathFx(scene);
-const makePlayerMesh = (kind, char) => chars.make(kind, charOf(char));
-const setKind = (mesh, kind, char) => chars.setKind(mesh, kind, charOf(char));
+const makePlayerMesh = (kind, char, skin) => chars.make(kind, charOf(char), false, skinOf(skin));
+const setKind = (mesh, kind, char, skin) => chars.setKind(mesh, kind, charOf(char), skinOf(skin));
 
 const geo = {
   flare: new THREE.SphereGeometry(0.16, 8, 6).translate(0, 0.16, 0),
@@ -220,6 +220,8 @@ const view = { x: 0, z: 0, yaw: 0 }; // 렌더용 보간 상태
 const pending = []; // 서버가 아직 확인하지 않은 입력
 const roster = new Map(); // id → {name, team, score}  (위치 정보 없음)
 // 서버가 보내준(= 시야 안의) 플레이어만 존재한다. 시야에서 벗어나면 즉시 삭제.
+// 로비에서 고른 것: 온라인 여부, 친구 방 코드, 맵('' = 순환)
+const lobby = { online: false, room: '', map: '' };
 const ents = new Map();
 // 내 성장 상태 (서버가 바뀔 때마다 't:st' 로 알려준다)
 const prog = { hp: PROGRESS.BASE_HP, xp: 0, level: 1, next: xpToNext(1), ups: {}, choices: null, more: 0, stats: statsOf({}, CFG), earned: 0 };
@@ -273,7 +275,7 @@ function serverBase() {
 const wsUrl = () => serverBase().replace(/^http/, 'ws') + '/ws';
 
 function showMenu(msg) {
-  $('menu').style.display = '';
+  enterLobby();
   $('hud').hidden = true;
   $('status').textContent = msg;
   myId = 0;
@@ -303,7 +305,7 @@ function connect(name, gameMode, gameRule) {
     ws = new WebSocket(wsUrl());
     ws.onopen = () => {
       opened = true;
-      ws.send(JSON.stringify({ t: 'j', n: name, m: gameMode, r: gameRule, c: profile.char }));
+      ws.send(JSON.stringify({ t: 'j', n: name, m: gameMode, r: gameRule, c: profile.char, s: profile.skin, room: lobby.room, map: lobby.map }));
     };
     ws.onmessage = (ev) => onMessage(JSON.parse(ev.data));
     ws.onclose = () => {
@@ -324,9 +326,9 @@ function connect(name, gameMode, gameRule) {
 async function startOffline(name, gameMode, gameRule) {
   $('status').textContent = '불러오는 중…';
   const { Game } = await import('./server/game.js');
-  const game = new Game({ mode: gameMode, rule: gameRule });
+  const game = new Game({ mode: gameMode, rule: gameRule, ...(lobby.map ? { map: lobby.map, FIXED_MAP: true } : {}) });
   game.balanceBots();
-  const player = game.addPlayer(name, (msg) => onMessage(JSON.parse(msg)), false, profile.char); // 봇 한 자리를 이어받는다
+  const player = game.addPlayer(name, (msg) => onMessage(JSON.parse(msg)), false, profile.char, profile.skin); // 봇 한 자리를 이어받는다
   offline = { game, player };
   onMessage({ t: 'w', id: player.id, team: player.team, ...game.info() });
 }
@@ -334,7 +336,7 @@ async function startOffline(name, gameMode, gameRule) {
 function onMessage(m) {
   if (m.t === 'w') {
     Object.assign(prog, { hp: PROGRESS.BASE_HP, xp: 0, level: 1, next: xpToNext(1), ups: {}, choices: null, more: 0, stats: statsOf({}, CFG, profile.char), earned: 0 });
-    chars.setKind(selfMesh, 'self', profile.char, skinColor());
+    chars.setKind(selfMesh, 'self', profile.char, profile.skin);
     applyMyStats();
     drawChoices();
     myId = m.id;
@@ -345,14 +347,16 @@ function onMessage(m) {
     roundTime = m.rtm || CFG.ROUND_TIME;
     if (m.map) setMap(m.map);
     $('menu').style.display = 'none';
+    showcase.close();
     $('hud').hidden = false;
   } else if (m.t === 'full') {
     $('status').textContent = '방이 가득 찼습니다.';
   } else if (m.t === 'r') {
     roster.clear();
-    for (const [id, name, team, score, al, wins, level, char] of m.p) roster.set(id, { name, team, score, alive: !!al, wins, level: level || 1, char });
-    for (const [id, e] of ents) setKind(e.mesh, kindOf(id), roster.get(id)?.char);
+    for (const [id, name, team, score, al, wins, level, char, skin] of m.p) roster.set(id, { name, team, score, alive: !!al, wins, level: level || 1, char, skin });
+    for (const [id, e] of ents) setKind(e.mesh, kindOf(id), roster.get(id)?.char, roster.get(id)?.skin);
     drawBoard();
+    noteRecent();
     drawScore();
   } else if (m.t === 'k') {
     for (const [k, v] of m.l) {
@@ -493,7 +497,7 @@ function onSnapshot(m) {
   for (const [id, ex, ez, eyaw, flags, hpPct, lv] of m.e) {
     let e = ents.get(id);
     if (!e) {
-      e = { mesh: makePlayerMesh(kindOf(id), roster.get(id)?.char), buf: [], x: ex, z: ez, yaw: eyaw, flags: 0, stamp: 0, rollP: -1, label: null };
+      e = { mesh: makePlayerMesh(kindOf(id), roster.get(id)?.char, roster.get(id)?.skin), buf: [], x: ex, z: ez, yaw: eyaw, flags: 0, stamp: 0, rollP: -1, label: null };
       e.mesh.position.set(ex, 0, ez);
       scene.add(e.mesh);
       ents.set(id, e);
@@ -777,7 +781,6 @@ const profile = (() => {
     return normalizeProfile(null);
   }
 })();
-const skinColor = () => SKINS[profile.skin]?.color ?? null;
 function saveProfile() {
   try {
     localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
@@ -850,7 +853,7 @@ function setShopTab(tab) {
   for (const b of $('shopTabs').children) b.classList.toggle('on', b.dataset.tab === tab);
   // 스킨/뽑기 탭에서는 지금 쓰는 캐릭터를 가운데에 세운다
   if (tab !== 'chars') showcase.open(profile.char);
-  showcase.setSkin(tab === 'skins' ? skinColor() : null);
+  showcase.setSkin(tab === 'chars' ? 'default' : profile.skin);
   drawShop();
   if (tab === 'skins') drawSkins();
   if (tab === 'gacha') drawGacha();
@@ -868,13 +871,16 @@ function drawSkins() {
       b.querySelector('span').textContent = owned ? sk.name : `🔒 ${sk.name}`;
       b.addEventListener('click', () => {
         // 가진 스킨은 입고, 없는 스킨은 미리보기만
-        showcase.setSkin(sk.color);
+        showcase.setSkin(id);
+        $('shopName').textContent = sk.name;
+        $('shopAbility').textContent = sk.desc;
         if (owned) {
           profile.skin = id;
           saveProfile();
           sfx.choose();
           drawSkins();
-        } else $('shopSkill').textContent = `${TIERS[sk.tier].name} 스킨 · 뽑기에서 얻을 수 있어요`;
+          $('shopSkill').textContent = '입고 있어요';
+        } else $('shopSkill').textContent = `${TIERS[sk.tier].name} 의상 · 뽑기에서 얻을 수 있어요`;
       });
       return b;
     }),
@@ -929,7 +935,7 @@ function drawDaily() {
   $('daily').hidden = !can;
   if (can) {
     const next = profile.streak && profile.streak < DAILY.MAX_STREAK ? profile.streak + 1 : profile.streak || 1;
-    $('daily').textContent = `🎁 출석 보상 받기 (연속 ${next}일차)`;
+    $('daily').querySelector('span').textContent = `출석 ${next}일`;
   }
 }
 $('daily').addEventListener('click', () => {
@@ -988,18 +994,143 @@ addEventListener('keydown', (e) => {
     else if (e.clientX > innerWidth * 0.64) shopMove(1);
   });
 }
-$('openShop').addEventListener('click', () => {
+function openShop(tab) {
+  showcase.lobby = false;
   showcase.open(profile.char);
-  setShopTab('chars');
+  setShopTab(tab);
   $('shop').hidden = false;
   $('menu').style.display = 'none';
-});
+}
+$('openChars').addEventListener('click', () => openShop('chars'));
+$('openShop').addEventListener('click', () => openShop('gacha'));
 $('closeShop').addEventListener('click', () => {
   $('gachaResult').hidden = true;
-  showcase.close();
   $('shop').hidden = true;
-  $('menu').style.display = '';
+  enterLobby();
 });
+
+// ── 로비 ──
+const RULE_NAMES = { dm: '데스매치', score: '점수제 데스매치', survival: '서바이벌' };
+const MODE_NAMES = { ffa: '개인전', duo: '2인 팀전' };
+function enterLobby() {
+  $('menu').style.display = '';
+  showcase.lobby = true;
+  showcase.open(profile.char);
+  showcase.setSkin(profile.skin);
+  drawLobby();
+}
+function drawLobby() {
+  const c = CHARACTERS[profile.char];
+  const sk = SKILLS[c.skill];
+  $('avatar').textContent = c.icon;
+  $('lobbyCharName').textContent = profile.skin === 'default' ? c.name : `${c.name} · ${SKINS[profile.skin].name}`;
+  $('lobbySkill').textContent = `${sk.icon} ${sk.name} · ${c.desc}`;
+  $('modeText').textContent = `${RULE_NAMES[menuRule]} · ${MODE_NAMES[menuMode]}`;
+  $('mapText').textContent = lobby.map ? `맵: ${MAPS[lobby.map].name}` : '맵: 순환';
+  $('netSolo').classList.toggle('on', !lobby.online);
+  $('netOnline').classList.toggle('on', lobby.online);
+  $('roomTag').hidden = !(lobby.online && lobby.room);
+  $('roomTag').textContent = `친구 방 ${lobby.room}`;
+  for (const [m, id] of Object.entries(MAP_BTNS)) $(id).classList.toggle('on', lobby.map === m);
+}
+const MAP_BTNS = { '': 'mapAuto', camp: 'mapCamp', forest: 'mapForest', lake: 'mapLake' };
+for (const [m, id] of Object.entries(MAP_BTNS)) {
+  $(id).addEventListener('click', () => {
+    lobby.map = m;
+    drawLobby();
+  });
+}
+$('modeCard').addEventListener('click', () => ($('modePanel').hidden = false));
+$('closeModes').addEventListener('click', () => {
+  $('modePanel').hidden = true;
+  drawLobby();
+});
+$('netSolo').addEventListener('click', () => {
+  lobby.online = false;
+  drawLobby();
+});
+$('netOnline').addEventListener('click', () => {
+  lobby.online = true;
+  drawLobby();
+});
+
+// ── 친구: 방 코드로 같은 방에 모인다. 친구 목록은 이름만 기기에 저장한다(계정 없음). ──
+const cleanCode = (v) => String(v).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+function drawFriends() {
+  $('roomInput').value = lobby.room;
+  $('roomState').textContent =
+    lobby.room.length >= 4 ? `방 ${lobby.room} · 온라인으로 게임 시작을 누르면 이 방에 들어갑니다` : lobby.room ? '방 코드는 4~6자입니다' : '';
+  const list = (el, names, empty, onTap, mark) => {
+    $(el).replaceChildren(
+      ...(names.length
+        ? names.map((n) => {
+            const b = document.createElement('button');
+            b.textContent = `${mark} ${n}`;
+            b.addEventListener('click', () => onTap(n));
+            return b;
+          })
+        : [Object.assign(document.createElement('em'), { textContent: empty })]),
+    );
+  };
+  list('friendList', profile.friends, '아직 친구가 없어요. 아래 목록에서 눌러 추가하세요.', (n) => {
+    profile.friends = profile.friends.filter((x) => x !== n);
+    saveProfile();
+    drawFriends();
+  }, '★');
+  list('recentList', profile.recent.filter((n) => !profile.friends.includes(n)), '온라인에서 만난 플레이어가 여기에 나옵니다.', (n) => {
+    profile.friends = [n, ...profile.friends].slice(0, 30);
+    saveProfile();
+    drawFriends();
+  }, '＋');
+}
+function setRoom(code) {
+  lobby.room = cleanCode(code);
+  if (lobby.room.length >= 4) lobby.online = true;
+  drawFriends();
+  drawLobby();
+}
+$('openFriends').addEventListener('click', () => {
+  drawFriends();
+  $('friends').hidden = false;
+});
+$('closeFriends').addEventListener('click', () => {
+  if (lobby.room.length < 4) lobby.room = '';
+  $('friends').hidden = true;
+  drawLobby();
+});
+$('roomInput').addEventListener('input', () => setRoom($('roomInput').value));
+$('roomMake').addEventListener('click', () => {
+  const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 헷갈리는 글자(0/O, 1/I) 제외
+  setRoom(Array.from({ length: 5 }, () => abc[Math.floor(Math.random() * abc.length)]).join(''));
+});
+$('roomShare').addEventListener('click', async () => {
+  if (lobby.room.length < 4) return ($('roomState').textContent = '먼저 방 코드를 정해 주세요');
+  const u = new URL(location.href);
+  u.search = '';
+  u.searchParams.set('room', lobby.room);
+  if (REMOTE) u.searchParams.set('server', REMOTE);
+  const text = `Frustum 같이 하자! 방 코드 ${lobby.room}`;
+  try {
+    if (navigator.share) await navigator.share({ title: 'Frustum', text, url: u.href });
+    else {
+      await navigator.clipboard.writeText(`${text} ${u.href}`);
+      $('roomState').textContent = '초대 링크를 복사했어요';
+    }
+  } catch {
+    $('roomState').textContent = u.href;
+  }
+});
+// 온라인에서 같은 방에 있던 사람(봇 제외)을 최근 목록에 기록한다
+function noteRecent() {
+  if (offline || !myId) return;
+  let changed = false;
+  for (const [id, p] of roster) {
+    if (id === myId || /^BOT-\d+$/.test(p.name) || profile.recent[0] === p.name) continue;
+    profile.recent = [p.name, ...profile.recent.filter((n) => n !== p.name)].slice(0, 12);
+    changed = true;
+  }
+  if (changed) saveProfile();
+}
 
 // 버프 칩: 남은 시간이 있는 효과만 보여준다
 const BUFF_ICONS = { sneakers: '👟', vest: '🛡️', cloak: '👻', dash: '💨', shield: '🛡️', scan: '👁️' };
@@ -1415,6 +1546,7 @@ function bindPick(table, key, set) {
         localStorage.setItem(key, v);
       } catch {}
       drawPicks();
+      drawLobby();
     });
   }
 }
@@ -1427,13 +1559,8 @@ $('play').addEventListener('click', () => {
   lockLandscape();
   const name = $('name').value.trim() || 'Player';
   remember(name);
-  startOffline(name, menuMode, menuRule).catch((e) => ($('status').textContent = '시작 실패: ' + e.message));
-});
-$('online').addEventListener('click', () => {
-  lockLandscape();
-  const name = $('name').value.trim() || 'Player';
-  remember(name);
-  connect(name, menuMode, menuRule);
+  if (lobby.online) connect(name, menuMode, menuRule);
+  else startOffline(name, menuMode, menuRule).catch((e) => ($('status').textContent = '시작 실패: ' + e.message));
 });
 
 // ───────────────────────── 설정 ─────────────────────────
@@ -1494,12 +1621,18 @@ $('leave').addEventListener('click', () => {
 });
 applyPrefs();
 
+// 초대 링크(?room=코드)로 들어오면 그 방으로 온라인 접속하도록 맞춰 둔다
+if (params.get('room')) {
+  lobby.room = cleanCode(params.get('room'));
+  lobby.online = lobby.room.length >= 4;
+}
+enterLobby();
 if (params.has('offline')) startOffline($('name').value || 'Player', menuMode, menuRule);
 else if (params.has('auto')) connect($('name').value || 'Player', menuMode, menuRule);
 
 // 디버그/자동 테스트용 핸들
 window.__frustum = {
-  ents, roster, sim, view, stats, mask, input, sfx, prefs, buffs, itemMeshes, profile, prog, drawShop, showcase,
+  ents, roster, sim, view, stats, mask, input, sfx, prefs, buffs, itemMeshes, profile, prog, drawShop, showcase, lobby,
   get map() { return curMap.id; },
   get alive() { return alive; },
   get myId() { return myId; },

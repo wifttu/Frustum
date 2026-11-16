@@ -4,8 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
-import { CFG, RULES } from '../shared/config.js';
-import { Game } from './game.js';
+import { CFG } from '../shared/config.js';
+import { Rooms } from './rooms.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.PORT) || 3000;
@@ -61,9 +61,7 @@ const server = http.createServer((req, res) => {
 });
 
 // 규칙 × 모드 조합마다 방 하나씩 (예: 'dm-ffa', 'survival-duo')
-const games = {};
-for (const rule of Object.keys(RULES)) for (const mode of ['ffa', 'duo']) games[`${rule}-${mode}`] = new Game({ rule, mode });
-for (const g of Object.values(games)) g.balanceBots();
+const rooms = new Rooms();
 
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 512 });
 wss.on('connection', (ws) => {
@@ -82,22 +80,22 @@ wss.on('connection', (ws) => {
     }
     if (!m || typeof m !== 'object') return;
     if (m.t === 'j' && !player) {
-      const key = `${m.r}-${m.m}`;
-      game = Object.hasOwn(games, key) ? games[key] : games['survival-duo'];
-      const wasEmpty = game.humanCount === 0;
-      if (game.humanCount >= CFG.MAX_PLAYERS) {
+      game = rooms.find({ rule: m.r, mode: m.m, room: m.room, map: m.map });
+      if (!game || game.humanCount >= CFG.MAX_PLAYERS) {
         ws.send(JSON.stringify({ t: 'full' }));
         ws.close();
+        game = null;
         return;
       }
+      const wasEmpty = game.humanCount === 0;
       const name = String(m.n ?? '').replace(/[^\p{L}\p{N}_\- ]/gu, '').trim().slice(0, 12) || 'Player';
       player = game.addPlayer(name, (msg) => {
         // 느린 클라이언트에 스냅샷이 쌓이지 않게 한다
         if (ws.readyState === ws.OPEN && ws.bufferedAmount < 64 * 1024) ws.send(msg);
-      }, false, typeof m.c === 'string' ? m.c : null);
+      }, false, typeof m.c === 'string' ? m.c : null, typeof m.s === 'string' ? m.s : null);
       game.balanceBots();
       if (wasEmpty) game.newRound(); // 비어 있던 방은 새 라운드로 시작
-      ws.send(JSON.stringify({ t: 'w', id: player.id, team: player.team, ...game.info() }));
+      ws.send(JSON.stringify({ t: 'w', id: player.id, team: player.team, room: game.room || '', ...game.info() }));
     } else if (m.t === 'i' && player) {
       game.queueInput(player.id, m.d);
     } else if (m.t === 'u' && player) {
@@ -110,6 +108,7 @@ wss.on('connection', (ws) => {
     if (player) {
       game.removePlayer(player.id);
       game.balanceBots();
+      rooms.cleanup(game);
     }
   });
   ws.on('error', () => {});
@@ -122,7 +121,7 @@ setInterval(() => {
   const now = performance.now();
   let steps = 0;
   while (now >= next && steps < 5) {
-    for (const g of Object.values(games)) {
+    for (const g of rooms) {
       if (g.humanCount === 0) continue; // 사람이 없는 방은 멈춰 둔다
       g.step();
       if (g.tick % CFG.SNAPSHOT_EVERY === 0) g.broadcast();
