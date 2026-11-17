@@ -1007,7 +1007,11 @@ addEventListener('keydown', (e) => {
   });
 }
 function openShop(tab) {
+  // 친선 방에서 열었으면 방 화면을 가린다 (닫으면 다시 방으로 돌아간다)
+  party?.hideRoom();
+  $('invite').hidden = true;
   showcase.lobby = false;
+  showcase.empty = false; // 방 화면에서 꺼 둔 3D 캐릭터를 다시 보이게
   showcase.open(profile.char);
   setShopTab(tab);
   $('shop').hidden = false;
@@ -1018,8 +1022,10 @@ $('openShop').addEventListener('click', () => openShop('gacha'));
 $('closeShop').addEventListener('click', () => {
   $('gachaResult').hidden = true;
   $('shop').hidden = true;
-  if (party?.active) party.showRoom();
-  else enterLobby();
+  if (party?.active) {
+    if (net.ready) sendHello(); // 바꾼 캐릭터·의상을 방 사람들에게 알린다
+    party.showRoom();
+  } else enterLobby();
 });
 
 // ── 로비 ──
