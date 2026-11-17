@@ -47,7 +47,7 @@ export const DAILY = Object.freeze({ BASE: 60, PER_STREAK: 15, MAX_STREAK: 7 });
 export const charTier = (id) => (CHARACTERS[id].price > 450 ? 'legend' : 'epic');
 
 export function newProfile() {
-  return { xp: 0, coins: 0, owned: ['explorer'], char: 'explorer', skins: ['default'], skin: 'default', pity: 0, daily: '', streak: 0, friends: [], recent: [], icon: '' };
+  return { xp: 0, coins: 0, owned: ['explorer'], char: 'explorer', skins: ['default'], skin: 'default', pity: 0, daily: '', streak: 0, friends: [], recent: [], icon: '', fc: '' };
 }
 
 // 저장된 값을 안전하게 정리한다 (오래된 저장 데이터, 손상된 값 대비)
@@ -62,9 +62,25 @@ export function normalizeProfile(raw) {
   p.pity = Number.isInteger(p.pity) ? p.pity : 0;
   p.streak = Number.isInteger(p.streak) ? p.streak : 0;
   // 친구/최근 함께한 플레이어: 이름 목록 (계정이 없어 기기에만 저장)
-  const names = (v, max) => (Array.isArray(v) ? [...new Set(v.filter((x) => typeof x === 'string' && x).map((x) => x.slice(0, 12)))].slice(0, max) : []);
-  p.friends = names(p.friends, 30);
-  p.recent = names(p.recent, 12);
+  // { name, fc } 목록. 예전 저장 형식(이름 문자열)도 받는다. 친구 코드가 같으면 하나로 합친다.
+  const people = (v, max) => {
+    const out = [];
+    const seen = new Set();
+    for (const x of Array.isArray(v) ? v : []) {
+      const item = typeof x === 'string' ? { name: x, fc: '' } : x && typeof x === 'object' ? x : null;
+      if (!item || typeof item.name !== 'string' || !item.name) continue;
+      const fc = typeof item.fc === 'string' && /^[A-Z0-9]{6}$/.test(item.fc) ? item.fc : '';
+      const key = fc || `name:${item.name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ name: item.name.slice(0, 12), fc });
+    }
+    return out.slice(0, max);
+  };
+  p.friends = people(p.friends, 40);
+  p.recent = people(p.recent, 12);
+  // 내 친구 코드: 비어 있으면 클라이언트가 처음 실행할 때 만든다
+  p.fc = typeof p.fc === 'string' && /^[A-Z0-9]{6}$/.test(p.fc) ? p.fc : '';
   // 아이콘: 지금 쓸 수 있는 것만 인정한다 ('' = 고른 캐릭터의 아이콘)
   if (!iconsFor(p).some((x) => !x.locked && x.icon === p.icon)) p.icon = '';
   return p;

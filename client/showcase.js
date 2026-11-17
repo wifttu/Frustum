@@ -107,7 +107,7 @@ export class Showcase {
     for (let i = 0; i < this.items.length; i++) {
       const it = this.items[i];
       const sel = i === this.index;
-      it.mesh.visible = sel || !this.lobby;
+      it.mesh.visible = !this.empty && (sel || !this.lobby);
       it.scale = lerp(it.scale, sel ? 1.12 : 0.72, Math.min(1, dt * 10));
       it.mesh.scale.setScalar(it.scale);
       // 고른 캐릭터는 천천히 좌우로 몸을 돌리며 손전등을 든다

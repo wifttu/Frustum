@@ -69,3 +69,13 @@ test('프로필 정리: 손상되거나 오래된 저장 값도 안전하다', (
   assert.equal(p.pity, 0);
   assert.deepEqual(normalizeProfile(null), newProfile());
 });
+
+test('친구 목록: 예전 이름 목록도 옮기고, 같은 친구 코드는 하나로', () => {
+  const p = normalizeProfile({
+    friends: ['민수', { name: 'Jay', fc: 'ABC123' }, { name: 'Jay2', fc: 'ABC123' }, { name: '', fc: 'ZZZ999' }, 5, null],
+    fc: 'bad',
+  });
+  assert.deepEqual(p.friends, [{ name: '민수', fc: '' }, { name: 'Jay', fc: 'ABC123' }]);
+  assert.equal(p.fc, '');
+  assert.equal(normalizeProfile({ fc: 'QWE234' }).fc, 'QWE234');
+});

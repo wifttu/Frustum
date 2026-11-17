@@ -13,6 +13,8 @@ import { Characters, DeathFx } from './character.js';
 import { Minimap } from './minimap.js';
 import { buildFloorTexture, buildItemGeos, buildWalls, buildWater } from './world.js';
 import { Showcase, radarOf } from './showcase.js';
+import { Net } from './net.js';
+import { initParty } from './party.js';
 import { DAILY, GACHA, SKINS, TIERS, claimDaily, dayKey, gacha, iconsFor, normalizeProfile, skinOf } from './shared/shop.js';
 
 const DT = 1 / CFG.TICK_RATE;
@@ -182,7 +184,7 @@ function flareMesh(i) {
 }
 
 // ───────────────────────── 상태 ─────────────────────────
-let ws = null;
+let party = null; // 친선 게임 방 (아래에서 만든다)
 let offline = null; // 오프라인 모드: 브라우저 안에서 서버 로직을 직접 실행 { game, player }
 let myId = 0;
 let myTeam = 0;
@@ -276,8 +278,29 @@ function serverBase() {
 }
 const wsUrl = () => serverBase().replace(/^http/, 'ws') + '/ws';
 
+// 서버 연결: 로비에서부터 유지해 친선 방, 친구 접속 상태, 초대를 주고받는다
+const NET_TEXT = {
+  connecting: '서버에 연결 중…',
+  waking: '서버를 깨우는 중… (무료 서버는 최대 1분)',
+  open: '',
+  failed: '서버에 접속할 수 없어요. 혼자 하기(봇전)는 서버 없이 됩니다.',
+};
+const net = new Net({
+  url: wsUrl,
+  health: () => serverBase() + '/healthz',
+  onMessage: (m) => {
+    if (!party?.handle(m)) onMessage(m);
+  },
+  onState: (state) => {
+    if (state in NET_TEXT) $('status').textContent = NET_TEXT[state];
+    if (state === 'closed' && myId && !offline) showMenu('서버와 연결이 끊겼습니다.');
+    party?.onNetState(state);
+  },
+});
+
 function showMenu(msg) {
-  enterLobby();
+  if (party?.active) party.showRoom();
+  else enterLobby();
   $('hud').hidden = true;
   $('status').textContent = msg;
   myId = 0;
@@ -294,35 +317,19 @@ function showMenu(msg) {
   for (const id of [...ents.keys()]) removeEnt(id);
 }
 
-function connect(name, gameMode, gameRule) {
-  const REMOTE = remote();
-  if (STATIC_HOST && !REMOTE) {
+async function connect(name, gameMode, gameRule) {
+  if (STATIC_HOST && !remote()) {
     $('status').textContent = '온라인 서버 주소가 설정되지 않았습니다. 혼자 하기는 서버 없이 됩니다.';
     return;
   }
-  // 무료 서버(Render)는 잠들어 있으면 깨어나는 데 1분 가까이 걸린다: 미리 깨우고, 실패하면 다시 시도한다
-  if (REMOTE) fetch(serverBase() + '/healthz', { mode: 'no-cors' }).catch(() => {});
-  const deadline = performance.now() + 90_000;
-  const attempt = () => {
-    let opened = false;
-    ws = new WebSocket(wsUrl());
-    ws.onopen = () => {
-      opened = true;
-      ws.send(JSON.stringify({ t: 'j', n: name, m: gameMode, r: gameRule, c: profile.char, s: profile.skin, room: lobby.room, map: lobby.map }));
-    };
-    ws.onmessage = (ev) => onMessage(JSON.parse(ev.data));
-    ws.onclose = () => {
-      if (myId) return showMenu('서버와 연결이 끊겼습니다.');
-      if (!opened && REMOTE && performance.now() < deadline) {
-        $('status').textContent = '서버를 깨우는 중… (무료 서버는 최대 1분)';
-        setTimeout(attempt, 3000);
-        return;
-      }
-      showMenu(opened ? '' : '서버에 접속할 수 없습니다. 혼자 하기(봇전)는 서버 없이 됩니다.');
-    };
-  };
-  $('status').textContent = '접속 중…';
-  attempt();
+  if (!(await net.open())) return;
+  sendHello();
+  net.send({ t: 'j', n: name, m: gameMode, r: gameRule, c: profile.char, s: profile.skin, map: lobby.map });
+}
+
+// 내 프로필을 서버에 알린다 (친구 접속 상태, 방 화면에 쓰인다)
+function sendHello() {
+  net.send({ t: 'hi', n: $('name').value.trim() || 'Player', c: profile.char, s: profile.skin, i: profile.icon, fc: profile.fc });
 }
 
 // 오프라인(혼자 하기): 서버와 같은 Game 클래스를 브라우저에서 실행한다. 메시지 형식도 같아서 아래 코드는 구분하지 않는다.
@@ -350,13 +357,15 @@ function onMessage(m) {
     roundTime = m.rtm || CFG.ROUND_TIME;
     if (m.map) setMap(m.map);
     $('menu').style.display = 'none';
+    party?.hideRoom();
+    $('invite').hidden = true;
     showcase.close();
     $('hud').hidden = false;
   } else if (m.t === 'full') {
     $('status').textContent = '방이 가득 찼습니다.';
   } else if (m.t === 'r') {
     roster.clear();
-    for (const [id, name, team, score, al, wins, level, char, skin] of m.p) roster.set(id, { name, team, score, alive: !!al, wins, level: level || 1, char, skin });
+    for (const [id, name, team, score, al, wins, level, char, skin, fc] of m.p) roster.set(id, { name, team, score, alive: !!al, wins, level: level || 1, char, skin, fc: fc || '' });
     for (const [id, e] of ents) setKind(e.mesh, kindOf(id), roster.get(id)?.char, roster.get(id)?.skin);
     drawBoard();
     noteRecent();
@@ -694,7 +703,7 @@ function pickChoice(i) {
   if (offline) {
     offline.game.choose(offline.player, i);
     offline.game.broadcast();
-  } else if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'u', c: i }));
+  } else net.send({ t: 'u', c: i });
 }
 addEventListener('keydown', (e) => {
   const n = { Digit1: 0, Digit2: 1, Digit3: 2 }[e.code];
@@ -1009,7 +1018,8 @@ $('openShop').addEventListener('click', () => openShop('gacha'));
 $('closeShop').addEventListener('click', () => {
   $('gachaResult').hidden = true;
   $('shop').hidden = true;
-  enterLobby();
+  if (party?.active) party.showRoom();
+  else enterLobby();
 });
 
 // ── 로비 ──
@@ -1017,6 +1027,9 @@ const RULE_NAMES = { dm: '데스매치', score: '점수제 데스매치', surviv
 const MODE_NAMES = { ffa: '개인전', duo: '2인 팀전' };
 function enterLobby() {
   $('menu').style.display = '';
+  party?.hideRoom();
+  showcase.empty = false;
+  if (net.ready) sendHello();
   showcase.lobby = true;
   showcase.open(profile.char);
   showcase.setSkin(profile.skin);
@@ -1032,8 +1045,6 @@ function drawLobby() {
   $('mapText').textContent = lobby.map ? `맵: ${MAPS[lobby.map].name}` : '맵: 순환';
   $('netSolo').classList.toggle('on', !lobby.online);
   $('netOnline').classList.toggle('on', lobby.online);
-  $('roomTag').hidden = !(lobby.online && lobby.room);
-  $('roomTag').textContent = `친구 방 ${lobby.room}`;
   for (const [m, id] of Object.entries(MAP_BTNS)) $(id).classList.toggle('on', lobby.map === m);
   drawOnline();
 }
@@ -1147,92 +1158,70 @@ $('modeCard').addEventListener('click', () => {
   $('modePanel').hidden = false;
   loadRooms();
 });
+// 친선 방 설정을 바꿀 때도 같은 창을 쓴다 (빈자리 AI 줄이 더 보인다)
+let roomSettingsDone = null;
+let roomAi = true;
+function drawAi() {
+  $('aiOn').classList.toggle('on', roomAi);
+  $('aiOff').classList.toggle('on', !roomAi);
+}
+$('aiOn').addEventListener('click', () => ((roomAi = true), drawAi()));
+$('aiOff').addEventListener('click', () => ((roomAi = false), drawAi()));
+function openRoomSettings(set, done) {
+  menuRule = set.rule;
+  menuMode = set.mode;
+  lobby.map = set.map;
+  roomAi = set.ai;
+  roomSettingsDone = done;
+  drawPicks();
+  drawLobby();
+  drawAi();
+  $('aiRow').hidden = false;
+  $('onlineBox').hidden = true;
+  $('modeNote').hidden = true;
+  $('modePanel').hidden = false;
+}
 $('closeModes').addEventListener('click', () => {
   $('modePanel').hidden = true;
-  drawLobby();
-});
-$('netSolo').addEventListener('click', () => {
-  lobby.online = false;
-  drawLobby();
-});
-$('netOnline').addEventListener('click', () => {
-  lobby.online = true;
-  drawLobby();
-});
-
-// ── 친구: 방 코드로 같은 방에 모인다. 친구 목록은 이름만 기기에 저장한다(계정 없음). ──
-const cleanCode = (v) => String(v).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
-function drawFriends() {
-  $('roomInput').value = lobby.room;
-  $('roomState').textContent =
-    lobby.room.length >= 4 ? `방 ${lobby.room} · 온라인으로 게임 시작을 누르면 이 방에 들어갑니다` : lobby.room ? '방 코드는 4~6자입니다' : '';
-  const list = (el, names, empty, onTap, mark) => {
-    $(el).replaceChildren(
-      ...(names.length
-        ? names.map((n) => {
-            const b = document.createElement('button');
-            b.textContent = `${mark} ${n}`;
-            b.addEventListener('click', () => onTap(n));
-            return b;
-          })
-        : [Object.assign(document.createElement('em'), { textContent: empty })]),
-    );
-  };
-  list('friendList', profile.friends, '아직 친구가 없어요. 아래 목록에서 눌러 추가하세요.', (n) => {
-    profile.friends = profile.friends.filter((x) => x !== n);
-    saveProfile();
-    drawFriends();
-  }, '★');
-  list('recentList', profile.recent.filter((n) => !profile.friends.includes(n)), '온라인에서 만난 플레이어가 여기에 나옵니다.', (n) => {
-    profile.friends = [n, ...profile.friends].slice(0, 30);
-    saveProfile();
-    drawFriends();
-  }, '＋');
-}
-function setRoom(code) {
-  lobby.room = cleanCode(code);
-  if (lobby.room.length >= 4) lobby.online = true;
-  drawFriends();
-  drawLobby();
-}
-$('openFriends').addEventListener('click', () => {
-  drawFriends();
-  $('friends').hidden = false;
-});
-$('closeFriends').addEventListener('click', () => {
-  if (lobby.room.length < 4) lobby.room = '';
-  $('friends').hidden = true;
-  drawLobby();
-});
-$('roomInput').addEventListener('input', () => setRoom($('roomInput').value));
-$('roomMake').addEventListener('click', () => {
-  const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 헷갈리는 글자(0/O, 1/I) 제외
-  setRoom(Array.from({ length: 5 }, () => abc[Math.floor(Math.random() * abc.length)]).join(''));
-});
-$('roomShare').addEventListener('click', async () => {
-  if (lobby.room.length < 4) return ($('roomState').textContent = '먼저 방 코드를 정해 주세요');
-  const u = new URL(location.href);
-  u.search = '';
-  u.searchParams.set('room', lobby.room);
-  if (remote()) u.searchParams.set('server', remote());
-  const text = `Frustum 같이 하자! 방 코드 ${lobby.room}`;
-  try {
-    if (navigator.share) await navigator.share({ title: 'Frustum', text, url: u.href });
-    else {
-      await navigator.clipboard.writeText(`${text} ${u.href}`);
-      $('roomState').textContent = '초대 링크를 복사했어요';
-    }
-  } catch {
-    $('roomState').textContent = u.href;
+  $('aiRow').hidden = true;
+  $('modeNote').hidden = false;
+  if (roomSettingsDone) {
+    roomSettingsDone({ rule: menuRule, mode: menuMode, map: lobby.map, ai: roomAi });
+    roomSettingsDone = null;
+    return;
   }
+  drawLobby();
 });
+function setOnline(on) {
+  lobby.online = on;
+  try {
+    localStorage.setItem('frustum.online', on ? '1' : '0');
+  } catch {}
+  if (on) net.open();
+  else if (!party?.active) net.close();
+  drawLobby();
+}
+// 온라인으로 바꾸고 서버에 붙는다. 붙으면 true.
+async function ensureOnline() {
+  if (STATIC_HOST && !remote()) {
+    $('status').textContent = '온라인 서버 주소가 설정되지 않았습니다.';
+    return false;
+  }
+  if (!lobby.online) setOnline(true);
+  return net.open();
+}
+$('netSolo').addEventListener('click', () => setOnline(false));
+$('netOnline').addEventListener('click', () => setOnline(true));
+
 // 온라인에서 같은 방에 있던 사람(봇 제외)을 최근 목록에 기록한다
 function noteRecent() {
   if (offline || !myId) return;
   let changed = false;
   for (const [id, p] of roster) {
-    if (id === myId || /^AI-\d+$/.test(p.name) || profile.recent[0] === p.name) continue;
-    profile.recent = [p.name, ...profile.recent.filter((n) => n !== p.name)].slice(0, 12);
+    if (id === myId || /^AI-\d+$/.test(p.name) || (p.fc && p.fc === profile.fc)) continue;
+    const key = (x) => x.fc || `name:${x.name}`;
+    if (profile.recent[0] && key(profile.recent[0]) === key(p)) continue;
+    profile.recent = [{ name: p.name, fc: p.fc || '' }, ...profile.recent.filter((x) => key(x) !== key(p))].slice(0, 12);
     changed = true;
   }
   if (changed) saveProfile();
@@ -1324,7 +1313,7 @@ function fixedStep() {
   localCd = Math.max(0, localCd - DT);
   localBeam = Math.max(0, localBeam - DT);
   flareCd = Math.max(0, flareCd - DT);
-  if (!myId || (!offline && (!ws || ws.readyState !== WebSocket.OPEN))) return;
+  if (!myId || (!offline && !net.ready)) return;
   const canAct = alive && roundEnd <= 0;
   let atk = input.consume('atk');
   const roll = input.consume('roll') && canAct;
@@ -1346,7 +1335,7 @@ function fixedStep() {
   const inp = { seq: ++seq, mx: input.mx, mz: input.mz, yaw: wrapAngle(input.yaw), atk, roll, flare };
   const d = [inp.seq, +inp.mx.toFixed(3), +inp.mz.toFixed(3), +inp.yaw.toFixed(4), atk ? 1 : 0, roll ? 1 : 0, flare ? 1 : 0];
   if (offline) offline.game.queueInput(offline.player.id, d);
-  else ws.send(JSON.stringify({ t: 'i', d }));
+  else net.send({ t: 'i', d });
   if (canAct) {
     // 서버가 받는 것과 같은 (양자화된) 값으로 예측
     inp.mx = d[1];
@@ -1703,8 +1692,15 @@ for (const [id, key] of Object.entries(RANGES)) {
     applyPrefs();
   });
 }
+// 게임에서 나온다: 온라인이면 연결은 유지하고 서버에 알린다 (친선 방에 있었다면 방으로 돌아간다)
+function exitGame() {
+  if (offline) offline = null;
+  else if (myId) net.send({ t: 'leave' });
+  showMenu('');
+}
 function openSettings() {
   $('leave').hidden = !myId;
+  $('leave').textContent = party?.active && !offline ? '방으로 돌아가기' : '게임 나가기';
   $('settings').hidden = false;
 }
 $('openSettings').addEventListener('click', openSettings);
@@ -1716,29 +1712,48 @@ $('gear').addEventListener('pointerdown', (e) => {
 $('closeSettings').addEventListener('click', () => ($('settings').hidden = true));
 $('leave').addEventListener('click', () => {
   $('settings').hidden = true;
-  if (offline) {
-    offline = null;
-    showMenu('');
-  } else if (ws) {
-    myId = 0; // onclose 가 "연결 끊김" 대신 빈 메시지를 보이도록
-    ws.close();
-    showMenu('');
-  }
+  exitGame();
 });
 applyPrefs();
 
-// 초대 링크(?room=코드)로 들어오면 그 방으로 온라인 접속하도록 맞춰 둔다
-if (params.get('room')) {
-  lobby.room = cleanCode(params.get('room'));
-  lobby.online = lobby.room.length >= 4;
+// 내 친구 코드: 처음 실행할 때 한 번 만든다
+if (!profile.fc) {
+  const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  profile.fc = Array.from({ length: 6 }, () => abc[Math.floor(Math.random() * abc.length)]).join('');
+  saveProfile();
 }
+party = initParty({
+  $, net, profile, saveProfile, sfx, buzz, CHARACTERS, MAPS, params, remote, lockLandscape, ensureOnline, openRoomSettings,
+  hello: sendHello,
+  picks: () => ({ rule: menuRule, mode: menuMode, map: lobby.map }),
+  status: (msg) => ($('status').textContent = msg),
+  inGame: () => !!myId,
+  exitGame,
+  enterLobby,
+  openShop,
+  hideLobby: () => {
+    $('menu').style.display = 'none';
+    showcase.lobby = true;
+    showcase.empty = true; // 방 화면에서는 배경만 그린다
+    if (!showcase.active) showcase.open(profile.char);
+  },
+});
+// 온라인 여부: 지난번 선택, 처음이면 서버가 정해져 있을 때 온라인
+const savedOnline = stored('frustum.online');
+lobby.online = savedOnline !== null ? savedOnline === '1' : !!remote();
 enterLobby();
+if (lobby.online && (remote() || !STATIC_HOST)) net.open(); // 로비에서도 연결해 두어야 초대를 받는다
+let helloTimer = 0;
+$('name').addEventListener('input', () => {
+  clearTimeout(helloTimer);
+  helloTimer = setTimeout(() => net.ready && sendHello(), 600);
+});
 if (params.has('offline')) startOffline($('name').value || 'Player', menuMode, menuRule);
 else if (params.has('auto')) connect($('name').value || 'Player', menuMode, menuRule);
 
 // 디버그/자동 테스트용 핸들
 window.__frustum = {
-  ents, roster, sim, view, stats, mask, input, sfx, prefs, buffs, itemMeshes, profile, prog, drawShop, showcase, lobby,
+  ents, roster, sim, view, stats, mask, input, sfx, prefs, buffs, itemMeshes, profile, prog, drawShop, showcase, lobby, net, get party() { return party; },
   get map() { return curMap.id; },
   get alive() { return alive; },
   get myId() { return myId; },
