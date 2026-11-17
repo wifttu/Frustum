@@ -76,7 +76,8 @@ export class Game {
   }
 
   // 사람은 봇의 자리(팀, 위치, 생존 상태)를 이어받아 라운드 중에도 바로 플레이한다.
-  addPlayer(name, send = null, isBot = false, char = null, skin = null) {
+  // opts.team: 친선 방처럼 팀을 정해서 넣을 때. opts.fc: 친구 코드(최근 함께한 플레이어 → 친구 추가용)
+  addPlayer(name, send = null, isBot = false, char = null, skin = null, opts = {}) {
     const id = this.nextId++;
     const p = {
       id, name, team: 0, isBot, send,
@@ -90,12 +91,18 @@ export class Game {
       skin: isBot ? (Math.random() < 0.3 ? SKIN_KEYS[1 + Math.floor(Math.random() * (SKIN_KEYS.length - 1))] : 'default') : skinOf(skin), beam: 0, score: 0, wins: 0,
       rollT: 0, rollCd: 0, rollDx: 0, rollDz: 1, flareCd: 0,
       queue: [], budget: 0, ack: 0, lastSeq: 0, ai: {},
+      fc: typeof opts.fc === 'string' ? opts.fc : '',
     };
-    const bots = isBot ? [] : [...this.players.values()].filter((q) => q.isBot);
+    const forced = opts.team !== undefined;
+    let bots = isBot ? [] : [...this.players.values()].filter((q) => q.isBot);
+    if (forced) bots = bots.filter((q) => q.team === opts.team); // 정해진 팀의 AI 자리만 이어받는다
     const seat = bots.find((q) => q.alive) || bots[0];
     if (seat) {
       this.players.delete(seat.id);
       Object.assign(p, { team: seat.team, x: seat.x, z: seat.z, yaw: seat.yaw, alive: seat.alive, respawn: seat.respawn, score: seat.score, hp: seat.hp, xp: seat.xp, level: seat.level, ups: { ...seat.ups } });
+    } else if (forced) {
+      p.team = opts.team;
+      if (this.endT <= 0 && (this.respawns || this.roundT < this.cfg.JOIN_GRACE)) this.spawn(p);
     } else {
       p.team = 1000 + id; // 개인전: 각자 고유 팀
       if (this.cfg.TEAMS > 0) {
@@ -685,7 +692,7 @@ export class Game {
   roster() {
     return {
       t: 'r',
-      p: [...this.players.values()].map((p) => [p.id, p.name, p.team, p.score, p.alive ? 1 : 0, p.wins, p.level, p.char, p.skin]),
+      p: [...this.players.values()].map((p) => [p.id, p.name, p.team, p.score, p.alive ? 1 : 0, p.wins, p.level, p.char, p.skin, p.fc]),
     };
   }
 

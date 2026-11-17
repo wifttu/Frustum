@@ -74,7 +74,7 @@
       <div id="lobbyChar"><b id="lobbyCharName"></b><span id="lobbySkill"></span></div>
       <button id="modeCard"><small>모드 · 맵 바꾸기 ›</small><b id="modeText"></b><span id="mapText"></span></button>
       <div id="lobbyStart">
-        <div id="roomTag" hidden></div>
+        <button id="openRoom">🏠 친선 게임 만들기</button>
         <div id="netToggle"><button id="netSolo">혼자 (봇전)</button><button id="netOnline">온라인</button></div>
         <button id="play">게임 시작</button>
       </div>
@@ -103,7 +103,14 @@
           <button id="mapForest">소나무 숲<small>빽빽한 나무</small></button>
           <button id="mapLake">호숫가<small>가운데 호수</small></button>
         </div>
-        <p class="note">맵 고르기는 혼자 하기와 친구 방(방 코드)에서 적용됩니다. 공개 온라인 방은 맵이 순환합니다.</p>
+        <div id="aiRow" hidden>
+          <h3>빈자리</h3>
+          <div id="aiPick" class="pick">
+            <button id="aiOn">AI로 채우기<small>8명이 되도록</small></button>
+            <button id="aiOff">사람만<small>들어온 사람끼리</small></button>
+          </div>
+        </div>
+        <p class="note" id="modeNote">맵 고르기는 혼자 하기와 친선 게임 방에서 적용됩니다. 공개 온라인 방은 맵이 순환합니다.</p>
         <button id="closeModes">확인</button>
       </div>
     </div>
@@ -119,20 +126,51 @@
 
     <div id="friends" class="sheet" hidden>
       <div class="panel">
-        <h2>친구와 함께</h2>
-        <p class="note">같은 방 코드를 넣은 사람끼리 한 방에서 만납니다. 계정이 없어도 되고, 온라인 서버가 필요합니다.</p>
+        <h2>친구</h2>
+        <div class="myCode">내 친구 코드 <b id="myFc"></b><button id="copyFc">복사</button></div>
         <div class="roomRow">
-          <input id="roomInput" maxlength="6" placeholder="방 코드" autocomplete="off" aria-label="방 코드" />
-          <button id="roomMake">새 코드</button>
-          <button id="roomShare">초대 링크</button>
+          <input id="addFcInput" maxlength="6" placeholder="친구 코드 6자리" autocomplete="off" aria-label="친구 코드" />
+          <button id="addFc">친구 추가</button>
         </div>
-        <div id="roomState"></div>
-        <h3>친구</h3>
-        <div id="friendList" class="names"></div>
+        <div id="friendMsg" class="note"></div>
+        <div id="friendList" class="people"></div>
         <h3>최근 함께한 플레이어</h3>
-        <div id="recentList" class="names"></div>
+        <div id="recentList" class="people"></div>
+        <h3>방 코드로 참가</h3>
+        <div class="roomRow">
+          <input id="joinCode" maxlength="6" placeholder="방 코드" autocomplete="off" aria-label="방 코드" />
+          <button id="joinRoom">참가</button>
+        </div>
         <button id="closeFriends">닫기</button>
       </div>
+    </div>
+
+    <div id="room" hidden>
+      <div id="roomTop">
+        <b>친선 게임</b>
+        <button id="roomCode" aria-label="방 코드 복사"></button>
+        <button id="roomLink">🔗 초대 링크</button>
+        <button id="roomLeave">나가기</button>
+      </div>
+      <div id="roomSlots"></div>
+      <div id="roomFeed"></div>
+      <div id="roomSide">
+        <button id="roomFriends"><i>👥</i><span>친구 초대</span></button>
+        <button id="roomChars"><i>🧢</i><span>캐릭터</span></button>
+        <button id="roomChat"><i>💬</i><span>채팅</span></button>
+      </div>
+      <button id="roomSet"><small id="roomSetHint"></small><b id="roomSetText"></b><span id="roomSetSub"></span></button>
+      <div id="roomGo"><small id="roomWhy"></small><button id="roomMain"></button></div>
+      <div id="chatPanel" hidden></div>
+    </div>
+
+    <div id="invite" hidden>
+      <i id="invIcon"></i>
+      <div><b id="invTitle"></b><span id="invSub"></span></div>
+      <button id="invYes">참가</button>
+      <button id="invNo">✕</button>
+    </div>
+
     </div>
 
     <div id="shop" hidden>

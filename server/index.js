@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { CFG } from '../shared/config.js';
-import { Rooms } from './rooms.js';
+import { Hub } from './hub.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.PORT) || 3000;
@@ -40,7 +40,7 @@ const server = http.createServer((req, res) => {
   }
   if (url === '/rooms') {
     // 공개 방별 접속 인원 (로비의 "사람 많은 방" 표시용)
-    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' }).end(JSON.stringify(rooms.summary()));
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' }).end(JSON.stringify(hub.rooms.summary()));
     return;
   }
   if (url === '/') url = '/index.html';
@@ -66,12 +66,19 @@ const server = http.createServer((req, res) => {
 });
 
 // 규칙 × 모드 조합마다 방 하나씩 (예: 'dm-ffa', 'survival-duo')
-const rooms = new Rooms();
+const hub = new Hub();
+let nextSid = 1;
 
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 512 });
 wss.on('connection', (ws) => {
-  let player = null;
-  let game = null;
+  // 세션: 연결 하나. 로비에 있는 동안에도 유지되어 친선 방, 친구 접속 상태와 초대를 주고받는다.
+  const session = {
+    id: nextSid++,
+    // 느린 클라이언트에 메시지가 쌓이지 않게 한다
+    raw: (msg) => ws.readyState === ws.OPEN && ws.bufferedAmount < 64 * 1024 && ws.send(msg),
+    send: (obj) => session.raw(JSON.stringify(obj)),
+  };
+  hub.connect(session);
   let msgCount = 0;
   const rateTimer = setInterval(() => (msgCount = 0), 1000);
 
@@ -83,38 +90,12 @@ wss.on('connection', (ws) => {
     } catch {
       return;
     }
-    if (!m || typeof m !== 'object') return;
-    if (m.t === 'j' && !player) {
-      game = rooms.find({ rule: m.r, mode: m.m, room: m.room, map: m.map });
-      if (!game || game.humanCount >= CFG.MAX_PLAYERS) {
-        ws.send(JSON.stringify({ t: 'full' }));
-        ws.close();
-        game = null;
-        return;
-      }
-      const wasEmpty = game.humanCount === 0;
-      const name = String(m.n ?? '').replace(/[^\p{L}\p{N}_\- ]/gu, '').trim().slice(0, 12) || 'Player';
-      player = game.addPlayer(name, (msg) => {
-        // 느린 클라이언트에 스냅샷이 쌓이지 않게 한다
-        if (ws.readyState === ws.OPEN && ws.bufferedAmount < 64 * 1024) ws.send(msg);
-      }, false, typeof m.c === 'string' ? m.c : null, typeof m.s === 'string' ? m.s : null);
-      game.balanceBots();
-      if (wasEmpty) game.newRound(); // 비어 있던 방은 새 라운드로 시작
-      ws.send(JSON.stringify({ t: 'w', id: player.id, team: player.team, room: game.room || '', ...game.info() }));
-    } else if (m.t === 'i' && player) {
-      game.queueInput(player.id, m.d);
-    } else if (m.t === 'u' && player) {
-      game.choose(player, m.c); // 레벨업 카드 선택
-    }
+    hub.handle(session, m);
   });
 
   ws.on('close', () => {
     clearInterval(rateTimer);
-    if (player) {
-      game.removePlayer(player.id);
-      game.balanceBots();
-      rooms.cleanup(game);
-    }
+    hub.disconnect(session);
   });
   ws.on('error', () => {});
 });
@@ -126,8 +107,7 @@ setInterval(() => {
   const now = performance.now();
   let steps = 0;
   while (now >= next && steps < 5) {
-    for (const g of rooms) {
-      if (g.humanCount === 0) continue; // 사람이 없는 방은 멈춰 둔다
+    for (const g of [...hub.games()]) { // 사람이 있는 게임만 돈다
       g.step();
       if (g.tick % CFG.SNAPSHOT_EVERY === 0) g.broadcast();
     }
