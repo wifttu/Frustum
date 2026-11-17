@@ -173,17 +173,47 @@ export function initParty(ctx) {
   }
 
   // ── 방 만들기 / 참가 ──
-  async function create() {
-    if (!(await ctx.ensureOnline())) return;
+  // 서버가 방 기능을 아는 새 버전인지 확인한다. 새 서버는 'hi' 에 답하고, 예전 서버는 모르는 메시지를 무시한다.
+  let hiOk = false;
+  let hiWaiters = [];
+  function waitHi(ms) {
+    if (hiOk) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        hiWaiters = hiWaiters.filter((w) => w !== done);
+        resolve(false);
+      }, ms);
+      const done = () => {
+        clearTimeout(timer);
+        resolve(true);
+      };
+      hiWaiters.push(done);
+    });
+  }
+  // 온라인에 연결하고 새 버전 서버인지까지 확인한다. 안 되면 이유를 화면에 알린다.
+  async function ready(msg) {
+    toast(msg);
+    if (!(await ctx.ensureOnline())) {
+      toast('서버에 연결하지 못했어요. 서버 주소와 서버 상태를 확인해 주세요');
+      return false;
+    }
     ctx.hello();
+    if (!(await waitHi(4000))) {
+      toast('서버가 아직 예전 버전이라 친선 게임을 쓸 수 없어요. 서버를 최신 버전으로 다시 배포해야 해요');
+      friendMsg('서버가 예전 버전이에요. Render 에서 최신 버전으로 다시 배포해 주세요');
+      return false;
+    }
+    return true;
+  }
+  async function create() {
+    if (!(await ready('방을 만드는 중…'))) return;
     const { rule, mode, map } = ctx.picks();
     net.send({ t: 'pcreate', set: { rule, mode, map, ai: true } });
   }
   async function join(code) {
     const c = cleanCode(code, 6);
     if (c.length < 4) return friendMsg('방 코드는 4~6자예요');
-    if (!(await ctx.ensureOnline())) return;
-    ctx.hello();
+    if (!(await ready('방에 들어가는 중…'))) return;
     net.send({ t: 'pjoin', code: c });
   }
 
@@ -305,6 +335,8 @@ export function initParty(ctx) {
       case 'hi':
         sid = m.sid;
         if (Array.isArray(m.chat)) chatLines = m.chat;
+        hiOk = true;
+        for (const w of hiWaiters.splice(0)) w();
         return true;
       case 'p': {
         const fresh = !st || st.code !== m.code;
@@ -313,6 +345,7 @@ export function initParty(ctx) {
           feed.length = 0;
           addFeed(isHost() ? `방을 만들었어요 · 코드 ${m.code}` : `${m.code} 방에 들어왔어요`);
           $('friends').hidden = true;
+          toast(''); // "만드는 중…" 안내를 지운다
           if (!ctx.inGame()) showRoom();
         } else drawRoom();
         return true;
@@ -380,6 +413,7 @@ export function initParty(ctx) {
   }
 
   function onNetState(state) {
+    if (state === 'closed' || state === 'failed') hiOk = false; // 다시 연결되면 다시 확인한다
     if (state === 'open') {
       ctx.hello();
       poll(true);
