@@ -6,6 +6,8 @@ import * as THREE from 'three';
 import { computeVisionFan, MAX_FAN_POINTS } from './shared/vision.js';
 
 const CIRCLE_SEG = 20;
+// 밝은 맵(낮) 모드: 1 이면 시야 밖도 맵이 환하게 보인다 (상대는 여전히 시야 안에서만 보인다)
+export const DAY = { value: 0 };
 
 const fanVert = /* glsl */ `
 uniform float uHalf;
@@ -221,6 +223,7 @@ export class VisionMask {
       shader.uniforms.uMask = { value: tex };
       shader.uniforms.uMaskInv = { value: inv };
       shader.uniforms.uDark = { value: dark };
+      shader.uniforms.uDay = DAY;
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nvarying vec2 vMaskUv;\nuniform float uMaskInv;')
         .replace(
@@ -234,11 +237,13 @@ export class VisionMask {
           vMaskUv = maskWp.xz * uMaskInv + 0.5;`,
         );
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying vec2 vMaskUv;\nuniform sampler2D uMask;\nuniform float uDark;')
+        .replace('#include <common>', '#include <common>\nvarying vec2 vMaskUv;\nuniform sampler2D uMask;\nuniform float uDark;\nuniform float uDay;')
         .replace(
           '#include <dithering_fragment>',
           `// 시야 안: 따뜻한 손전등 빛, 시야 밖: 푸른 달빛 (uDark 가 0 이면 완전한 어둠)
-          gl_FragColor.rgb *= mix(uDark * vec3(0.55, 0.75, 1.25), vec3(1.08, 1.0, 0.86), texture2D(uMask, vMaskUv).r);
+          // 낮 모드에서는 시야 밖이 살짝 그늘진 정도로만 어둡다
+          vec3 outC = mix(uDark * vec3(0.55, 0.75, 1.25), vec3(0.74, 0.8, 0.9), uDay);
+          gl_FragColor.rgb *= mix(outC, mix(vec3(1.08, 1.0, 0.86), vec3(1.1, 1.06, 1.0), uDay), texture2D(uMask, vMaskUv).r);
           #include <dithering_fragment>`,
         );
     };

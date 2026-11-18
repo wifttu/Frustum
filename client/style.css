@@ -810,3 +810,8 @@ body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
   #play { padding: 11px 10px; font-size: 21px; }
   #lobbyChar { bottom: calc(80px + env(safe-area-inset-bottom)); }
 }
+
+/* 치트 모드 */
+.cheatBox { border: 1px dashed rgba(255, 120, 255, .55); border-radius: 12px; padding: 2px 8px; margin: 4px 0; background: rgba(160, 40, 200, .12); }
+#cheatOpts label { padding-left: 10px; }
+body.cheating #coins::after { content: ' 🧪'; }

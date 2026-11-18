@@ -3,7 +3,7 @@
 //   세션: { id, send(obj), raw(string) } — 나머지 필드(prof, fc, party, game, player...)는 여기서 채운다.
 import { CFG, RULES } from '../shared/config.js';
 import { MAPS } from '../shared/map.js';
-import { CHARACTERS, charOf } from '../shared/progress.js';
+import { CHARACTERS, charOf, cheatOf } from '../shared/progress.js';
 import { FREE_ICONS, SKIN_ICONS, skinOf } from '../shared/shop.js';
 import { Game } from './game.js';
 import { Rooms, roomCode } from './rooms.js';
@@ -146,6 +146,14 @@ export class Hub {
     if (typeof m.c === 'string') s.prof.char = charOf(m.c);
     if (typeof m.s === 'string') s.prof.skin = skinOf(m.s);
     if (typeof m.i === 'string') s.prof.icon = ICONS.has(m.i) ? m.i : '';
+    // 치트: 혼자(AI 상대)일 때만 게임에서 켜진다. 게임 중에 바꾸면 바로 반영한다.
+    if (m.ch !== undefined) {
+      s.prof.cheat = cheatOf(m.ch);
+      if (s.game && s.player && s.game.players.get(s.player.id) === s.player) {
+        s.player.cheat = s.prof.cheat;
+        s.game.applyStats(s.player);
+      }
+    }
   }
 
   setFc(s, fc) {
@@ -348,7 +356,7 @@ export class Hub {
   // ── 게임 ──
   addToGame(s, g, team) {
     s.game = g;
-    s.player = g.addPlayer(s.prof.name, (msg) => s.raw(msg), false, s.prof.char, s.prof.skin, { team, fc: s.fc });
+    s.player = g.addPlayer(s.prof.name, (msg) => s.raw(msg), false, s.prof.char, s.prof.skin, { team, fc: s.fc, cheat: s.prof.cheat });
   }
 
   welcome(s) {

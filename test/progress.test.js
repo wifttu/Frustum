@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Game } from '../server/game.js';
 import { CFG } from '../shared/config.js';
-import { ORBS, PROGRESS, UPGRADES, orbTier, randomOrb, rollChoices, statsOf, xpToNext } from '../shared/progress.js';
+import { CHEAT, ORBS, PROGRESS, UPGRADES, cheatOf, orbTier, randomOrb, rollChoices, statsOf, xpToNext } from '../shared/progress.js';
 
 function setup(opts) {
   const game = new Game({ BOT_FILL: 0, TEAMS: 0, START_GRACE: 0, items: false, ...opts });
@@ -277,4 +277,29 @@ test('레벨이 오르면 체력과 피해가 저절로 오르고, 높은 레벨
     return a.earned - before;
   };
   assert.ok(gain(2, 10) > gain(10, 10) * 2, '아래 레벨이 위 레벨을 잡으면 크게 받는다');
+});
+
+test('치트: 사람이 혼자일 때만 무적·경험치·쿨타임이 켜지고, 다른 사람이 오면 꺼진다', () => {
+  const game = new Game({ BOT_FILL: 0, TEAMS: 0, START_GRACE: 0, items: false });
+  game.walls = [];
+  game.fireflies = [];
+  const me = game.addPlayer('Me', () => {}, false, 'explorer', 'default', { cheat: { god: true, xp: true, cd: true } });
+  const bot = game.addPlayer('AI-1', null, true);
+  Object.assign(me, { x: 0, z: 0, yaw: Math.PI, alive: true });
+  Object.assign(bot, { x: 0, z: 3, yaw: Math.PI, alive: true });
+  const base = statsOf({}, CFG, 'explorer');
+  assert.equal(me.stats.xpMul, base.xpMul * CHEAT.XP_MUL);
+  assert.ok(Math.abs(me.stats.cooldown - base.cooldown * CHEAT.CD_MUL) < 1e-9);
+  const hp = me.hp;
+  game.attack(bot);
+  assert.equal(me.hp, hp); // 무적
+  // 다른 사람이 들어오면 치트가 꺼진다
+  const other = game.addPlayer('B', () => {});
+  assert.equal(me.stats.xpMul, base.xpMul);
+  game.attack(bot);
+  assert.ok(me.hp < hp);
+  game.removePlayer(other.id);
+  assert.equal(me.stats.xpMul, base.xpMul * CHEAT.XP_MUL);
+  assert.equal(cheatOf({ god: 1, hack: true }).god, true);
+  assert.equal(cheatOf({ hack: true }), null);
 });

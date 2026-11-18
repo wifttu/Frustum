@@ -10,8 +10,17 @@ const defaults = {
   fullscreen: true, // 터치하면 전체 화면으로 (주소창·네비게이션 바 숨김)
   music: true, // 로비 배경음악
   showMinimap: true, // 미니맵 표시
+  bright: true, // 밝은 맵(낮): 시야 밖도 맵이 환하게 보인다
   server: '', // 온라인 서버 주소 (비우면 기본값)
   showStats: false, // 성능 정보(fps 등) 표시
+  // 치트 모드: 전체 스위치 + 항목별 스위치. 게임 안 치트는 혼자(AI 상대)일 때만 켜진다.
+  cheat: false,
+  cheatCoins: true, // 코인 무한
+  cheatGod: true, // 무적
+  cheatXp: true, // 경험치 5배
+  cheatCd: true, // 쿨타임 1/4
+  cheatSpeed: false, // 이동 +30%
+  realCoins: null, // 코인 무한을 켜기 전의 코인 (끄면 되돌린다)
 };
 let saved = {};
 try {
