@@ -5,7 +5,7 @@ import { flareLanding, stepPlayer } from '../shared/sim.js';
 import { canSee, segmentBlocked, wrapAngle } from '../shared/vision.js';
 import { botThink } from './bots.js';
 import { SKIN_KEYS, skinOf } from '../shared/shop.js';
-import { CHARACTER_KEYS, ORBS, PROGRESS, SKILLS, UPGRADES, charOf, randomOrb, rollChoices, statsOf, xpToNext } from '../shared/progress.js';
+import { CHARACTER_KEYS, CHEAT, ORBS, PROGRESS, SKILLS, UPGRADES, charOf, cheatOf, randomOrb, rollChoices, statsOf, xpToNext } from '../shared/progress.js';
 
 const DT = 1 / CFG.TICK_RATE;
 const MAX_QUEUE = 10;
@@ -92,6 +92,7 @@ export class Game {
       rollT: 0, rollCd: 0, rollDx: 0, rollDz: 1, flareCd: 0,
       queue: [], budget: 0, ack: 0, lastSeq: 0, ai: {},
       fc: typeof opts.fc === 'string' ? opts.fc : '',
+      cheat: isBot ? null : cheatOf(opts.cheat),
     };
     const forced = opts.team !== undefined;
     let bots = isBot ? [] : [...this.players.values()].filter((q) => q.isBot);
@@ -116,11 +117,14 @@ export class Game {
     p.hp = seat ? Math.min(p.hp, p.stats.maxHp) : p.stats.maxHp;
     this.players.set(id, p);
     this.rosterDirty = true;
+    if (!isBot) this.refreshCheats();
     return p;
   }
 
   removePlayer(id) {
+    const gone = this.players.get(id);
     if (!this.players.delete(id)) return;
+    if (gone && !gone.isBot) this.refreshCheats();
     this.rosterDirty = true;
     this.checkRoundEnd();
   }
@@ -265,7 +269,7 @@ export class Game {
       const slack = d > r ? Math.asin(r / d) : Math.PI;
       if (Math.abs(wrapAngle(Math.atan2(dx, dz) - p.yaw)) > st.arc / 2 + slack) continue;
       if (segmentBlocked(p.x, p.z, q.x, q.z, this.walls)) continue;
-      if (q.shieldT > 0) {
+      if (q.shieldT > 0 || this.cheatOn(q)?.god) {
         // 방패: 지속 시간 동안 전부 막는다
         this.blocks.push([p.id, q.id]);
         continue;
@@ -299,9 +303,24 @@ export class Game {
     this.checkRoundEnd();
   }
 
+  // ── 치트 ── 사람이 나 혼자일 때(AI 상대)만 켜진다
+  cheatOn(p) {
+    return p.cheat && this.humanCount === 1 ? p.cheat : null;
+  }
+  refreshCheats() {
+    for (const q of this.players.values()) if (q.cheat) this.applyStats(q);
+  }
+
   // ── 성장 ──
   applyStats(p) {
     p.stats = statsOf(p.ups, this.cfg, p.char, p.level);
+    const ch = this.cheatOn(p);
+    if (ch?.xp) p.stats.xpMul *= CHEAT.XP_MUL;
+    if (ch?.cd) {
+      p.stats.cooldown *= CHEAT.CD_MUL;
+      p.stats.rollCd *= CHEAT.CD_MUL;
+    }
+    if (ch?.speed) p.stats.speed *= CHEAT.SPEED_MUL;
     p.spd = p.stats.speed; // 공용 시뮬레이션이 쓰는 값
     p.rollCdMax = p.stats.rollCd;
     p.skill = p.stats.skill;
@@ -385,7 +404,7 @@ export class Game {
   }
 
   throwFlare(p) {
-    p.flareCd = this.cfg.FLARE_COOLDOWN;
+    p.flareCd = this.cfg.FLARE_COOLDOWN * (this.cheatOn(p)?.cd ? CHEAT.CD_MUL : 1);
     const [x, z] = flareLanding(p, this.walls);
     this.flares.push({ team: p.team, x, z, t: this.cfg.FLARE_TIME });
   }
@@ -525,7 +544,7 @@ export class Game {
         if (!p.alive) continue;
         const out = Math.max(Math.abs(p.x), Math.abs(p.z)) > half;
         p.gas = out ? p.gas + DT : Math.max(0, p.gas - DT * ZONE.RECOVER);
-        if (p.gas < ZONE.GAS_TIME) continue;
+        if (p.gas < ZONE.GAS_TIME || this.cheatOn(p)?.god) continue;
         p.alive = false;
         p.queue.length = 0;
         this.kills.push([0, p.id]);

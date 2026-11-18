@@ -3,7 +3,7 @@ import { CFG, FLARE_VIEW, ITEMS, SCAN_VIEW, ZONE } from './shared/config.js';
 import { MAP_SIZE, MAPS } from './shared/map.js';
 import { stepPlayer } from './shared/sim.js';
 import { wrapAngle } from './shared/vision.js';
-import { VisionMask } from './fog.js';
+import { DAY, VisionMask } from './fog.js';
 import { Input } from './input.js';
 import { Music, Sfx } from './audio.js';
 import { DEFAULT_SERVER, normalizeServer } from './settings.js';
@@ -379,12 +379,18 @@ async function connect(name, gameMode, gameRule) {
   }
   if (!(await net.open())) return;
   sendHello();
-  net.send({ t: 'j', n: name, m: gameMode, r: gameRule, c: profile.char, s: profile.skin, map: lobby.map });
+  net.send({ t: 'j', n: name, m: gameMode, r: gameRule, c: profile.char, s: profile.skin, map: lobby.map, ch: cheatPayload() });
 }
 
 // 내 프로필을 서버에 알린다 (친구 접속 상태, 방 화면에 쓰인다)
 function sendHello() {
-  net.send({ t: 'hi', n: $('name').value.trim() || 'Player', c: profile.char, s: profile.skin, i: profile.icon, fc: profile.fc });
+  net.send({ t: 'hi', n: $('name').value.trim() || 'Player', c: profile.char, s: profile.skin, i: profile.icon, fc: profile.fc, ch: cheatPayload() });
+}
+
+// 치트 모드 (설정) → 서버/오프라인 게임에 보내는 값
+function cheatPayload() {
+  if (!prefs.cheat) return null;
+  return { god: prefs.cheatGod, xp: prefs.cheatXp, cd: prefs.cheatCd, speed: prefs.cheatSpeed };
 }
 
 // 오프라인(혼자 하기): 서버와 같은 Game 클래스를 브라우저에서 실행한다. 메시지 형식도 같아서 아래 코드는 구분하지 않는다.
@@ -393,7 +399,7 @@ async function startOffline(name, gameMode, gameRule) {
   const { Game } = await import('./server/game.js');
   const game = new Game({ mode: gameMode, rule: gameRule, ...(lobby.map ? { map: lobby.map, FIXED_MAP: true } : {}) });
   game.balanceBots();
-  const player = game.addPlayer(name, (msg) => onMessage(JSON.parse(msg)), false, profile.char, profile.skin); // 봇 한 자리를 이어받는다
+  const player = game.addPlayer(name, (msg) => onMessage(JSON.parse(msg)), false, profile.char, profile.skin, { cheat: cheatPayload() }); // 봇 한 자리를 이어받는다
   offline = { game, player };
   onMessage({ t: 'w', id: player.id, team: player.team, ...game.info() });
 }
@@ -480,7 +486,7 @@ function onMessage(m) {
       const at = v === myId ? view : ents.get(v);
       if (at) deathFx.spawn(at.x, at.z, 'shield');
       if (v === myId || k === myId) sfx.block();
-      if (v === myId) toast('막았다!', '반사 조끼가 빛을 튕겨냈어요', 'buff');
+      if (v === myId && !(prefs.cheat && prefs.cheatGod)) toast('막았다!', '반사 조끼가 빛을 튕겨냈어요', 'buff');
       else if (k === myId) toast('막혔다!', '상대가 반사 조끼를 입었어요');
     }
   } else if (m.t === 'n') {
@@ -502,6 +508,7 @@ function onMessage(m) {
       popNumber(view.x, view.z, 'LEVEL UP ⬆', 'lvup');
       sfx.levelUp();
       deathFx.spawn(view.x, view.z, 'level');
+      auraT = 0;
       buzz(30);
     }
   } else if (m.t === 'c') {
@@ -831,44 +838,91 @@ function popNumber(x, z, dmg, kind) {
 
 // 반딧불: 어둠 속에서도 빛나 보이는 작은 불빛 (지형처럼 공개된 정보)
 const FF_MAX = 96;
-// 구슬 종류별 색과 크기: 작은 것은 노란 반딧불, 중간은 초록, 큰 것은 보랏빛으로 크게 빛난다
+// 경험치 보석: 작은 노랑, 중간 초록, 큰 보라. 각진 보석이 빙글빙글 돌며 떠 있고 바닥에 그림자가 진다.
 const ORB_LOOK = {
-  small: { core: 0xfff27a, glow: 0x8a7a10, size: 0.85 },
-  medium: { core: 0x8affc0, glow: 0x1a8a50, size: 1.35 },
-  large: { core: 0xffa8ff, glow: 0x9a2aa8, size: 2.1 },
+  small: { core: 0xffe14a, glow: 0x8a7a10, size: 0.9 },
+  medium: { core: 0x3cf0a0, glow: 0x1a8a50, size: 1.35 },
+  large: { core: 0xd56bff, glow: 0x9a2aa8, size: 2 },
 };
-const ffMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.11, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffffff }), FF_MAX);
+const gemGeo = new THREE.OctahedronGeometry(0.17, 0).scale(1, 1.45, 1);
+const ffMesh = new THREE.InstancedMesh(gemGeo, new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x3a3a3a, flatShading: true }), FF_MAX);
 const ffGlow = new THREE.InstancedMesh(
-  new THREE.SphereGeometry(0.42, 10, 8),
+  new THREE.SphereGeometry(0.4, 10, 8),
   new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }),
+  FF_MAX,
+);
+const ffShadow = new THREE.InstancedMesh(
+  new THREE.CircleGeometry(0.2, 14).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false }),
   FF_MAX,
 );
 ffMesh.setColorAt(0, new THREE.Color());
 ffGlow.setColorAt(0, new THREE.Color());
-ffMesh.frustumCulled = ffGlow.frustumCulled = false;
-ffMesh.count = ffGlow.count = 0;
-scene.add(ffMesh, ffGlow);
+for (const m of [ffMesh, ffGlow, ffShadow]) {
+  m.frustumCulled = false;
+  m.count = 0;
+  scene.add(m);
+}
 const ffMat = new THREE.Matrix4();
+const ffQ = new THREE.Quaternion();
+const ffPos = new THREE.Vector3();
+const ffScl = new THREE.Vector3();
+const UP = new THREE.Vector3(0, 1, 0);
 const ffColor = new THREE.Color();
 let ffColorsDirty = true;
 function syncFireflies(list) {
   fireflies = list.slice(0, FF_MAX);
   ffColorsDirty = true;
 }
+// 레벨업 빛기둥: 아래에서 위로 옅어지는 황금빛 기둥이 솟았다가 사라진다
+const auraTex = (() => {
+  const c = document.createElement('canvas');
+  c.width = 4;
+  c.height = 64;
+  const g = c.getContext('2d');
+  const grd = g.createLinearGradient(0, 64, 0, 0);
+  grd.addColorStop(0, 'rgba(255,240,170,1)');
+  grd.addColorStop(0.35, 'rgba(255,220,110,.55)');
+  grd.addColorStop(1, 'rgba(255,200,80,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 4, 64);
+  return new THREE.CanvasTexture(c);
+})();
+const aura = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.85, 1, 3.2, 28, 1, true).translate(0, 1.6, 0),
+  new THREE.MeshBasicMaterial({ map: auraTex, transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }),
+);
+aura.frustumCulled = false;
+aura.visible = false;
+scene.add(aura);
+let auraT = 1;
+function drawAura(dt) {
+  if (auraT >= 1) return;
+  auraT = Math.min(1, auraT + dt / 1.3);
+  aura.visible = auraT < 1;
+  const k = auraT;
+  aura.position.set(view.x, 0, view.z);
+  aura.scale.set(0.8 + k * 0.6, Math.min(1, k * 5) * (1.1 - k * 0.3), 0.8 + k * 0.6);
+  aura.rotation.y += dt * 2;
+  aura.material.opacity = 1 - k * k;
+}
 function drawFireflies(t) {
-  ffMesh.count = ffGlow.count = fireflies.length;
+  ffMesh.count = ffGlow.count = ffShadow.count = fireflies.length;
   for (let i = 0; i < fireflies.length; i++) {
     const [id, x, z, v] = fireflies[i];
     const look = ORB_LOOK[orbTier(v || ORBS.small.v)];
     const ph = id * 2.399;
-    const big = look.size > 2;
-    const fx = x + Math.sin(t * 1.3 + ph) * (big ? 0.1 : 0.25);
-    const fz = z + Math.cos(t * 1.1 + ph) * (big ? 0.1 : 0.25);
-    const fy = (big ? 1.1 : 0.9) + Math.sin(t * 2.1 + ph) * 0.25;
-    const pulse = look.size * (0.78 + 0.3 * Math.sin(t * (big ? 6 : 4) + ph));
-    ffMat.makeScale(pulse, pulse, pulse).setPosition(fx, fy, fz);
-    ffMesh.setMatrixAt(i, ffMat);
-    ffGlow.setMatrixAt(i, ffMat);
+    const s = look.size;
+    const fy = 0.55 + s * 0.12 + Math.sin(t * 2.4 + ph) * 0.12;
+    // 보석: 제자리에서 돌며 위아래로 둥실
+    ffQ.setFromAxisAngle(UP, t * 1.8 + ph);
+    ffMesh.setMatrixAt(i, ffMat.compose(ffPos.set(x, fy, z), ffQ, ffScl.setScalar(s)));
+    // 빛: 큰 보석일수록 크게 숨 쉰다
+    const g = s * (0.75 + 0.22 * Math.sin(t * (s > 1.8 ? 5 : 3.5) + ph));
+    ffGlow.setMatrixAt(i, ffMat.makeScale(g, g, g).setPosition(x, fy, z));
+    // 그림자: 높이 뜰수록 작고 옅게
+    const sh = s * (1.05 - (fy - 0.55) * 0.5);
+    ffShadow.setMatrixAt(i, ffMat.makeScale(sh, 1, sh).setPosition(x, 0.03, z));
     if (ffColorsDirty) {
       ffMesh.setColorAt(i, ffColor.setHex(look.core));
       ffGlow.setColorAt(i, ffColor.setHex(look.glow));
@@ -878,7 +932,7 @@ function drawFireflies(t) {
     ffMesh.instanceColor.needsUpdate = ffGlow.instanceColor.needsUpdate = true;
     ffColorsDirty = false;
   }
-  ffMesh.instanceMatrix.needsUpdate = ffGlow.instanceMatrix.needsUpdate = true;
+  ffMesh.instanceMatrix.needsUpdate = ffGlow.instanceMatrix.needsUpdate = ffShadow.instanceMatrix.needsUpdate = true;
 }
 
 // 모험가 레벨: 기기에 쌓이는 누적 경험치
@@ -890,7 +944,23 @@ const profile = (() => {
     return normalizeProfile(null);
   }
 })();
+const CHEAT_COINS = 9999999;
+const cheatCoinsOn = () => prefs.cheat && prefs.cheatCoins;
+const coinText = () => (cheatCoinsOn() ? '∞' : String(Math.floor(profile.coins)));
+// 코인 무한을 켜면 원래 코인을 따로 두고 가득 채운다. 끄면 원래 코인으로 되돌린다.
+function applyCheatCoins() {
+  if (cheatCoinsOn()) {
+    if (prefs.realCoins === null) prefs.realCoins = profile.coins;
+    profile.coins = CHEAT_COINS;
+  } else if (prefs.realCoins !== null) {
+    profile.coins = prefs.realCoins;
+    prefs.realCoins = null;
+  }
+  savePrefs();
+  saveProfile();
+}
 function saveProfile() {
+  if (cheatCoinsOn()) profile.coins = CHEAT_COINS; // 써도 줄지 않는다
   try {
     localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
   } catch {}
@@ -914,7 +984,7 @@ function drawProfile() {
   $('rankLv').textContent = `모험가 Lv ${r.lv}`;
   $('rankFill').style.transform = `scaleX(${(r.xp / r.need).toFixed(3)})`;
   $('rankText').textContent = `${r.xp} / ${r.need}`;
-  $('coins').textContent = `🪙 ${Math.floor(profile.coins)}`;
+  $('coins').textContent = `🪙 ${coinText()}`;
 }
 
 // 캐릭터 선택 화면: 3D 캐릭터를 넘겨 보며 능력을 확인하고, 코인으로 사거나 고른다
@@ -929,7 +999,7 @@ function drawShop() {
   const id = showcase.current;
   const c = CHARACTERS[id];
   const owned = profile.owned.includes(id);
-  $('shopCoins').textContent = `🪙 ${Math.floor(profile.coins)}`;
+  $('shopCoins').textContent = `🪙 ${coinText()}`;
   $('shopName').textContent = c.name;
   const sk = SKILLS[c.skill];
   $('shopAbility').textContent = `${c.icon} ${c.desc}`;
@@ -997,7 +1067,7 @@ function drawSkins() {
 }
 
 function drawGacha() {
-  $('shopCoins').textContent = `🪙 ${Math.floor(profile.coins)}`;
+  $('shopCoins').textContent = `🪙 ${coinText()}`;
   $('gachaOdds').innerHTML = Object.values(TIERS)
     .map((t) => `<span style="color:${t.color}">${t.name} ${Math.round(t.p * 100)}%</span>`)
     .join(' · ');
@@ -1543,6 +1613,7 @@ function frame(now) {
     level: prog.level,
   });
   deathFx.update(dt);
+  drawAura(dt);
   if (alive) dustFor(selfMesh, dt, sim.rollT > 0);
   drawDust(dt);
 
@@ -1840,10 +1911,33 @@ function applyPrefs() {
   if (!prefs.fullscreen && isFullscreen()) (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
   syncMusic();
   drawInstall();
+  drawCheat();
+  // 밝은 맵: 시야 밖 밝기, 맵 바깥 하늘색, 구슬 빛 세기
+  DAY.value = prefs.bright ? 1 : 0;
+  renderer.setClearColor(prefs.bright ? 0x8cc8ec : 0x000000, 1);
+  ffGlow.material.opacity = prefs.bright ? 0.45 : 1;
+  document.body.classList.toggle('day', prefs.bright);
+}
+// 치트 모드: 켜고 끌 때마다 코인을 맞추고 서버(또는 오프라인 게임)에 바로 알린다
+let cheatSent = '';
+function drawCheat() {
+  $('cheatOpts').hidden = !prefs.cheat;
+  document.body.classList.toggle('cheating', prefs.cheat);
+  const key = JSON.stringify([cheatPayload(), cheatCoinsOn()]);
+  if (key === cheatSent) return;
+  const first = !cheatSent;
+  cheatSent = key;
+  applyCheatCoins();
+  drawProfile();
+  if (first) return;
+  if (offline) {
+    offline.player.cheat = cheatPayload();
+    offline.game.applyStats(offline.player);
+  } else if (net.ready) sendHello();
 }
 drawProfile();
 drawDaily();
-const CHECKS = { setFixed: 'fixedStick', setLefty: 'lefty', setVibrate: 'vibrate', setStats: 'showStats', setMinimap: 'showMinimap', setFullscreen: 'fullscreen', setMusic: 'music' };
+const CHECKS = { setBright: 'bright', setCheat: 'cheat', setCheatCoins: 'cheatCoins', setCheatGod: 'cheatGod', setCheatXp: 'cheatXp', setCheatCd: 'cheatCd', setCheatSpeed: 'cheatSpeed', setFixed: 'fixedStick', setLefty: 'lefty', setVibrate: 'vibrate', setStats: 'showStats', setMinimap: 'showMinimap', setFullscreen: 'fullscreen', setMusic: 'music' };
 const RANGES = { setSens: 'sens', setVol: 'volume', setZoom: 'zoom' };
 for (const [id, key] of Object.entries(CHECKS)) {
   $(id).checked = prefs[key];

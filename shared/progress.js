@@ -43,6 +43,16 @@ export function randomOrb(rnd = Math.random) {
 // 레벨 n 에서 다음 레벨까지 필요한 경험치: 초반은 금방, 뒤로 갈수록 조금씩 무거워진다
 export const xpToNext = (level) => Math.round(24 + (level - 1) * 12 + (level - 1) ** 2 * 2.6);
 
+// 치트 모드 (설정에서 켬). 다른 사람과 함께하는 판에서는 서버가 꺼 버린다 = 혼자 또는 AI 상대일 때만.
+export const CHEAT = Object.freeze({ XP_MUL: 5, CD_MUL: 0.25, SPEED_MUL: 1.3 });
+const CHEAT_KEYS = ['god', 'xp', 'cd', 'speed'];
+export function cheatOf(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const c = {};
+  for (const k of CHEAT_KEYS) if (raw[k] === true || raw[k] === 1) c[k] = true;
+  return Object.keys(c).length ? c : null;
+}
+
 // 강화 카드. max: 최대 중첩
 export const UPGRADES = Object.freeze({
   hp: { name: '튼튼한 몸', desc: '최대 체력 +30', icon: '❤️', max: 4 },

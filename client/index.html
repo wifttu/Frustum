@@ -215,6 +215,16 @@
     <div id="settings" hidden>
       <div class="panel">
         <h2>설정</h2>
+        <div class="cheatBox">
+          <label><span>🧪 치트 모드<small>혼자 하기나 AI 상대일 때만 게임에 적용돼요</small></span><input type="checkbox" id="setCheat" /></label>
+          <div id="cheatOpts" hidden>
+            <label><span>💰 코인 무한<small>끄면 원래 코인으로 돌아와요</small></span><input type="checkbox" id="setCheatCoins" /></label>
+            <label><span>🛡️ 무적<small>빛과 독구름에 피해를 안 받아요</small></span><input type="checkbox" id="setCheatGod" /></label>
+            <label><span>⭐ 경험치 5배<small>순식간에 왕귀</small></span><input type="checkbox" id="setCheatXp" /></label>
+            <label><span>⚡ 쿨타임 1/4<small>손전등·스킬·조명탄</small></span><input type="checkbox" id="setCheatCd" /></label>
+            <label><span>👟 이동 +30%</span><input type="checkbox" id="setCheatSpeed" /></label>
+          </div>
+        </div>
         <label id="fsRow"><span>전체 화면<small>주소창과 아래 버튼 바를 숨겨요</small></span><input type="checkbox" id="setFullscreen" /></label>
         <label><span>배경음악<small>로비에서 잔잔하게</small></span><input type="checkbox" id="setMusic" /></label>
         <div id="installRow" class="installRow" hidden>
@@ -225,6 +235,7 @@
           <span>온라인 서버 주소<small id="serverState"></small></span>
           <div><input id="setServer" placeholder="예: frustum.onrender.com" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="온라인 서버 주소" /><button id="testServer">연결</button></div>
         </div>
+        <label><span>☀️ 밝은 맵<small>맵 전체가 환하게 보여요 (상대는 시야 안에서만)</small></span><input type="checkbox" id="setBright" /></label>
         <label><span>조이스틱 고정<small>항상 같은 자리에 표시</small></span><input type="checkbox" id="setFixed" /></label>
         <label><span>왼손 모드<small>조이스틱과 버튼 좌우 반전</small></span><input type="checkbox" id="setLefty" /></label>
         <label><span>회전 감도 <b id="sensVal"></b></span><input type="range" id="setSens" min="0.4" max="2.5" step="0.1" /></label>
