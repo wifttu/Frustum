@@ -815,3 +815,5 @@ body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
 .cheatBox { border: 1px dashed rgba(255, 120, 255, .55); border-radius: 12px; padding: 2px 8px; margin: 4px 0; background: rgba(160, 40, 200, .12); }
 #cheatOpts label { padding-left: 10px; }
 body.cheating #coins::after { content: ' 🧪'; }
+#maps { display: grid; grid-template-columns: repeat(4, 1fr); }
+#maps button small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

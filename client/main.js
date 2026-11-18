@@ -3,15 +3,15 @@ import { CFG, FLARE_VIEW, ITEMS, SCAN_VIEW, ZONE } from './shared/config.js';
 import { MAP_SIZE, MAPS } from './shared/map.js';
 import { stepPlayer } from './shared/sim.js';
 import { wrapAngle } from './shared/vision.js';
-import { DAY, VisionMask } from './fog.js';
+import { VisionMask } from './fog.js';
 import { Input } from './input.js';
 import { Music, Sfx } from './audio.js';
 import { DEFAULT_SERVER, normalizeServer } from './settings.js';
 import { prefs, savePrefs } from './prefs.js';
 import { CHARACTERS, ORBS, PROGRESS, SKILLS, UPGRADES, charOf, orbTier, statsOf, xpToNext } from './shared/progress.js';
-import { Characters, DeathFx, growOf } from './character.js';
+import { Characters, DeathFx, growOf, merge } from './character.js';
 import { Minimap } from './minimap.js';
-import { buildFloorTexture, buildItemGeos, buildWalls, buildWater } from './world.js';
+import { buildDeco, buildFloorTexture, buildItemGeos, buildWalls, buildWater } from './world.js';
 import { Showcase, radarOf } from './showcase.js';
 import { Net } from './net.js';
 import { initParty } from './party.js';
@@ -34,7 +34,8 @@ let resScale = 1;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(55, 1, 0.5, 120);
 // 따뜻한 손전등/모닥불 톤의 조명
-scene.add(new THREE.HemisphereLight(0xfff0d8, 0x6b5a45, 1.45));
+const hemi = new THREE.HemisphereLight(0xfff0d8, 0x6b5a45, 1.45);
+scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff2dc, 1.25);
 sun.position.set(0.4, 1, 0.25);
 scene.add(sun);
@@ -94,6 +95,45 @@ let wallProps = buildWalls(curMap.walls, propMat);
 for (const p of wallProps) scene.add(p.mesh);
 let waterMesh = null;
 
+// 꾸밈(가로등, 모닥불, 눈더미...)과 맵마다 다른 조명 색. 불빛은 어둠 속에서도 바닥에 은은히 번진다.
+const glowTex = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grd.addColorStop(0, 'rgba(255,255,255,1)');
+  grd.addColorStop(0.4, 'rgba(255,255,255,.45)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+const glowMat = new THREE.MeshBasicMaterial({ map: glowTex, vertexColors: true, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending });
+let decoMesh = null;
+let glowMesh = null;
+function buildScenery() {
+  for (const m of [decoMesh, glowMesh]) {
+    if (!m) continue;
+    scene.remove(m);
+    m.geometry.dispose();
+  }
+  const { mesh, glows } = buildDeco(curMap, propMat);
+  decoMesh = mesh;
+  if (decoMesh) scene.add(decoMesh);
+  glowMesh = null;
+  if (glows.length) {
+    const parts = glows.map(([x, z, col, r]) => [new THREE.CircleGeometry(r, 20).rotateX(-Math.PI / 2).translate(x, 0.05, z), new THREE.Color(col).toArray()]);
+    glowMesh = new THREE.Mesh(merge(parts), glowMat);
+    glowMesh.frustumCulled = false;
+    glowMesh.renderOrder = 2;
+    scene.add(glowMesh);
+  }
+  hemi.color.setHex(curMap.look.sky);
+  hemi.groundColor.setHex(curMap.look.earth);
+  sun.color.setHex(curMap.look.sun);
+}
+buildScenery();
+
 // 맵 교체: 소품, 바닥, 물, 시야 마스크, 미니맵을 새 맵으로 다시 만든다
 function setMap(id) {
   const next = MAPS[id];
@@ -111,6 +151,7 @@ function setMap(id) {
   }
   waterMesh = buildWater(curMap, waterMat);
   if (waterMesh) scene.add(waterMesh);
+  buildScenery();
   floorMat.map.dispose();
   floorMat.map = buildFloorTexture(curMap, MAP_SIZE);
   floorMat.needsUpdate = true;
@@ -1278,7 +1319,7 @@ $('testServer').addEventListener('click', async () => {
 });
 drawServer();
 
-const MAP_BTNS = { '': 'mapAuto', camp: 'mapCamp', forest: 'mapForest', lake: 'mapLake' };
+const MAP_BTNS = { '': 'mapAuto', camp: 'mapCamp', forest: 'mapForest', lake: 'mapLake', winter: 'mapWinter', beach: 'mapBeach', factory: 'mapFactory' };
 for (const [m, id] of Object.entries(MAP_BTNS)) {
   $(id).addEventListener('click', () => {
     lobby.map = m;
@@ -1912,11 +1953,6 @@ function applyPrefs() {
   syncMusic();
   drawInstall();
   drawCheat();
-  // 밝은 맵: 시야 밖 밝기, 맵 바깥 하늘색, 구슬 빛 세기
-  DAY.value = prefs.bright ? 1 : 0;
-  renderer.setClearColor(prefs.bright ? 0x8cc8ec : 0x000000, 1);
-  ffGlow.material.opacity = prefs.bright ? 0.45 : 1;
-  document.body.classList.toggle('day', prefs.bright);
 }
 // 치트 모드: 켜고 끌 때마다 코인을 맞추고 서버(또는 오프라인 게임)에 바로 알린다
 let cheatSent = '';
@@ -1937,7 +1973,7 @@ function drawCheat() {
 }
 drawProfile();
 drawDaily();
-const CHECKS = { setBright: 'bright', setCheat: 'cheat', setCheatCoins: 'cheatCoins', setCheatGod: 'cheatGod', setCheatXp: 'cheatXp', setCheatCd: 'cheatCd', setCheatSpeed: 'cheatSpeed', setFixed: 'fixedStick', setLefty: 'lefty', setVibrate: 'vibrate', setStats: 'showStats', setMinimap: 'showMinimap', setFullscreen: 'fullscreen', setMusic: 'music' };
+const CHECKS = { setCheat: 'cheat', setCheatCoins: 'cheatCoins', setCheatGod: 'cheatGod', setCheatXp: 'cheatXp', setCheatCd: 'cheatCd', setCheatSpeed: 'cheatSpeed', setFixed: 'fixedStick', setLefty: 'lefty', setVibrate: 'vibrate', setStats: 'showStats', setMinimap: 'showMinimap', setFullscreen: 'fullscreen', setMusic: 'music' };
 const RANGES = { setSens: 'sens', setVol: 'volume', setZoom: 'zoom' };
 for (const [id, key] of Object.entries(CHECKS)) {
   $(id).checked = prefs[key];
