@@ -5,7 +5,7 @@ import { stepPlayer } from './shared/sim.js';
 import { wrapAngle } from './shared/vision.js';
 import { VisionMask } from './fog.js';
 import { Input } from './input.js';
-import { Sfx } from './audio.js';
+import { Music, Sfx } from './audio.js';
 import { DEFAULT_SERVER, normalizeServer } from './settings.js';
 import { prefs, savePrefs } from './prefs.js';
 import { CHARACTERS, PROGRESS, SKILLS, UPGRADES, charOf, statsOf, xpToNext } from './shared/progress.js';
@@ -157,6 +157,60 @@ function syncItems(list) {
 // 캐릭터(모델 + 애니메이션)와 처치 이펙트
 const chars = new Characters(mask);
 const deathFx = new DeathFx(scene);
+
+// 흙먼지: 달리거나 구를 때 발밑에서 피어오른다 (InstancedMesh 하나, 시야 밖은 마스크로 가려진다)
+const DUST_N = 96;
+const dustMesh = new THREE.InstancedMesh(
+  new THREE.IcosahedronGeometry(0.16, 0),
+  mask.apply(new THREE.MeshLambertMaterial({ color: 0xcdb48a, transparent: true, opacity: 0.55, depthWrite: false })),
+  DUST_N,
+);
+dustMesh.frustumCulled = false;
+dustMesh.count = 0;
+scene.add(dustMesh);
+const dust = Array.from({ length: DUST_N }, () => ({ t: 1, x: 0, y: 0, z: 0, vx: 0, vz: 0, s: 1 }));
+let dustNext = 0;
+const dustMat = new THREE.Matrix4();
+function puff(x, z, n = 1, spread = 0.25, big = 1) {
+  for (let k = 0; k < n; k++) {
+    const d = dust[dustNext];
+    dustNext = (dustNext + 1) % DUST_N;
+    const a = Math.random() * Math.PI * 2;
+    Object.assign(d, {
+      t: 0, x: x + Math.cos(a) * spread, y: 0.08, z: z + Math.sin(a) * spread,
+      vx: Math.cos(a) * 0.6, vz: Math.sin(a) * 0.6, s: (0.6 + Math.random() * 0.6) * big,
+    });
+  }
+}
+// 움직이는 캐릭터마다 일정 간격으로 먼지를 낸다
+function dustFor(mesh, dt, rolling) {
+  const u = mesh.userData;
+  if (!mesh.visible) return;
+  u.dustT = (u.dustT || 0) - dt;
+  if (u.dustT > 0) return;
+  if (rolling) {
+    puff(mesh.position.x, mesh.position.z, 2, 0.3, 1.3);
+    u.dustT = 0.05;
+  } else if ((u.speed || 0) > 3) {
+    puff(mesh.position.x, mesh.position.z, 1, 0.2, (u.speed || 0) > 6.5 ? 1.2 : 0.9);
+    u.dustT = (u.speed || 0) > 6.5 ? 0.07 : 0.16;
+  }
+}
+function drawDust(dt) {
+  let n = 0;
+  for (const d of dust) {
+    if (d.t >= 1) continue;
+    d.t = Math.min(1, d.t + dt / 0.6);
+    d.x += d.vx * dt;
+    d.z += d.vz * dt;
+    d.y += dt * 0.5;
+    const k = d.s * (0.5 + d.t * 1.2) * (1 - d.t * d.t);
+    dustMat.makeScale(k, k * 0.7, k).setPosition(d.x, d.y, d.z);
+    dustMesh.setMatrixAt(n++, dustMat);
+  }
+  dustMesh.count = n;
+  dustMesh.instanceMatrix.needsUpdate = true;
+}
 const makePlayerMesh = (kind, char, skin) => chars.make(kind, charOf(char), false, skinOf(skin));
 const setKind = (mesh, kind, char, skin) => chars.setKind(mesh, kind, charOf(char), skinOf(skin));
 
@@ -206,6 +260,7 @@ let localCd = 0;
 let localBeam = 0;
 let flareCd = 0;
 let killedBy = '';
+let roundStart = { earned: 0, coins: 0 }; // 판이 시작될 때의 경험치·코인 (결과 화면에서 차이를 보여준다)
 let streak = 0; // 죽지 않고 이어간 처치 수
 let lastCount = 0; // 라운드 시작 카운트다운 표시용
 let winnerText = '';
@@ -355,6 +410,7 @@ function onMessage(m) {
     rule = m.r || 'survival';
     target = m.g || 0;
     roundTime = m.rtm || CFG.ROUND_TIME;
+    roundStart = { earned: 0, coins: profile.coins };
     if (m.map) setMap(m.map);
     $('menu').style.display = 'none';
     party?.hideRoom();
@@ -403,6 +459,19 @@ function onMessage(m) {
     $('bannerTitle').className = won ? 'win' : 'lose';
     winnerText = m.w ? `승자: ${m.n.join(', ')}` : '시간 초과';
     drawResults();
+    // 이번 판 보상
+    const me = roster.get(myId);
+    const xpGot = prog.earned - roundStart.earned;
+    const coinGot = Math.floor(profile.coins) - Math.floor(roundStart.coins);
+    $('bannerReward').innerHTML = '';
+    for (const [icon, label, val] of [['⭐', '레벨', `Lv ${prog.level}`], ['🔦', '잡은 수', `${me?.score ?? 0}`], ['✨', '경험치', `+${xpGot}`], ['🪙', '코인', `+${coinGot}`]]) {
+      const c = document.createElement('div');
+      c.innerHTML = '<i></i><b></b><span></span>';
+      c.querySelector('i').textContent = icon;
+      c.querySelector('b').textContent = val;
+      c.querySelector('span').textContent = label;
+      $('bannerReward').append(c);
+    }
     $('banner').hidden = false;
     won ? sfx.win() : sfx.lose();
   } else if (m.t === 'b') {
@@ -415,6 +484,7 @@ function onMessage(m) {
       else if (k === myId) toast('막혔다!', '상대가 반사 조끼를 입었어요');
     }
   } else if (m.t === 'n') {
+    roundStart = { earned: prog.earned, coins: profile.coins };
     if (m.map) setMap(m.map);
     roundEnd = 0;
     snapNext = true;
@@ -1445,6 +1515,8 @@ function frame(now) {
     cloak: buffs.cloak > 0,
   });
   deathFx.update(dt);
+  if (alive) dustFor(selfMesh, dt, sim.rollT > 0);
+  drawDust(dt);
 
   // 원격 플레이어 보간
   const rt = now - INTERP_MS;
@@ -1462,6 +1534,7 @@ function frame(now) {
     e.mesh.rotation.y = e.yaw;
     e.rollP = e.flags & 2 ? Math.min(1, Math.max(0, e.rollP) + dt / CFG.ROLL_TIME) : -1;
     chars.animate(e.mesh, dt, tSec, { beam: !!(e.flags & 1), roll: e.rollP, cloak: !!(e.flags & 4), vest: !!(e.flags & 8) });
+    if (!(e.flags & 4)) dustFor(e.mesh, dt, e.rollP >= 0);
     if (e.hitT > 0) {
       // 맞으면 잠깐 움찔
       e.hitT -= dt;
@@ -1654,8 +1727,67 @@ function bindPick(table, key, set) {
 bindPick(MODES, 'frustum.mode', (v) => (menuMode = v));
 bindPick(RULE_BTNS, 'frustum.rule', (v) => (menuRule = v));
 drawPicks();
-// 가로 화면 고정을 시도한다 (지원하는 브라우저/설치형 앱에서만 동작)
+// 가로 화면 고정을 시도한다 (지원하는 브라우저/설치형 앱에서만 동작. 대부분 전체 화면일 때만 된다)
 const lockLandscape = () => screen.orientation?.lock?.('landscape')?.catch?.(() => {});
+
+// 전체 화면: 주소창과 아래 네비게이션 바를 숨긴다. 브라우저 규칙상 화면을 '누른 순간'에만 켤 수 있다.
+const canFullscreen = !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
+const standalone = matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches || navigator.standalone;
+const isFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+function goFullscreen() {
+  if (!prefs.fullscreen || !canFullscreen || standalone || isFullscreen()) return;
+  const el = document.documentElement;
+  const req = el.requestFullscreen ? el.requestFullscreen({ navigationUI: 'hide' }) : el.webkitRequestFullscreen();
+  Promise.resolve(req).then(lockLandscape).catch(() => {});
+}
+// 손을 뗄 때(터치) 또는 클릭할 때가 브라우저가 전체 화면을 허락하는 순간이다
+addEventListener('pointerup', goFullscreen, { capture: true });
+addEventListener('click', goFullscreen, { capture: true });
+addEventListener('keydown', (e) => e.key !== 'Escape' && goFullscreen(), { capture: true });
+
+// 앱 설치: 안드로이드 크롬·삼성 인터넷은 설치 창을 띄울 수 있다. 아이폰은 '공유 → 홈 화면에 추가'.
+let installEvent = null;
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+function drawInstall() {
+  const row = $('installRow');
+  if (standalone) return (row.hidden = true);
+  row.hidden = false;
+  $('installApp').hidden = !installEvent;
+  $('installNote').textContent = installEvent
+    ? '홈 화면에서 주소창 없이 바로 열려요'
+    : isIOS
+      ? '사파리 아래 공유(□↑) → "홈 화면에 추가"를 누르세요'
+      : '브라우저 메뉴(⋮) → "홈 화면에 추가" 또는 "앱 설치"를 누르세요';
+}
+addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  installEvent = e;
+  drawInstall();
+});
+addEventListener('appinstalled', () => {
+  installEvent = null;
+  $('installRow').hidden = true;
+});
+$('installApp').addEventListener('click', async () => {
+  if (!installEvent) return;
+  installEvent.prompt();
+  await installEvent.userChoice.catch(() => {});
+  installEvent = null;
+  drawInstall();
+});
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+// 아이폰 사파리는 전체 화면 기능이 없어서 설정 줄을 숨긴다
+if (!canFullscreen || standalone) $('fsRow').hidden = true;
+
+// 로비 배경음악: 로비·방·상점에 있을 때만, 게임에 들어가면 멈춘다
+const music = new Music(sfx);
+function syncMusic() {
+  const inMenu = !myId;
+  if (prefs.music && inMenu && sfx.ready) music.start();
+  else music.stop();
+}
+addEventListener('pointerdown', () => setTimeout(syncMusic, 50), { capture: true });
+setInterval(syncMusic, 1000);
 $('play').addEventListener('click', () => {
   lockLandscape();
   const name = $('name').value.trim() || 'Player';
@@ -1677,10 +1809,13 @@ function applyPrefs() {
   $('sensVal').textContent = `x${prefs.sens.toFixed(1)}`;
   $('volVal').textContent = `${Math.round(prefs.volume * 100)}%`;
   $('zoomVal').textContent = `x${prefs.zoom.toFixed(2)}`;
+  if (!prefs.fullscreen && isFullscreen()) (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
+  syncMusic();
+  drawInstall();
 }
 drawProfile();
 drawDaily();
-const CHECKS = { setFixed: 'fixedStick', setLefty: 'lefty', setVibrate: 'vibrate', setStats: 'showStats', setMinimap: 'showMinimap' };
+const CHECKS = { setFixed: 'fixedStick', setLefty: 'lefty', setVibrate: 'vibrate', setStats: 'showStats', setMinimap: 'showMinimap', setFullscreen: 'fullscreen', setMusic: 'music' };
 const RANGES = { setSens: 'sens', setVol: 'volume', setZoom: 'zoom' };
 for (const [id, key] of Object.entries(CHECKS)) {
   $(id).checked = prefs[key];
@@ -1759,6 +1894,7 @@ else if (params.has('auto')) connect($('name').value || 'Player', menuMode, menu
 
 // 디버그/자동 테스트용 핸들
 window.__frustum = {
+  music, get fullscreen() { return isFullscreen(); }, dustCount: () => dustMesh.count,
   ents, roster, sim, view, stats, mask, input, sfx, prefs, buffs, itemMeshes, profile, prog, drawShop, showcase, lobby, net, get party() { return party; },
   get map() { return curMap.id; },
   get alive() { return alive; },
