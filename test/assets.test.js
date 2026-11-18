@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { MAPS } from '../shared/map.js';
-import { CHARACTER_KEYS } from '../shared/progress.js';
+import { CHARACTER_KEYS, SKILLS, UPGRADES } from '../shared/progress.js';
+import { ITEM_TYPES } from '../shared/config.js';
 import { FREE_ICONS, SKIN_ICONS } from '../shared/shop.js';
 
 const img = path.resolve(import.meta.dirname, '../client/img');
@@ -22,4 +23,10 @@ test('그림: 기본 프로필 아이콘마다 그림이 있다', () => {
     assert.ok(free[icon], `${icon} 의 그림 이름`);
     assert.ok(has(`icons/${free[icon]}`), `icons/${free[icon]}`);
   }
+});
+
+test('그림: 스킬 버튼·강화 카드·아이템 그림이 있다', () => {
+  for (const id of [...Object.keys(SKILLS), 'attack', 'flare']) assert.ok(has(`skills/${id}`), `skills/${id}`);
+  for (const id of Object.keys(UPGRADES)) assert.ok(has(`ups/${id}`), `ups/${id}`);
+  for (const id of ITEM_TYPES) assert.ok(has(`items/${id}`), `items/${id}`);
 });
