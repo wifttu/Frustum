@@ -100,9 +100,12 @@
         <h3>맵</h3>
         <div id="maps" class="pick">
           <button id="mapAuto">순환<small>라운드마다 바뀜</small></button>
-          <button id="mapCamp">캠핑장<small>오두막과 텐트</small></button>
-          <button id="mapForest">소나무 숲<small>빽빽한 나무</small></button>
+          <button id="mapCamp">캠핑장<small>오두막, 텐트, 모닥불</small></button>
+          <button id="mapForest">소나무 숲<small>빽빽한 나무, 버섯</small></button>
           <button id="mapLake">호숫가<small>가운데 호수</small></button>
+          <button id="mapWinter">눈 덮인 마을<small>얼음 연못, 이글루</small></button>
+          <button id="mapBeach">달빛 해변<small>바다와 부두</small></button>
+          <button id="mapFactory">버려진 공장<small>컨테이너, 독 웅덩이</small></button>
         </div>
         <div id="aiRow" hidden>
           <h3>빈자리</h3>
@@ -235,7 +238,6 @@
           <span>온라인 서버 주소<small id="serverState"></small></span>
           <div><input id="setServer" placeholder="예: frustum.onrender.com" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="온라인 서버 주소" /><button id="testServer">연결</button></div>
         </div>
-        <label><span>☀️ 밝은 맵<small>맵 전체가 환하게 보여요 (상대는 시야 안에서만)</small></span><input type="checkbox" id="setBright" /></label>
         <label><span>조이스틱 고정<small>항상 같은 자리에 표시</small></span><input type="checkbox" id="setFixed" /></label>
         <label><span>왼손 모드<small>조이스틱과 버튼 좌우 반전</small></span><input type="checkbox" id="setLefty" /></label>
         <label><span>회전 감도 <b id="sensVal"></b></span><input type="range" id="setSens" min="0.4" max="2.5" step="0.1" /></label>

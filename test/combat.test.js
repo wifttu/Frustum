@@ -1,5 +1,6 @@
 // 손전등 빔 판정, 구르기, 조명탄, 라운드 진행.
 import test from 'node:test';
+import { MAP_ROTATION } from '../shared/map.js';
 import assert from 'node:assert/strict';
 import { Game } from '../server/game.js';
 import { CFG, ZONE, zoneHalf } from '../shared/config.js';
@@ -294,11 +295,11 @@ test('맵: 라운드마다 다음 맵으로 바뀌고, 클라이언트에 알린
   const { game, add, sent } = setup({ TEAMS: 0 });
   add('A');
   const ids = [game.map.id];
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < MAP_ROTATION.length; i++) {
     game.newRound();
     ids.push(game.map.id);
   }
-  assert.deepEqual(ids, ['camp', 'forest', 'lake', 'camp']);
+  assert.deepEqual(ids, [...MAP_ROTATION, MAP_ROTATION[0]]);
   game.broadcast();
-  assert.ok(sent.get(1).some((m) => m.t === 'n' && m.map === 'forest'));
+  assert.ok(sent.get(1).some((m) => m.t === 'n' && m.map === MAP_ROTATION[1]));
 });
