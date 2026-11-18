@@ -10,6 +10,7 @@ import { DEFAULT_SERVER, normalizeServer } from './settings.js';
 import { prefs, savePrefs } from './prefs.js';
 import { CHARACTERS, ORBS, PROGRESS, SKILLS, UPGRADES, charOf, orbTier, statsOf, xpToNext } from './shared/progress.js';
 import { Characters, DeathFx, growOf, merge } from './character.js';
+import { charImg, iconText, imgEl, mapImg, setIcon, skinImg } from './icons.js';
 import { Minimap } from './minimap.js';
 import { buildDeco, buildFloorTexture, buildItemGeos, buildWalls, buildWater } from './world.js';
 import { Showcase, radarOf } from './showcase.js';
@@ -135,6 +136,21 @@ function buildScenery() {
 buildScenery();
 
 // 맵 교체: 소품, 바닥, 물, 시야 마스크, 미니맵을 새 맵으로 다시 만든다
+// 라운드 시작: 맵 미리보기 카드가 잠깐 떴다가 사라진다
+let introTimer = 0;
+function showMapIntro(id) {
+  const map = MAPS[id];
+  if (!map) return;
+  const el = $('mapIntro');
+  el.querySelector('img').src = mapImg(id);
+  el.querySelector('b').textContent = map.name;
+  el.hidden = false;
+  el.classList.remove('show');
+  void el.offsetWidth;
+  el.classList.add('show');
+  clearTimeout(introTimer);
+  introTimer = setTimeout(() => (el.hidden = true), 2600);
+}
 function setMap(id) {
   const next = MAPS[id];
   if (!next || next === curMap) return;
@@ -459,6 +475,7 @@ function onMessage(m) {
     roundTime = m.rtm || CFG.ROUND_TIME;
     roundStart = { earned: 0, coins: profile.coins };
     if (m.map) setMap(m.map);
+    showMapIntro(m.map || curMap.id);
     $('menu').style.display = 'none';
     party?.hideRoom();
     $('invite').hidden = true;
@@ -532,7 +549,10 @@ function onMessage(m) {
     }
   } else if (m.t === 'n') {
     roundStart = { earned: prog.earned, coins: profile.coins };
-    if (m.map) setMap(m.map);
+    if (m.map) {
+      setMap(m.map);
+      showMapIntro(m.map);
+    }
     roundEnd = 0;
     snapNext = true;
     $('banner').hidden = true;
@@ -1043,7 +1063,7 @@ function drawShop() {
   $('shopCoins').textContent = `🪙 ${coinText()}`;
   $('shopName').textContent = c.name;
   const sk = SKILLS[c.skill];
-  $('shopAbility').textContent = `${c.icon} ${c.desc}`;
+  iconText($('shopAbility'), c.icon, c.desc);
   $('shopSkill').textContent = `${sk.icon} ${sk.name} · ${sk.desc}`;
   $('shopCount').textContent = `${profile.owned.length}/${CHAR_IDS.length}`;
   $('shopPrev').disabled = showcase.index === 0;
@@ -1087,7 +1107,9 @@ function drawSkins() {
       const b = document.createElement('button');
       b.className = `skin ${sk.tier}` + (profile.skin === id ? ' on' : '') + (owned ? '' : ' locked');
       b.innerHTML = '<i></i><span></span>';
-      b.querySelector('i').style.background = sk.color === null ? 'conic-gradient(#4fc46a, #f2c230, #8a68d8, #f2903a, #4fc46a)' : `#${sk.color.toString(16).padStart(6, '0')}`;
+      // 의상을 입은 모습 (기본은 지금 고른 캐릭터)
+      b.querySelector('i').append(imgEl(id === 'default' ? charImg(showcase.current) : skinImg(id), 'portrait'));
+      if (sk.color !== null) b.querySelector('i').style.background = `radial-gradient(circle at 50% 35%, #fff6, #${sk.color.toString(16).padStart(6, '0')})`;
       b.querySelector('span').textContent = owned ? sk.name : `🔒 ${sk.name}`;
       b.addEventListener('click', () => {
         // 가진 스킨은 입고, 없는 스킨은 미리보기만
@@ -1130,10 +1152,11 @@ function doGacha(n) {
       const card = document.createElement('div');
       card.className = `gcard ${r.tier}`;
       card.style.animationDelay = `${i * 0.12}s`;
-      const icon = r.kind === 'coins' ? '🪙' : r.kind === 'skin' ? '🎨' : CHARACTERS[r.id].icon;
       const name = r.kind === 'coins' ? `코인 ${r.coins}` : r.kind === 'skin' ? `${SKINS[r.id].name} 스킨` : CHARACTERS[r.id].name;
       card.innerHTML = '<i></i><b></b><span></span>';
-      card.querySelector('i').textContent = icon;
+      // 캐릭터와 의상은 초상화, 코인은 동전
+      if (r.kind === 'coins') card.querySelector('i').textContent = '🪙';
+      else card.querySelector('i').append(imgEl(r.kind === 'skin' ? skinImg(r.id) : charImg(r.id), 'portrait'));
       card.querySelector('b').textContent = name;
       card.querySelector('span').textContent = TIERS[r.tier].name + (r.dup ? ' (모두 보유)' : '');
       return card;
@@ -1252,11 +1275,12 @@ function enterLobby() {
 function drawLobby() {
   const c = CHARACTERS[profile.char];
   const sk = SKILLS[c.skill];
-  $('avatar').textContent = profile.icon || c.icon;
+  setIcon($('avatar'), profile.icon || c.icon);
   $('lobbyCharName').textContent = profile.skin === 'default' ? c.name : `${c.name} · ${SKINS[profile.skin].name}`;
   $('lobbySkill').textContent = `${sk.icon} ${sk.name} · ${c.desc}`;
   $('modeText').textContent = `${RULE_NAMES[menuRule]} · ${MODE_NAMES[menuMode]}`;
   $('mapText').textContent = lobby.map ? `맵: ${MAPS[lobby.map].name}` : '맵: 순환';
+  $('modeCard').style.setProperty('--map', `url(${mapImg(lobby.map)})`);
   $('netSolo').classList.toggle('on', !lobby.online);
   $('netOnline').classList.toggle('on', lobby.online);
   for (const [m, id] of Object.entries(MAP_BTNS)) $(id).classList.toggle('on', lobby.map === m);
@@ -1268,7 +1292,7 @@ function drawIcons() {
   $('iconGrid').replaceChildren(
     ...[{ icon: '', locked: false, how: '' }, ...iconsFor(profile)].map((x) => {
       const b = document.createElement('button');
-      b.textContent = x.icon || CHARACTERS[profile.char].icon;
+      setIcon(b, x.icon || CHARACTERS[profile.char].icon);
       if (!x.icon) b.dataset.auto = '1';
       b.className = (profile.icon === x.icon ? 'on' : '') + (x.locked ? ' locked' : '');
       b.addEventListener('click', () => {
@@ -1319,6 +1343,9 @@ $('testServer').addEventListener('click', async () => {
 });
 drawServer();
 
+for (const [m, id] of Object.entries({ '': 'mapAuto', camp: 'mapCamp', forest: 'mapForest', lake: 'mapLake', winter: 'mapWinter', beach: 'mapBeach', factory: 'mapFactory' })) {
+  document.getElementById(id).style.setProperty('--map', `url(${mapImg(m)})`);
+}
 const MAP_BTNS = { '': 'mapAuto', camp: 'mapCamp', forest: 'mapForest', lake: 'mapLake', winter: 'mapWinter', beach: 'mapBeach', factory: 'mapFactory' };
 for (const [m, id] of Object.entries(MAP_BTNS)) {
   $(id).addEventListener('click', () => {

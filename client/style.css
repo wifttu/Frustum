@@ -817,3 +817,56 @@ body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
 body.cheating #coins::after { content: ' 🧪'; }
 #maps { display: grid; grid-template-columns: repeat(4, 1fr); }
 #maps button small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ───── 렌더링한 아이콘·초상화·맵 미리보기 (client/img) ───── */
+.ic { width: 1.3em; height: 1.3em; object-fit: contain; vertical-align: middle; pointer-events: none; }
+.ic.inline { width: 1.5em; height: 1.5em; margin: -0.3em 3px -0.25em 0; }
+#avatar { overflow: hidden; display: flex; align-items: center; justify-content: center; }
+#avatar .ic { width: 112%; height: 112%; }
+#iconGrid button { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+#iconGrid .ic { width: 86%; height: 86%; }
+#iconGrid button[data-auto] .ic { width: 72%; height: 72%; }
+#iconGrid button[data-auto]::after { margin-top: -2px; }
+.slot i .ic { width: 1.55em; height: 1.55em; }
+#invite i .ic { width: 1.6em; height: 1.6em; }
+.skin i {
+  width: 46px; height: 46px; overflow: hidden; display: flex; align-items: flex-end; justify-content: center;
+  background: radial-gradient(circle at 50% 35%, #8a7ab8, #3a3058);
+}
+.skin i .portrait { width: 118%; height: 118%; object-fit: cover; margin-bottom: -12%; }
+.gcard i .portrait {
+  width: 72px; height: 72px; display: block; margin: 0 auto; border-radius: 50%;
+  background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--tc) 55%, #fff), color-mix(in srgb, var(--tc) 40%, #15121f));
+}
+/* 맵 선택: 미리보기 그림 위에 이름 */
+#maps button {
+  aspect-ratio: 16 / 9; display: flex; flex-direction: column; justify-content: flex-end; padding: 4px 6px 5px; color: #fff;
+  background: linear-gradient(180deg, rgba(10, 8, 20, 0) 30%, rgba(10, 8, 20, .92)), var(--map) center / cover, #221d36;
+  text-shadow: 0 1px 3px #000; border-color: #3a3352;
+}
+#maps button.on { border-color: #ffd25a; box-shadow: 0 0 0 2px rgba(255, 210, 90, .35), 0 0 14px rgba(255, 210, 90, .35); }
+#maps button:not(.on) { filter: saturate(.75) brightness(.85); }
+/* 로비·방 설정 카드: 오른쪽에 지금 맵 */
+#modeCard, #roomSet {
+  padding-right: 118px;
+  background: linear-gradient(90deg, rgba(20, 16, 30, .97) 52%, rgba(20, 16, 30, .25) 72%, rgba(20, 16, 30, 0)), var(--map, none) right center / auto 100% no-repeat, rgba(20, 16, 30, .9);
+}
+/* 라운드 시작: 이번 맵 */
+#mapIntro {
+  position: absolute; left: calc(12px + env(safe-area-inset-left)); top: 108px; width: 200px; border-radius: 14px; overflow: hidden;
+  border: 2px solid rgba(255, 226, 150, .85); box-shadow: 0 10px 30px rgba(0, 0, 0, .55), 0 0 22px rgba(255, 210, 90, .25);
+  pointer-events: none; z-index: 6; opacity: 0;
+}
+#mapIntro[hidden] { display: none; }
+#mapIntro.show { animation: mapIntro 2.6s ease both; }
+#mapIntro img { display: block; width: 100%; aspect-ratio: 16 / 9; }
+#mapIntro small, #mapIntro b { position: absolute; left: 12px; color: #fff; text-shadow: 0 2px 6px #000; }
+#mapIntro small { bottom: 28px; font-size: 10px; letter-spacing: 2px; color: #ffe2a0; }
+#mapIntro b { bottom: 8px; font-size: 17px; }
+#mapIntro::after { content: ''; position: absolute; inset: 40% 0 0; background: linear-gradient(transparent, rgba(8, 6, 16, .9)); }
+#mapIntro small, #mapIntro b { z-index: 1; }
+@keyframes mapIntro {
+  0% { opacity: 0; transform: translateX(-30px); }
+  12%, 82% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateX(-16px); }
+}

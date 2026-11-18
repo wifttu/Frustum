@@ -1,5 +1,6 @@
 // 친선 게임 방, 친구(친구 코드·접속 상태·초대), 초대 알림.
 // 서버와는 main.js 의 Net 연결 하나로 주고받는다. 계정이 없어서 친구 목록은 기기에 저장한다.
+import { iconText, mapImg, setIcon } from './icons.js';
 const RULE_NAMES = { dm: '데스매치', score: '점수제', survival: '서바이벌' };
 const MODE_NAMES = { ffa: '개인전', duo: '2인 팀전' };
 const STATE_TEXT = { online: '접속 중', party: '방에 있음', game: '게임 중', off: '오프라인' };
@@ -47,7 +48,11 @@ export function initParty(ctx) {
     const c = CHARACTERS[m.char] || CHARACTERS.explorer;
     if (m.sid === sid) card.classList.add('me');
     if (m.sid === st.host) card.classList.add('host');
-    card.append(el('i', '', m.icon || c.icon), el('b', '', m.name), el('span', '', `${c.icon} ${c.name}`));
+    const face = el('i', '', '');
+    setIcon(face, m.icon || c.icon);
+    const who = el('span', '', '');
+    iconText(who, c.icon, c.name);
+    card.append(face, el('b', '', m.name), who);
     const tag = m.sid === st.host ? '👑 방장' : m.inGame ? '🎮 게임 중' : m.ready ? '✅ 준비 완료' : '대기 중';
     card.append(el('em', m.ready || m.sid === st.host ? 'ok' : '', tag));
     const bubble = bubbles.get(m.sid);
@@ -83,6 +88,7 @@ export function initParty(ctx) {
     $('roomSetHint').textContent = isHost() ? '방장 · 눌러서 바꾸기 ›' : '방장이 정해요';
     $('roomSetText').textContent = `${RULE_NAMES[st.set.rule]} · ${MODE_NAMES[st.set.mode]}`;
     $('roomSetSub').textContent = `맵: ${st.set.map ? MAPS[st.set.map].name : '순환'} · ${st.set.ai ? '빈자리 AI' : '사람만'}`;
+    $('roomSet').style.setProperty('--map', `url(${mapImg(st.set.map)})`);
     // 큰 버튼: 방장은 시작, 나머지는 준비. 게임이 진행 중이면 참가.
     const btn = $('roomMain');
     const mine = me();
@@ -312,7 +318,7 @@ export function initParty(ctx) {
   let inviteTimer = 0;
   function showInvite(m) {
     lastInvite = m;
-    $('invIcon').textContent = m.icon || '📨';
+    setIcon($('invIcon'), m.icon || '📨');
     $('invTitle').textContent = `${m.from}님의 초대`;
     $('invSub').textContent = `${RULE_NAMES[m.set?.rule] || ''} · ${MODE_NAMES[m.set?.mode] || ''} · ${m.n}명 대기 중`;
     $('invite').hidden = false;
