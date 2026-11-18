@@ -3,12 +3,13 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#000000" />
+    <meta name="theme-color" content="#1b2a52" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="icon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="icon.svg" />
+    <link rel="apple-touch-icon" href="icon-192.png" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Frustum</title>
     <link rel="stylesheet" href="style.css" />
     <script type="importmap">
@@ -39,7 +40,7 @@
       <div id="buffs"></div>
       <div id="toast" hidden><b id="toastTitle"></b><span id="toastSub"></span></div>
       <div id="dead" hidden><em>잡혔다!</em><span id="deadBy"></span><b id="respawn"></b></div>
-      <div id="banner" hidden><b id="bannerTitle"></b><span id="bannerSub"></span><div id="bannerList"></div></div>
+      <div id="banner" hidden><b id="bannerTitle"></b><span id="bannerSub"></span><div id="bannerReward"></div><div id="bannerList"></div></div>
       <div id="stick"><div id="knob"></div></div>
       <button id="attack" class="skill" data-label="손전등" aria-label="손전등 공격">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 2.5h11l-2.2 6.2H8.7z" /><path d="M9 10h6v10.2a1.3 1.3 0 0 1-1.3 1.3h-3.4A1.3 1.3 0 0 1 9 20.2z" /><rect x="11" y="12.5" width="2" height="3.5" rx="1" fill="#000" opacity=".45" /></svg>
@@ -214,6 +215,12 @@
     <div id="settings" hidden>
       <div class="panel">
         <h2>설정</h2>
+        <label id="fsRow"><span>전체 화면<small>주소창과 아래 버튼 바를 숨겨요</small></span><input type="checkbox" id="setFullscreen" /></label>
+        <label><span>배경음악<small>로비에서 잔잔하게</small></span><input type="checkbox" id="setMusic" /></label>
+        <div id="installRow" class="installRow" hidden>
+          <span>앱으로 설치<small id="installNote">홈 화면에서 주소창 없이 바로 열려요</small></span>
+          <button id="installApp">📲 설치</button>
+        </div>
         <div class="serverRow">
           <span>온라인 서버 주소<small id="serverState"></small></span>
           <div><input id="setServer" placeholder="예: frustum.onrender.com" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="온라인 서버 주소" /><button id="testServer">연결</button></div>

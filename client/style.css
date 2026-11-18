@@ -214,6 +214,15 @@ body.lefty #buffs { right: auto; left: calc(20px + env(safe-area-inset-left)); a
 #banner b.win { color: var(--gold); text-shadow: 0 0 26px rgba(255, 200, 80, .55); }
 #banner b.lose { color: var(--enemy); }
 #banner > span { color: #b9c8d6; font-size: 13px; }
+#bannerReward { display: flex; justify-content: center; gap: 8px; margin-top: 10px; }
+#bannerReward div {
+  min-width: 66px; padding: 5px 6px 4px; border-radius: 10px; text-align: center;
+  background: rgba(255, 210, 90, .12); border: 1px solid rgba(255, 210, 90, .35); animation: pop .35s ease-out both;
+}
+#bannerReward div:nth-child(2) { animation-delay: .08s; } #bannerReward div:nth-child(3) { animation-delay: .16s; } #bannerReward div:nth-child(4) { animation-delay: .24s; }
+#bannerReward i { display: block; font-style: normal; font-size: 18px; }
+#bannerReward b { display: block; font-size: 15px; color: #ffe27a; letter-spacing: 0; margin: 0; }
+#bannerReward span { font-size: 10px; color: #b9c8d6; }
 #bannerList { margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 14px; text-align: left; font-size: 13px; }
 #bannerList div { display: flex; gap: 8px; padding: 2px 8px; border-radius: 6px; background: rgba(255, 255, 255, .05); }
 #bannerList span:first-child { width: 12px; color: var(--dim); }
@@ -416,6 +425,11 @@ body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
 #iconGrid button.locked { opacity: .35; filter: grayscale(1); }
 #iconGrid button[data-auto]::after { content: '자동'; display: block; font-size: 8px; color: #b9b2c4; margin-top: -4px; }
 #iconHint { min-height: 1.4em; color: #ffd9a0 !important; }
+.installRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid #1f2c39; font-size: 15px; }
+.installRow[hidden], #fsRow[hidden] { display: none; }
+.installRow small { display: block; color: #6f8294; font-size: 11px; }
+#settings .installRow button { margin: 0; padding: 8px 14px; font-size: 14px; flex: none; }
+#settings .installRow button[hidden] { display: none; }
 .serverRow { padding: 4px 0 9px; border-bottom: 1px solid #1f2c39; font-size: 15px; }
 .serverRow small { display: block; color: #9be4a4; font-size: 11px; min-height: 1.3em; }
 .serverRow div { display: flex; gap: 6px; margin-top: 4px; }

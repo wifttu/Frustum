@@ -235,3 +235,106 @@ export class Sfx {
     [392, 330, 262].forEach((f, i) => this.tone('triangle', f, f * 0.98, 0.45, 0.2, 0, i * 0.18));
   }
 }
+
+// 로비 배경음악: 파일 없이 만드는 잔잔한 캠프파이어 곡.
+// 펜타토닉 아르페지오 + 낮은 패드 + 장작 타는 소리. 4마디마다 코드가 바뀐다.
+const CHORDS = [
+  [220.0, 261.63, 329.63, 392.0], // Am7
+  [174.61, 220.0, 261.63, 329.63], // Fmaj7
+  [196.0, 246.94, 293.66, 392.0], // G
+  [164.81, 196.0, 246.94, 329.63], // Em7
+];
+const BEAT = 0.42; // 초
+
+export class Music {
+  constructor(sfx) {
+    this.sfx = sfx;
+    this.on = false;
+    this.timer = 0;
+    this.step = 0;
+    this.next = 0;
+    this.bus = null;
+  }
+
+  start() {
+    const ctx = this.sfx.ctx;
+    if (this.on || !ctx) return;
+    this.on = true;
+    if (!this.bus) {
+      this.bus = ctx.createGain();
+      this.bus.connect(this.sfx.master);
+    }
+    this.bus.gain.cancelScheduledValues(ctx.currentTime);
+    this.bus.gain.setValueAtTime(0.0001, ctx.currentTime);
+    this.bus.gain.exponentialRampToValueAtTime(0.5, ctx.currentTime + 1.5); // 서서히 커진다
+    this.next = ctx.currentTime + 0.1;
+    this.timer = setInterval(() => this.schedule(), 120);
+    this.schedule();
+  }
+
+  stop() {
+    if (!this.on) return;
+    this.on = false;
+    clearInterval(this.timer);
+    const ctx = this.sfx.ctx;
+    if (ctx && this.bus) {
+      this.bus.gain.cancelScheduledValues(ctx.currentTime);
+      this.bus.gain.setValueAtTime(this.bus.gain.value, ctx.currentTime);
+      this.bus.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.8);
+    }
+  }
+
+  // 앞으로 0.5초 동안 칠 음을 미리 예약한다 (타이머가 늦어도 박자가 흔들리지 않게)
+  schedule() {
+    const ctx = this.sfx.ctx;
+    if (!this.on || !ctx || ctx.state !== 'running') return;
+    while (this.next < ctx.currentTime + 0.5) {
+      const bar = Math.floor(this.step / 8);
+      const chord = CHORDS[bar % CHORDS.length];
+      const i = this.step % 8;
+      if (i === 0) {
+        // 패드: 코드 전체를 길게
+        for (const f of chord) this.note('sine', f / 2, this.next, BEAT * 7.6, 0.035);
+        this.note('triangle', chord[0] / 4, this.next, BEAT * 7.6, 0.05);
+      }
+      // 아르페지오: 오르내리며, 가끔 쉰다
+      const order = [0, 1, 2, 3, 2, 1, 3, 2];
+      if (!(i === 7 && bar % 2)) this.note('triangle', chord[order[i]] * 2, this.next, BEAT * 1.6, 0.045);
+      if (i === 4 && bar % 4 === 3) this.note('sine', chord[3] * 4, this.next, BEAT * 2, 0.02); // 반짝임
+      if (Math.random() < 0.25) this.crackle(this.next + Math.random() * BEAT);
+      this.next += BEAT;
+      this.step++;
+    }
+  }
+
+  note(type, f, t, dur, vol) {
+    const ctx = this.sfx.ctx;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = type;
+    o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + Math.min(0.08, dur * 0.2));
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(this.bus);
+    o.start(t);
+    o.stop(t + dur + 0.05);
+  }
+
+  // 장작 타는 '탁' 소리
+  crackle(t) {
+    const ctx = this.sfx.ctx;
+    const s = ctx.createBufferSource();
+    s.buffer = this.sfx.noise;
+    const f = ctx.createBiquadFilter();
+    f.type = 'highpass';
+    f.frequency.value = 2500 + Math.random() * 2500;
+    const g = ctx.createGain();
+    const dur = 0.02 + Math.random() * 0.04;
+    g.gain.setValueAtTime(0.03 + Math.random() * 0.03, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(f).connect(g).connect(this.bus);
+    s.start(t, Math.random() * 0.8);
+    s.stop(t + dur + 0.01);
+  }
+}
