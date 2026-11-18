@@ -120,6 +120,13 @@ button { font-family: inherit; }
 .card i { font-style: normal; font-size: 18px; line-height: 1; }
 .card b { font-size: 13px; }
 .card span { font-size: 9.5px; color: #e8d8b0; line-height: 1.2; min-height: 2.4em; }
+.num.xp { color: #8affc0; font-size: 18px; white-space: nowrap; }
+.num.xpbig { color: #ffa8ff; font-size: 24px; white-space: nowrap; text-shadow: 0 0 12px rgba(255, 120, 255, .8), 0 2px 0 #000; }
+#labels .leader::before { /* 1등 왕관 */
+  content: '👑'; display: block; font-size: 18px; line-height: 1; margin-bottom: -2px;
+  filter: drop-shadow(0 0 6px rgba(255, 210, 90, .9)); animation: bob 1.2s ease-in-out infinite;
+}
+@keyframes bob { 50% { transform: translateY(-3px); } }
 .num.heal { color: #7dff9a; font-size: 22px; }
 .num.lvup { color: #ffb02e; font-size: 22px; letter-spacing: 1px; white-space: nowrap; animation-duration: 1.4s; }
 .card em { font-style: normal; font-size: 8px; color: #ffd25a; letter-spacing: 1px; }

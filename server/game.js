@@ -5,7 +5,7 @@ import { flareLanding, stepPlayer } from '../shared/sim.js';
 import { canSee, segmentBlocked, wrapAngle } from '../shared/vision.js';
 import { botThink } from './bots.js';
 import { SKIN_KEYS, skinOf } from '../shared/shop.js';
-import { CHARACTER_KEYS, PROGRESS, SKILLS, UPGRADES, charOf, rollChoices, statsOf, xpToNext } from '../shared/progress.js';
+import { CHARACTER_KEYS, ORBS, PROGRESS, SKILLS, UPGRADES, charOf, randomOrb, rollChoices, statsOf, xpToNext } from '../shared/progress.js';
 
 const DT = 1 / CFG.TICK_RATE;
 const MAX_QUEUE = 10;
@@ -291,7 +291,9 @@ export class Game {
       p.score++;
       this.kills.push([p.id, q.id]);
       this.rosterDirty = true;
-      this.gainXp(p, PROGRESS.XP_KILL + q.level * PROGRESS.XP_KILL_PER_LEVEL);
+      // 처치 보상: 상대 레벨이 높을수록 크고, 나보다 높은 레벨을 잡으면 현상금이 붙는다
+      const gap = Math.max(0, q.level - p.level);
+      this.gainXp(p, (PROGRESS.XP_KILL + q.level * PROGRESS.XP_KILL_PER_LEVEL) * (1 + gap * PROGRESS.BOUNTY_PER_GAP));
       this.dropFireflies(q);
     }
     this.checkRoundEnd();
@@ -299,7 +301,7 @@ export class Game {
 
   // ── 성장 ──
   applyStats(p) {
-    p.stats = statsOf(p.ups, this.cfg, p.char);
+    p.stats = statsOf(p.ups, this.cfg, p.char, p.level);
     p.spd = p.stats.speed; // 공용 시뮬레이션이 쓰는 값
     p.rollCdMax = p.stats.rollCd;
     p.skill = p.stats.skill;
@@ -323,6 +325,10 @@ export class Game {
     while (p.level < PROGRESS.MAX_LEVEL && p.xp >= xpToNext(p.level)) {
       p.xp -= xpToNext(p.level);
       p.level++;
+      // 레벨이 오르면 기본 능력도 오른다 (늘어난 최대 체력만큼 채워 준다)
+      const before = p.stats.maxHp;
+      this.applyStats(p);
+      if (p.alive) p.hp = Math.min(p.stats.maxHp, p.hp + (p.stats.maxHp - before));
       const c = rollChoices(p.ups);
       if (c.length) p.choices.push(c);
       this.rosterDirty = true;
@@ -344,23 +350,38 @@ export class Game {
     if (p.alive) p.hp = Math.min(p.stats.maxHp, p.hp + (p.stats.maxHp - before));
   }
 
-  spawnFirefly(x, z, v = PROGRESS.XP_FIREFLY) {
+  spawnFirefly(x, z, v = randomOrb()) {
     if (x === undefined) [x, z] = this.randomFreePoint(0.8);
     this.fireflies.push({ id: this.nextItem++, x, z, v });
     this.ffVer++;
   }
 
   // 쓰러진 자리에 경험치 일부를 반딧불로 흘린다
+  // 높은 레벨일수록 많이 흘려서, 잡으면 크게 성장하는 '사냥감'이 된다
   dropFireflies(q) {
-    const total = Math.floor(q.xp * PROGRESS.DEATH_DROP) + 20;
-    q.xp -= Math.floor(q.xp * PROGRESS.DEATH_DROP);
-    const n = Math.min(6, Math.max(2, Math.round(total / 15)));
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2;
-      const x = q.x + Math.sin(a) * 1.4;
-      const z = q.z + Math.cos(a) * 1.4;
-      if (isFree(x, z, 0.3, this.solid)) this.spawnFirefly(x, z, Math.round(total / n));
+    const lost = Math.floor(q.xp * PROGRESS.DEATH_DROP);
+    q.xp -= lost;
+    let total = lost + 12 + q.level * 6;
+    const orbs = [];
+    while (total >= ORBS.large.v && orbs.length < 6) {
+      orbs.push(ORBS.large.v);
+      total -= ORBS.large.v;
     }
+    while (total >= ORBS.medium.v && orbs.length < 9) {
+      orbs.push(ORBS.medium.v);
+      total -= ORBS.medium.v;
+    }
+    while (total > 0 && orbs.length < 12) {
+      orbs.push(ORBS.small.v);
+      total -= ORBS.small.v;
+    }
+    orbs.forEach((v, i) => {
+      const a = (i / orbs.length) * Math.PI * 2;
+      const r = 1 + (i % 3) * 0.6;
+      const x = q.x + Math.sin(a) * r;
+      const z = q.z + Math.cos(a) * r;
+      this.spawnFirefly(...(isFree(x, z, 0.3, this.solid) ? [x, z] : [q.x, q.z]), v);
+    });
   }
 
   throwFlare(p) {
@@ -663,7 +684,7 @@ export class Game {
     let ff;
     if (p.ffVer !== this.ffVer) {
       p.ffVer = this.ffVer;
-      ff = this.fireflies.map((f) => [f.id, q2(f.x), q2(f.z)]);
+      ff = this.fireflies.map((f) => [f.id, q2(f.x), q2(f.z), f.v]);
     }
     return {
       t: 's',

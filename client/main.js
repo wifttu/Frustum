@@ -8,8 +8,8 @@ import { Input } from './input.js';
 import { Music, Sfx } from './audio.js';
 import { DEFAULT_SERVER, normalizeServer } from './settings.js';
 import { prefs, savePrefs } from './prefs.js';
-import { CHARACTERS, PROGRESS, SKILLS, UPGRADES, charOf, statsOf, xpToNext } from './shared/progress.js';
-import { Characters, DeathFx } from './character.js';
+import { CHARACTERS, ORBS, PROGRESS, SKILLS, UPGRADES, charOf, orbTier, statsOf, xpToNext } from './shared/progress.js';
+import { Characters, DeathFx, growOf } from './character.js';
 import { Minimap } from './minimap.js';
 import { buildFloorTexture, buildItemGeos, buildWalls, buildWater } from './world.js';
 import { Showcase, radarOf } from './showcase.js';
@@ -604,7 +604,13 @@ function onSnapshot(m) {
   flares = m.f || [];
   syncItems(m.it || []);
   if (m.hp !== undefined) prog.hp = m.hp;
-  if (m.xp !== undefined && m.xp > prog.xp && m.xp - prog.xp <= PROGRESS.XP_FIREFLY * 3) sfx.firefly();
+  if (m.xp !== undefined && m.xp > prog.xp) {
+    const got = m.xp - prog.xp;
+    if (got >= ORBS.medium.v) {
+      popNumber(view.x, view.z, `+${got} XP`, got >= ORBS.large.v ? 'xpbig' : 'xp');
+      sfx.pickup();
+    } else sfx.firefly();
+  }
   if (m.xp !== undefined) prog.xp = m.xp;
   if (m.ff) syncFireflies(m.ff);
   for (const type of m.pk || []) {
@@ -654,8 +660,10 @@ function drawScore() {
 
 // 순위표: 점수 = 킬 x 100 + (레벨 - 1) x 20. 위치 정보는 없다.
 const pointsOf = (p) => p.score * 100 + (p.level - 1) * 20;
+let leaderId = 0; // 1등 (머리 위에 왕관)
 function drawBoard() {
   const rows = [...roster.entries()].sort((a, b) => pointsOf(b[1]) - pointsOf(a[1]));
+  leaderId = rows[0] && pointsOf(rows[0][1]) > 0 ? rows[0][0] : 0;
   const myRank = rows.findIndex(([id]) => id === myId);
   const show = rows.slice(0, 4).map((r, i) => [i, r]);
   if (myRank >= 4) show.push([myRank, rows[myRank]]);
@@ -708,15 +716,16 @@ function drawLabels() {
       e.label.dataset.k = '';
     }
     const name = roster.get(id)?.name ?? '';
-    const key = `${name}|${e.lv}|${e.hpPct}|${kindOf(id)}`;
+    const crown = id === leaderId;
+    const key = `${name}|${e.lv}|${e.hpPct}|${kindOf(id)}|${crown}`;
     if (e.label.dataset.k !== key) {
       e.label.dataset.k = key;
-      e.label.className = kindOf(id);
+      e.label.className = kindOf(id) + (crown ? ' leader' : '');
       e.label.querySelector('b').textContent = e.lv;
       e.label.querySelector('i').textContent = name;
       e.label.querySelector('u').style.transform = `scaleX(${(e.hpPct / 100).toFixed(2)})`;
     }
-    projV.set(e.x, 2.45, e.z).project(camera);
+    projV.set(e.x, 2.45 * growOf(e.lv || 1), e.z).project(camera);
     e.label.style.display = '';
     e.label.style.transform = `translate(${((projV.x + 1) * 0.5 * w).toFixed(1)}px, ${((1 - projV.y) * 0.5 * h).toFixed(1)}px) translate(-50%, -100%)`;
   }
@@ -794,7 +803,8 @@ function drawStatus() {
   const bar = $('selfBar');
   bar.style.display = alive ? '' : 'none';
   if (alive) {
-    projV.set(view.x, 2.45, view.z).project(camera);
+    projV.set(view.x, 2.45 * growOf(prog.level), view.z).project(camera);
+    bar.classList.toggle('leader', leaderId === myId);
     bar.style.transform = `translate(${((projV.x + 1) * 0.5 * innerWidth).toFixed(1)}px, ${((1 - projV.y) * 0.5 * innerHeight).toFixed(1)}px) translate(-50%, -100%)`;
     bar.firstElementChild.firstElementChild.style.transform = `scaleX(${hpR.toFixed(3)})`;
   }
@@ -820,36 +830,53 @@ function popNumber(x, z, dmg, kind) {
 }
 
 // 반딧불: 어둠 속에서도 빛나 보이는 작은 불빛 (지형처럼 공개된 정보)
-const FF_MAX = 64;
-const ffMesh = new THREE.InstancedMesh(
-  new THREE.SphereGeometry(0.11, 8, 6),
-  new THREE.MeshBasicMaterial({ color: 0xfff27a }),
-  FF_MAX,
-);
+const FF_MAX = 96;
+// 구슬 종류별 색과 크기: 작은 것은 노란 반딧불, 중간은 초록, 큰 것은 보랏빛으로 크게 빛난다
+const ORB_LOOK = {
+  small: { core: 0xfff27a, glow: 0x8a7a10, size: 0.85 },
+  medium: { core: 0x8affc0, glow: 0x1a8a50, size: 1.35 },
+  large: { core: 0xffa8ff, glow: 0x9a2aa8, size: 2.1 },
+};
+const ffMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.11, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffffff }), FF_MAX);
 const ffGlow = new THREE.InstancedMesh(
   new THREE.SphereGeometry(0.42, 10, 8),
-  new THREE.MeshBasicMaterial({ color: 0x8a7a10, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }),
   FF_MAX,
 );
+ffMesh.setColorAt(0, new THREE.Color());
+ffGlow.setColorAt(0, new THREE.Color());
 ffMesh.frustumCulled = ffGlow.frustumCulled = false;
 ffMesh.count = ffGlow.count = 0;
 scene.add(ffMesh, ffGlow);
 const ffMat = new THREE.Matrix4();
+const ffColor = new THREE.Color();
+let ffColorsDirty = true;
 function syncFireflies(list) {
   fireflies = list.slice(0, FF_MAX);
+  ffColorsDirty = true;
 }
 function drawFireflies(t) {
   ffMesh.count = ffGlow.count = fireflies.length;
   for (let i = 0; i < fireflies.length; i++) {
-    const [id, x, z] = fireflies[i];
+    const [id, x, z, v] = fireflies[i];
+    const look = ORB_LOOK[orbTier(v || ORBS.small.v)];
     const ph = id * 2.399;
-    const fx = x + Math.sin(t * 1.3 + ph) * 0.25;
-    const fz = z + Math.cos(t * 1.1 + ph) * 0.25;
-    const fy = 0.9 + Math.sin(t * 2.1 + ph) * 0.25;
-    const pulse = 0.75 + 0.35 * Math.sin(t * 4 + ph);
+    const big = look.size > 2;
+    const fx = x + Math.sin(t * 1.3 + ph) * (big ? 0.1 : 0.25);
+    const fz = z + Math.cos(t * 1.1 + ph) * (big ? 0.1 : 0.25);
+    const fy = (big ? 1.1 : 0.9) + Math.sin(t * 2.1 + ph) * 0.25;
+    const pulse = look.size * (0.78 + 0.3 * Math.sin(t * (big ? 6 : 4) + ph));
     ffMat.makeScale(pulse, pulse, pulse).setPosition(fx, fy, fz);
     ffMesh.setMatrixAt(i, ffMat);
     ffGlow.setMatrixAt(i, ffMat);
+    if (ffColorsDirty) {
+      ffMesh.setColorAt(i, ffColor.setHex(look.core));
+      ffGlow.setColorAt(i, ffColor.setHex(look.glow));
+    }
+  }
+  if (ffColorsDirty) {
+    ffMesh.instanceColor.needsUpdate = ffGlow.instanceColor.needsUpdate = true;
+    ffColorsDirty = false;
   }
   ffMesh.instanceMatrix.needsUpdate = ffGlow.instanceMatrix.needsUpdate = true;
 }
@@ -1513,6 +1540,7 @@ function frame(now) {
     aimReady: canActNow && localCd <= 0 && sim.rollT <= 0,
     vest: buffs.vest > 0 || buffs.shield > 0,
     cloak: buffs.cloak > 0,
+    level: prog.level,
   });
   deathFx.update(dt);
   if (alive) dustFor(selfMesh, dt, sim.rollT > 0);
@@ -1533,7 +1561,7 @@ function frame(now) {
     e.mesh.position.set(e.x, 0, e.z);
     e.mesh.rotation.y = e.yaw;
     e.rollP = e.flags & 2 ? Math.min(1, Math.max(0, e.rollP) + dt / CFG.ROLL_TIME) : -1;
-    chars.animate(e.mesh, dt, tSec, { beam: !!(e.flags & 1), roll: e.rollP, cloak: !!(e.flags & 4), vest: !!(e.flags & 8) });
+    chars.animate(e.mesh, dt, tSec, { beam: !!(e.flags & 1), roll: e.rollP, cloak: !!(e.flags & 4), vest: !!(e.flags & 8), level: e.lv });
     if (!(e.flags & 4)) dustFor(e.mesh, dt, e.rollP >= 0);
     if (e.hitT > 0) {
       // 맞으면 잠깐 움찔
