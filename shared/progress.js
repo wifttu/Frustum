@@ -6,23 +6,42 @@ export const PROGRESS = Object.freeze({
   BASE_DAMAGE: 34, // 손전등 한 번 (기본 체력이면 세 번에 쓰러진다)
   REGEN_DELAY: 4, // 마지막으로 맞은 뒤 이 시간이 지나면 회복 시작
   BASE_REGEN: 3, // 초당 회복량
-  MAX_LEVEL: 12,
+  MAX_LEVEL: 20,
   CHOICES: 3, // 레벨업마다 고르는 카드 수
+  // 레벨마다 저절로 붙는 성장 (카드와 별개). 레벨이 높을수록 확실히 강해진다 = 왕귀.
+  HP_PER_LEVEL: 8,
+  DMG_PER_LEVEL: 0.04,
   // 경험치
-  XP_FIREFLY: 10,
-  XP_HIT: 6,
+  XP_HIT: 4,
   XP_KILL: 30, // + 상대 레벨 x XP_KILL_PER_LEVEL
-  XP_KILL_PER_LEVEL: 8,
-  // 반딧불
-  FIREFLY_MAX: 28,
-  FIREFLY_EVERY: 1.2, // 새로 생기는 간격(초)
-  FIREFLY_START: 18,
+  XP_KILL_PER_LEVEL: 7,
+  BOUNTY_PER_GAP: 0.4, // 나보다 높은 레벨을 잡으면 레벨 차이마다 +40%
+  // 반딧불(경험치 구슬): 작은 것, 중간 것, 큰 것
+  FIREFLY_MAX: 40,
+  FIREFLY_EVERY: 0.6, // 새로 생기는 간격(초)
+  FIREFLY_START: 30,
   PICK_RADIUS: 1.2,
-  DEATH_DROP: 0.5, // 쓰러지면 현재 레벨 경험치의 이만큼을 반딧불로 흘린다
+  DEATH_DROP: 0.6, // 쓰러지면 지금 레벨에서 모은 경험치의 이만큼 + 레벨 보너스를 큰 구슬로 흘린다
 });
 
-// 레벨 n 에서 다음 레벨까지 필요한 경험치
-export const xpToNext = (level) => 50 + (level - 1) * 45;
+// 경험치 구슬 종류. weight: 맵에 저절로 생길 때의 비율
+export const ORBS = Object.freeze({
+  small: { v: 6, weight: 70 },
+  medium: { v: 18, weight: 24 },
+  large: { v: 50, weight: 6 },
+});
+export const orbTier = (v) => (v >= ORBS.large.v ? 'large' : v >= ORBS.medium.v ? 'medium' : 'small');
+export function randomOrb(rnd = Math.random) {
+  let r = rnd() * 100;
+  for (const [k, o] of Object.entries(ORBS)) {
+    r -= o.weight;
+    if (r < 0) return o.v;
+  }
+  return ORBS.small.v;
+}
+
+// 레벨 n 에서 다음 레벨까지 필요한 경험치: 초반은 금방, 뒤로 갈수록 조금씩 무거워진다
+export const xpToNext = (level) => Math.round(24 + (level - 1) * 12 + (level - 1) ** 2 * 2.6);
 
 // 강화 카드. max: 최대 중첩
 export const UPGRADES = Object.freeze({
@@ -42,38 +61,39 @@ export const UPGRADE_KEYS = Object.keys(UPGRADES);
 // 고유 스킬: 캐릭터마다 하나씩 (두 번째 버튼). cd: 충전 시간(초)
 export const SKILLS = Object.freeze({
   roll: { name: '구르기', icon: '🌀', cd: 3, desc: '빠르게 굴러 피한다 (구르는 동안 무적)' },
-  dash: { name: '질주', icon: '💨', cd: 8, time: 2.5, speed: 1.7, desc: '2.5초 동안 훨씬 빨라진다' },
-  shield: { name: '방패', icon: '🛡️', cd: 12, time: 2.5, desc: '2.5초 동안 모든 빛을 막는다' },
+  dash: { name: '질주', icon: '💨', cd: 6, time: 2.5, speed: 1.7, desc: '2.5초 동안 훨씬 빨라진다' },
+  shield: { name: '방패', icon: '🛡️', cd: 16, time: 1.6, desc: '1.6초 동안 모든 빛을 막는다' },
   scan: { name: '매의 눈', icon: '👁️', cd: 14, time: 4, radius: 15, desc: '4초 동안 주변 15m를 사방으로 본다' },
   magnet: { name: '끌어오기', icon: '🧲', cd: 9, radius: 11, desc: '주변 11m의 반딧불을 한 번에 모은다' },
-  stealth: { name: '은신', icon: '🌫️', cd: 10, time: 3.5, desc: '3.5초 동안 상대에게 안 보인다 (공격하면 풀림)' },
-  heal: { name: '치유', icon: '💚', cd: 12, amount: 40, radius: 6, desc: '나와 주변 아군의 체력을 40 회복한다' },
+  stealth: { name: '은신', icon: '🌫️', cd: 8, time: 3.5, desc: '3.5초 동안 상대에게 안 보인다 (공격하면 풀림)' },
+  heal: { name: '치유', icon: '💚', cd: 13, amount: 35, radius: 6, desc: '나와 주변 아군의 체력을 35 회복한다' },
 });
 
 // 캐릭터: 저마다 기본 능력이 다르다. 코인으로 구매한다(explorer 는 기본 제공).
 // 수치 필드는 statsOf 에서 기본값에 더하거나 곱한다. 특수 능력은 서버 game.js 에서 처리한다.
 export const CHARACTERS = Object.freeze({
-  explorer: { name: '탐험가', icon: '🧭', price: 0, skill: 'roll', desc: '균형 잡힌 기본 캐릭터' },
-  runner: { name: '번개', icon: '⚡', price: 300, skill: 'dash', desc: '이동 +12%, 체력 85', hp: -15, speed: 0.12 },
-  bear: { name: '곰돌이', icon: '🐻', price: 400, skill: 'shield', desc: '체력 150, 이동 -8%', hp: 50, speed: -0.08 },
+  explorer: { name: '탐험가', icon: '🧭', price: 0, skill: 'roll', desc: '균형 잡힌 기본 캐릭터 · 체력 115', hp: 15 },
+  runner: { name: '번개', icon: '⚡', price: 300, skill: 'dash', desc: '이동 +15%, 손전등 충전 -20%, 피해 +5%', speed: 0.15, cd: 0.2, dmg: 0.05 },
+  bear: { name: '곰돌이', icon: '🐻', price: 400, skill: 'shield', desc: '체력 115, 이동 -10%', hp: 15, speed: -0.1 },
   owl: { name: '올빼미', icon: '🦉', price: 500, skill: 'scan', desc: '사거리 +2m, 피해 +10%, 빛의 폭 -8°', range: 2, dmg: 0.1, arc: -8 },
-  collector: { name: '반디', icon: '🏮', price: 350, skill: 'magnet', desc: '경험치 +25%, 반딧불을 멀리서 줍기', xp: 0.25, pick: 2 },
-  ninja: { name: '그림자', icon: '🥷', price: 600, skill: 'stealth', desc: '피해 +10%, 체력 90', hp: -10, dmg: 0.1 },
-  healer: { name: '약초꾼', icon: '🌿', price: 450, skill: 'heal', desc: '회복 2배, 입힌 피해의 10% 회복', regenMul: 2, leech: 0.1 },
+  collector: { name: '반디', icon: '🏮', price: 350, skill: 'magnet', desc: '경험치 +30%, 반딧불을 멀리서 줍기', xp: 0.3, pick: 2 },
+  ninja: { name: '그림자', icon: '🥷', price: 600, skill: 'stealth', desc: '피해 +20%, 이동 +5%, 체력 95', hp: -5, dmg: 0.2, speed: 0.05 },
+  healer: { name: '약초꾼', icon: '🌿', price: 450, skill: 'heal', desc: '회복 1.5배, 입힌 피해의 8% 회복', regenMul: 1.5, leech: 0.08 },
 });
 export const CHARACTER_KEYS = Object.keys(CHARACTERS);
 export const charOf = (id) => (Object.hasOwn(CHARACTERS, id) ? id : 'explorer');
 
 // 강화 단계(ups: {키: 단계}) → 실제 수치
-export function statsOf(ups, cfg, charId = 'explorer') {
+export function statsOf(ups, cfg, charId = 'explorer', level = 1) {
   const u = (k) => ups[k] || 0;
   const c = CHARACTERS[charOf(charId)];
+  const lv = Math.max(0, level - 1);
   return {
-    maxHp: PROGRESS.BASE_HP + (c.hp || 0) + u('hp') * 30,
-    damage: PROGRESS.BASE_DAMAGE * (1 + (c.dmg || 0) + u('dmg') * 0.2),
+    maxHp: PROGRESS.BASE_HP + (c.hp || 0) + u('hp') * 30 + lv * PROGRESS.HP_PER_LEVEL,
+    damage: PROGRESS.BASE_DAMAGE * (1 + (c.dmg || 0) + u('dmg') * 0.2 + lv * PROGRESS.DMG_PER_LEVEL),
     range: cfg.ATTACK_RANGE + (c.range || 0) + u('range'),
     arc: cfg.ATTACK_ARC + (((c.arc || 0) + u('arc') * 10) * Math.PI) / 180,
-    cooldown: cfg.ATTACK_COOLDOWN * Math.pow(0.82, u('cd')),
+    cooldown: cfg.ATTACK_COOLDOWN * (1 - (c.cd || 0)) * Math.pow(0.82, u('cd')),
     speed: 1 + (c.speed || 0) + u('speed') * 0.08,
     skill: c.skill,
     rollCd: SKILLS[c.skill].cd * Math.pow(0.75, u('roll')), // 고유 스킬 충전 시간 (필드 이름은 호환을 위해 유지)

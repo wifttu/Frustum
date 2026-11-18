@@ -277,6 +277,8 @@ export const SIGNATURE = {
   explorer: 0x4fc46a, runner: 0xf2c230, bear: 0xa9744a, owl: 0x8a68d8, collector: 0xf2903a, ninja: 0x4a4f5c, healer: 0x3cc4a8,
 };
 const lerp = (a, b, t) => a + (b - a) * t;
+// 레벨별 몸집 배율 (Lv 1 = 1, Lv 20 = 약 1.4)
+export const growOf = (level) => 1 + Math.min(Math.max(level, 1) - 1, 19) * 0.022;
 const easeOutBack = (t) => 1 + 2.7 * Math.pow(t - 1, 3) + 1.7 * Math.pow(t - 1, 2);
 
 export class Characters {
@@ -359,7 +361,7 @@ export class Characters {
     }
     root.userData = {
       mat: m, kind, char, skin, body, pose, torso, legL, legR, armL, armR, ring, beam, aim, vest, cloaked: false,
-      phase: Math.random() * 6, seed: Math.random() * 6, atk: 0, spawn: 0, speed: 0, lx: null, lz: 0,
+      phase: Math.random() * 6, seed: Math.random() * 6, atk: 0, spawn: 0, speed: 0, grow: 1, lx: null, lz: 0,
     };
     // 그룹 단위로 컬링하므로 자식의 자동 컬링은 끈다
     root.traverse((o) => (o.frustumCulled = false));
@@ -408,7 +410,9 @@ export class Characters {
     u.lz = root.position.z;
 
     u.spawn = Math.min(1, u.spawn + dt * 4);
-    u.body.scale.setScalar(Math.max(0.01, easeOutBack(u.spawn)) * BODY_SCALE);
+    // 레벨이 오를수록 몸집이 커진다 (왕귀가 한눈에 보이게). 판정 크기는 그대로다.
+    u.grow += ((s.level ? growOf(s.level) : 1) - u.grow) * Math.min(1, dt * 3);
+    u.body.scale.setScalar(Math.max(0.01, easeOutBack(u.spawn)) * BODY_SCALE * u.grow);
 
     const rolling = s.roll >= 0;
     const amt = rolling ? 0 : Math.min(1, u.speed / CFG.PLAYER_SPEED);

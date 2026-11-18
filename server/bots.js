@@ -56,8 +56,10 @@ export function botThink(bot, game, dt) {
 
   // 가까이 보이는 아이템이 있으면 주우러 간다
   if (!target && !outside && !ai.item) {
-    for (const it of [...game.items, ...game.fireflies]) {
-      if (Math.hypot(it.x - bot.x, it.z - bot.z) > 9) continue;
+    // 아이템과 큰 구슬부터 (경험치가 클수록 멀리 있어도 간다)
+    const pickups = [...game.items, ...[...game.fireflies].sort((a, b) => b.v - a.v)];
+    for (const it of pickups) {
+      if (Math.hypot(it.x - bot.x, it.z - bot.z) > (it.v >= 50 ? 14 : 9)) continue;
       if (!canSee(bot, it.x, it.z, 0.3, game.walls, cfg)) continue;
       ai.item = it.id;
       setGoal(bot, it.x, it.z, game);
