@@ -683,14 +683,14 @@ export class Game {
   }
 
   // 플레이어별 스냅샷. 시야 밖 적은 아예 담지 않는다 → 클라이언트 메모리에 위치가 존재하지 않음.
-  // e: [id, x, z, yaw, flags]  flags: 1 = 빔 발사 중, 2 = 구르는 중, 4 = 망토, 8 = 조끼
+  // e: [id, x, z, yaw, flags]  flags: 1 = 빔 발사 중, 2 = 구르는 중, 4 = 망토, 8 = 조끼(또는 방패), 16 = 매의 눈, 32 = 질주, 64 = 방패
   snapshotFor(p, vis) {
     const seen = vis.get(p.team);
     const e = [];
     for (const q of this.players.values()) {
       if (q === p || !q.alive) continue;
       if (q.team !== p.team && !(seen && seen.has(q.id))) continue;
-      e.push([q.id, q2(q.x), q2(q.z), q2(q.yaw), (q.beam > 0 ? 1 : 0) | (q.rollT > 0 ? 2 : 0) | (q.cloakT > 0 ? 4 : 0) | (q.vest > 0 || q.shieldT > 0 ? 8 : 0) | (q.scanT > 0 ? 16 : 0), Math.ceil((q.hp / q.stats.maxHp) * 100), q.level]);
+      e.push([q.id, q2(q.x), q2(q.z), q2(q.yaw), (q.beam > 0 ? 1 : 0) | (q.rollT > 0 ? 2 : 0) | (q.cloakT > 0 ? 4 : 0) | (q.vest > 0 || q.shieldT > 0 ? 8 : 0) | (q.scanT > 0 ? 16 : 0) | (q.dashT > 0 ? 32 : 0) | (q.shieldT > 0 ? 64 : 0), Math.ceil((q.hp / q.stats.maxHp) * 100), q.level]);
     }
     const f = [];
     for (const fl of this.flares) if (fl.team === p.team) f.push([q2(fl.x), q2(fl.z), q2(fl.t)]);

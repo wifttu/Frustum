@@ -13,6 +13,9 @@ export const iconSrc = (icon) => IMG.get(icon) || '';
 export const charImg = (id) => `img/chars/${id}.webp`;
 export const skinImg = (id) => `img/skins/${id}.webp`;
 export const mapImg = (id) => `img/maps/${id || 'auto'}.webp`;
+export const skillImg = (id) => `img/skills/${id}.webp`; // 고유 스킬 + attack(손전등), flare(조명탄)
+export const upImg = (key) => `img/ups/${key}.webp`; // 강화 카드
+export const itemImg = (type) => `img/items/${type}.webp`;
 
 export function imgEl(src, cls = 'ic') {
   const im = document.createElement('img');
@@ -27,6 +30,10 @@ export function imgEl(src, cls = 'ic') {
 export function setIcon(el, icon) {
   const src = iconSrc(icon);
   el.replaceChildren(src ? imgEl(src) : document.createTextNode(icon));
+}
+// 그림 + 글자 한 줄
+export function srcText(el, src, text) {
+  el.replaceChildren(imgEl(src, 'ic inline'), document.createTextNode(text));
 }
 // 아이콘 + 글자 한 줄
 export function iconText(el, icon, text) {

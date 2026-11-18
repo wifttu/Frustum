@@ -2,9 +2,9 @@
 import * as THREE from 'three';
 import { MAPS, MAP_SIZE, isFree } from '../shared/map.js';
 import { CFG } from '../shared/config.js';
-import { CHARACTER_KEYS } from '../shared/progress.js';
+import { CHARACTER_KEYS, SKILLS, UPGRADES } from '../shared/progress.js';
 import { SKIN_ICONS } from '../shared/shop.js';
-import { buildDeco, buildFloorTexture, buildWalls, buildWater } from '../world.js';
+import { buildDeco, buildFloorTexture, buildItemGeos, buildWalls, buildWater } from '../world.js';
 import { Characters, merge, rgb, shade } from '../character.js';
 import { VisionMask } from '../fog.js';
 
@@ -340,6 +340,205 @@ const ICON_MODELS = {
     return p;
   },
 };
+// ───────────────────────── 스킬·강화 카드·아이템 아이콘 ─────────────────────────
+// 모델 함수는 [geo, 색] 목록, 또는 { parts, glow } (glow: 가산 혼합으로 빛나는 부분: 손전등 빛 등)
+const ext = (shape, depth = 0.3, bevel = 0.1, curve = 20) =>
+  new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel * 0.8, bevelSegments: 3, curveSegments: curve }).translate(0, 0, -depth / 2);
+function heartShape(k = 1) {
+  const s = new THREE.Shape();
+  s.moveTo(0, -0.95 * k);
+  s.bezierCurveTo(-0.35 * k, -0.6 * k, -1.05 * k, -0.15 * k, -1.0 * k, 0.35 * k);
+  s.bezierCurveTo(-0.95 * k, 0.85 * k, -0.35 * k, 1.0 * k, 0, 0.55 * k);
+  s.bezierCurveTo(0.35 * k, 1.0 * k, 0.95 * k, 0.85 * k, 1.0 * k, 0.35 * k);
+  s.bezierCurveTo(1.05 * k, -0.15 * k, 0.35 * k, -0.6 * k, 0, -0.95 * k);
+  return s;
+}
+function starShape(n, r0, r1, rot = Math.PI / 2) {
+  const s = new THREE.Shape();
+  for (let i = 0; i < n * 2; i++) {
+    const r = i % 2 ? r1 : r0;
+    const a = (i / (n * 2)) * Math.PI * 2 + rot;
+    i ? s.lineTo(Math.cos(a) * r, Math.sin(a) * r) : s.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+  }
+  return s;
+}
+const polyShape = (pts) => {
+  const s = new THREE.Shape();
+  pts.forEach(([x, y], i) => (i ? s.lineTo(x, y) : s.moveTo(x, y)));
+  return s;
+};
+const roundRect = (w, h, r) => {
+  const s = new THREE.Shape();
+  s.moveTo(-w / 2 + r, -h / 2);
+  s.lineTo(w / 2 - r, -h / 2);
+  s.quadraticCurveTo(w / 2, -h / 2, w / 2, -h / 2 + r);
+  s.lineTo(w / 2, h / 2 - r);
+  s.quadraticCurveTo(w / 2, h / 2, w / 2 - r, h / 2);
+  s.lineTo(-w / 2 + r, h / 2);
+  s.quadraticCurveTo(-w / 2, h / 2, -w / 2, h / 2 - r);
+  s.lineTo(-w / 2, -h / 2 + r);
+  s.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2);
+  return s;
+};
+const tilt = (parts, z = 0, y = 0) => parts.map(([g, c]) => [g.rotateZ(z).rotateY(y), c]);
+// 소용돌이 화살표 (구르기, 스킬 달인)
+function spiral(col, light) {
+  const pts = [];
+  for (let i = 0; i <= 40; i++) {
+    const t = i / 40;
+    const a = t * Math.PI * 3.1;
+    const r = 0.25 + t * 0.8;
+    pts.push(new THREE.Vector3(Math.cos(a) * r, Math.sin(a) * r, t * 0.15));
+  }
+  const curve = new THREE.CatmullRomCurve3(pts);
+  const end = curve.getPoint(1);
+  const tan = curve.getTangent(1);
+  const head = new THREE.ConeGeometry(0.26, 0.45, 12).translate(0, 0.15, 0);
+  head.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), tan)).translate(end.x, end.y, end.z);
+  return [[new THREE.TubeGeometry(curve, 80, 0.12, 10), col], [new THREE.TubeGeometry(curve, 80, 0.06, 6).translate(0, 0, 0.08), light], [head, col]];
+}
+function flashlightParts(dir = -0.9) {
+  return ICON_MODELS.flashlight().map(([g, c]) => [g.translate(0.35, 0.1, 0).rotateZ(0.9 + dir), c]);
+}
+const SKILL_MODELS = {
+  roll: () => spiral(rgb(0x4aa8ff), rgb(0xbfe4ff)),
+  dash: () => {
+    const bolt = polyShape([[0.18, 1.05], [-0.5, -0.05], [-0.04, -0.05], [-0.28, -1.05], [0.52, 0.18], [0.07, 0.18], [0.34, 1.05]]);
+    const p = [[ext(bolt, 0.28, 0.08).rotateY(-0.25), rgb(0xffd23a)]];
+    for (const [y, l] of [[0.45, 0.9], [0, 1.2], [-0.45, 0.8]]) p.push([new THREE.CapsuleGeometry(0.06, l, 4, 8).rotateZ(Math.PI / 2).translate(-0.75 - l / 2, y, -0.1), rgb(0xfff6d8)]);
+    return p;
+  },
+  shield: () => {
+    const sh = new THREE.Shape();
+    sh.moveTo(-0.85, 0.85);
+    sh.lineTo(0.85, 0.85);
+    sh.lineTo(0.85, 0.1);
+    sh.quadraticCurveTo(0.8, -0.6, 0, -1.0);
+    sh.quadraticCurveTo(-0.8, -0.6, -0.85, 0.1);
+    sh.closePath();
+    return tilt([
+      [ext(sh, 0.18, 0.08).scale(1.14, 1.1, 1).translate(0, 0.02, -0.1), rgb(0xf2c230)],
+      [ext(sh, 0.3, 0.1), rgb(0x3d7fd8)],
+      [ext(starShape(5, 0.38, 0.16), 0.1, 0.05).translate(0, 0.02, 0.24), rgb(0xfff4c8)],
+    ], 0, -0.3);
+  },
+  scan: () => {
+    const p = [
+      [ball(1, 1, 0.66, 0.5, 0, 0, 0, 24), rgb(0xfdfaf2)],
+      [new THREE.CylinderGeometry(0.42, 0.42, 0.1, 28).rotateX(Math.PI / 2).translate(0, 0, 0.47), rgb(0xf2a93a)],
+      [new THREE.CylinderGeometry(0.2, 0.2, 0.12, 24).rotateX(Math.PI / 2).translate(0, 0, 0.5), EYE],
+      [ball(0.09, 1, 1, 1, 0.14, 0.13, 0.58), SHINE],
+    ];
+    for (const s of [-1, 1]) p.push([new THREE.ConeGeometry(0.22, 0.7, 6).rotateZ(-s * 0.7).translate(s * 0.75, 0.75, 0), rgb(0x8a68d8)]);
+    p.push([new THREE.TorusGeometry(1.08, 0.09, 8, 40, Math.PI).translate(0, 0.02, 0), rgb(0x8a68d8)]);
+    return tilt(p, 0, -0.2);
+  },
+  magnet: () => {
+    const p = [
+      [ball(0.75, 1, 1.15, 1, 0, 0, 0, 24), [2.2, 1.1, 0.35]],
+      [new THREE.CylinderGeometry(0.42, 0.5, 0.18, 16).translate(0, 0.9, 0), rgb(0x6a2a1a)],
+      [new THREE.CylinderGeometry(0.5, 0.42, 0.18, 16).translate(0, -0.9, 0), rgb(0x6a2a1a)],
+      [new THREE.TorusGeometry(0.3, 0.04, 6, 16, Math.PI).translate(0, 0.98, 0), rgb(0x3a2a20)],
+    ];
+    for (const y of [-0.45, 0, 0.45]) p.push([new THREE.TorusGeometry(0.75 * Math.sqrt(1 - (y / 0.86) ** 2), 0.03, 6, 28).rotateX(Math.PI / 2).translate(0, y, 0), rgb(0xa83a22)]);
+    [[0xffe14a, 1.05, 0.55], [0x3cf0a0, -1.05, 0.15], [0xd56bff, 0.9, -0.6]].forEach(([c, x, y]) => p.push([new THREE.OctahedronGeometry(0.17, 0).scale(1, 1.45, 1).translate(x, y, 0.3), rgb(c)]));
+    return p;
+  },
+  stealth: () => {
+    const C = rgb(0x8a84a8), L = rgb(0xb4aed0);
+    const p = [];
+    for (const [x, y, r] of [[0, 0.15, 0.62], [-0.6, -0.1, 0.48], [0.62, -0.08, 0.5], [-0.25, -0.35, 0.45], [0.3, -0.35, 0.45], [0.25, 0.55, 0.38]]) p.push([ball(r, 1, 0.92, 0.85, x, y, 0, 18), y > 0.3 ? L : C]);
+    p.push([new THREE.BoxGeometry(1.15, 0.26, 0.1).translate(0, 0.06, 0.5), rgb(0x2a2632)]);
+    for (const s of [-1, 1]) p.push([ball(0.1, 1.5, 0.55, 0.4, s * 0.23, 0.06, 0.56), [2.6, 2.6, 2.6]]);
+    return p;
+  },
+  heal: () => {
+    const plus = new THREE.Shape();
+    const a = 0.3, b = 0.85;
+    plus.moveTo(-a, b); plus.lineTo(a, b); plus.lineTo(a, a); plus.lineTo(b, a); plus.lineTo(b, -a); plus.lineTo(a, -a);
+    plus.lineTo(a, -b); plus.lineTo(-a, -b); plus.lineTo(-a, -a); plus.lineTo(-b, -a); plus.lineTo(-b, a); plus.lineTo(-a, a);
+    const leaf = new THREE.Shape();
+    leaf.moveTo(0, 0);
+    leaf.quadraticCurveTo(0.45, 0.15, 0.55, 0.65);
+    leaf.quadraticCurveTo(0.1, 0.55, 0, 0);
+    return tilt([
+      [ext(plus, 0.32, 0.12), rgb(0x3cc46a)],
+      [ext(leaf, 0.06, 0.03).scale(1.3, 1.3, 1).translate(0.55, 0.55, 0.12), rgb(0x9be86a)],
+      [new THREE.OctahedronGeometry(0.12, 0).translate(-0.85, 0.85, 0.2), [2.6, 3, 2.6]],
+      [new THREE.OctahedronGeometry(0.08, 0).translate(0.95, -0.7, 0.2), [2.6, 3, 2.6]],
+    ], 0, -0.3);
+  },
+  flare: () => {
+    const p = [
+      [new THREE.CylinderGeometry(0.2, 0.2, 1.3, 16).translate(0, -0.35, 0), rgb(0xd8402a)],
+      [new THREE.CylinderGeometry(0.21, 0.21, 0.18, 16).translate(0, -0.1, 0), rgb(0xf4f0e8)],
+      [new THREE.CylinderGeometry(0.24, 0.2, 0.16, 16).translate(0, 0.36, 0), rgb(0x5a2a1a)],
+      [ball(0.34, 1, 1, 1, 0, 0.62, 0, 18), [3, 1.9, 0.7]],
+    ];
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2;
+      p.push([new THREE.OctahedronGeometry(0.07 + (i % 3) * 0.02, 0).translate(Math.cos(a) * 0.62, 0.62 + Math.sin(a) * 0.62, 0.1), [3, 2.2, 0.9]]);
+    }
+    return { parts: tilt(p, -0.5), glow: [[ball(0.7, 1, 1, 1, 0, 0.62, 0).rotateZ(-0.5), rgb(0xff8a3a)]] };
+  },
+};
+const UP_MODELS = {
+  hp: () => [[ext(heartShape(), 0.35, 0.14).rotateY(-0.3), rgb(0xff4a5a)], [ball(0.12, 1.3, 1, 0.6, -0.45, 0.45, 0.25).rotateY(-0.3), SHINE]],
+  dmg: () => [[ext(starShape(8, 1.05, 0.55, 0.2), 0.22, 0.08), rgb(0xff7a2a)], [ext(starShape(8, 0.62, 0.32, 0.4), 0.2, 0.06).translate(0, 0, 0.16), rgb(0xffe14a)]],
+  range: () => ({
+    parts: flashlightParts(-0.9).map(([g, c]) => [g.scale(0.7, 0.7, 0.7).translate(-0.8, 0, 0), c]),
+    glow: [[new THREE.ConeGeometry(0.42, 2.0, 20, 1, true).rotateZ(Math.PI / 2).translate(0.55, 0.02, 0), rgb(0xffe9a0)]],
+  }),
+  arc: () => ({
+    parts: flashlightParts(0.9 - Math.PI / 2).map(([g, c]) => [g.scale(0.7, 0.7, 0.7).translate(0, -0.75, 0), c]),
+    glow: [[new THREE.CircleGeometry(1.5, 32, Math.PI / 2 - 0.85, 1.7).translate(0, -0.45, 0), rgb(0xffe9a0)]],
+  }),
+  cd: () => ({ raw: buildItemGeos().battery.rotateZ(-0.35) }),
+  speed: () => ({ raw: buildItemGeos().sneakers.rotateY(0.6) }),
+  roll: () => [...spiral(rgb(0xf2b52a), rgb(0xfff0b0)), [ext(starShape(5, 0.32, 0.14), 0.12, 0.05).translate(0.85, 0.8, 0.2), rgb(0xfff4c8)]],
+  regen: () => {
+    const p = [];
+    for (let i = 0; i < 4; i++) p.push([ext(heartShape(0.42), 0.12, 0.06).translate(0, 0.42, 0).rotateZ((i * Math.PI) / 2 + Math.PI / 4), vary4(i)]);
+    p.push([new THREE.CylinderGeometry(0.05, 0.07, 0.8, 8).rotateZ(0.5).translate(0.25, -0.55, -0.05), rgb(0x2f8a3a)]);
+    return tilt(p, 0, -0.25);
+  },
+  leech: () => ({
+    parts: [
+      [ext(heartShape(0.8), 0.32, 0.12).rotateY(-0.3), rgb(0xff6aa0)], [ball(0.1, 1.3, 1, 0.6, -0.35, 0.38, 0.24).rotateY(-0.3), SHINE],
+      [new THREE.TorusGeometry(1.08, 0.07, 8, 48), [2.2, 1.7, 0.8]],
+    ],
+    glow: [[new THREE.RingGeometry(0.85, 1.35, 48), rgb(0xffb050)]],
+  }),
+  magnet: () => {
+    const R = rgb(0xe0453a), M = rgb(0xd8dde4);
+    return tilt([
+      [new THREE.TorusGeometry(0.55, 0.24, 14, 28, Math.PI).translate(0, 0.1, 0), R],
+      [new THREE.CylinderGeometry(0.24, 0.24, 0.55, 16).translate(0.55, -0.18, 0), R], [new THREE.CylinderGeometry(0.24, 0.24, 0.55, 16).translate(-0.55, -0.18, 0), R],
+      [new THREE.CylinderGeometry(0.245, 0.245, 0.3, 16).translate(0.55, -0.6, 0), M], [new THREE.CylinderGeometry(0.245, 0.245, 0.3, 16).translate(-0.55, -0.6, 0), M],
+      [new THREE.OctahedronGeometry(0.2, 0).scale(1, 1.45, 1).translate(0, -1.0, 0.1), rgb(0xffe14a)],
+    ], Math.PI + 0.35);
+  },
+};
+function vary4(i) {
+  return rgb([0x3cb04a, 0x4cc458, 0x38a844, 0x52c862][i]);
+}
+const ITEM_KEYS = ['heart', 'battery', 'sneakers', 'vest', 'cloak'];
+const glowMatIcon = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+function shootModel(model, size, dir) {
+  const r = typeof model === 'function' ? model() : model;
+  const { parts, glow, raw } = Array.isArray(r) ? { parts: r, glow: null } : r;
+  const obj = new THREE.Group();
+  obj.add(new THREE.Mesh(raw || merge(parts), iconMat)); // raw: 이미 색이 칠해진 지오메트리 (아이템)
+  if (glow) obj.add(new THREE.Mesh(merge(glow), glowMatIcon));
+  const camera = new THREE.PerspectiveCamera(26, 1, 0.1, 100);
+  if (dir) camera.userData.dir = dir;
+  iconScene.add(obj);
+  frame(obj, camera, 0.86);
+  const url = shoot(iconScene, camera, size, size, { alpha: true });
+  iconScene.remove(obj);
+  return url;
+}
+
 // 맵 소품으로 만드는 아이콘
 const PROP_ICONS = { tent: 'tent', tree: 'tree' };
 
@@ -440,5 +639,11 @@ window.renderAll = async (only = '') => {
   for (const id of CHARACTER_KEYS) if (want(`chars/${id}`)) out[`chars/${id}`] = shootPortrait(id);
   for (const id of Object.keys(SKIN_ICONS)) if (want(`skins/${id}`)) out[`skins/${id}`] = shootPortrait('explorer', id);
   for (const name of Object.values(FREE)) if (want(`icons/${name}`)) out[`icons/${name}`] = shootIcon(name);
+  for (const id of Object.keys(SKILLS)) if (want(`skills/${id}`)) out[`skills/${id}`] = shootModel(SKILL_MODELS[id], 160);
+  if (want('skills/flare')) out['skills/flare'] = shootModel(SKILL_MODELS.flare, 160);
+  if (want('skills/attack')) out['skills/attack'] = shootModel(() => ({ parts: flashlightParts(-0.4), glow: [[new THREE.ConeGeometry(0.5, 1.4, 20, 1, true).rotateZ(Math.PI / 2).translate(0.2, 0, 0).rotateZ(0.5).translate(0.55, 0.55, 0), rgb(0xffe9a0)]] }), 160);
+  for (const id of Object.keys(UPGRADES)) if (want(`ups/${id}`)) out[`ups/${id}`] = shootModel(UP_MODELS[id], 128);
+  const items = buildItemGeos();
+  for (const id of ITEM_KEYS) if (want(`items/${id}`)) out[`items/${id}`] = shootModel({ raw: items[id] }, 128, new THREE.Vector3(0.3, 0.35, 1).normalize());
   return out;
 };

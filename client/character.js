@@ -277,6 +277,41 @@ export const SIGNATURE = {
   explorer: 0x4fc46a, runner: 0xf2c230, bear: 0xa9744a, owl: 0x8a68d8, collector: 0xf2903a, ninja: 0x4a4f5c, healer: 0x3cc4a8,
 };
 const lerp = (a, b, t) => a + (b - a) * t;
+const approach = (v, to, k) => v + (to - v) * Math.min(1, k);
+// 스킬 동작 길이(초). 그동안 팔·몸이 그 스킬 자세로 갔다가 돌아온다.
+const CAST_DUR = { heal: 0.8, magnet: 0.7, scan: 1.0, shield: 0.5, stealth: 0.45, dash: 0.4, flare: 0.5 };
+// 0→1→0 부드러운 봉우리 (앞 20% 동안 올라가고 뒤 35% 동안 내려온다)
+const envelope = (p) => (p < 0.2 ? Math.sin((p / 0.2) * Math.PI / 2) : p > 0.65 ? Math.cos(((p - 0.65) / 0.35) * Math.PI / 2) : 1);
+
+// 방패 스킬: 가장자리가 밝게 빛나는 반투명 구 (가운데는 거의 투명, 결이 천천히 흐른다)
+const shieldGeo = new THREE.SphereGeometry(1.15, 28, 18).scale(1, 0.95, 1).translate(0, 0.95, 0);
+function shieldMat() {
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    uniforms: { uA: { value: 0 }, uT: { value: 0 } },
+    vertexShader: /* glsl */ `
+      varying vec3 vN; varying vec3 vV; varying vec3 vP;
+      void main() {
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vN = normalize(normalMatrix * normal);
+        vV = normalize(-mv.xyz);
+        vP = position;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform float uA; uniform float uT;
+      varying vec3 vN; varying vec3 vV; varying vec3 vP;
+      void main() {
+        float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.4);
+        float flow = 0.5 + 0.5 * sin(vP.y * 9.0 - uT * 3.0 + sin(atan(vP.x, vP.z) * 6.0) * 0.6);
+        float a = uA * (0.07 + f * 1.1 + flow * f * 0.3);
+        gl_FragColor = vec4(vec3(0.55, 0.85, 1.0) * a, a);
+      }`,
+  });
+}
+
 // 레벨별 몸집 배율 (Lv 1 = 1, Lv 20 = 약 1.4)
 export const growOf = (level) => 1 + Math.min(Math.max(level, 1) - 1, 19) * 0.022;
 const easeOutBack = (t) => 1 + 2.7 * Math.pow(t - 1, 3) + 1.7 * Math.pow(t - 1, 2);
@@ -352,7 +387,10 @@ export class Characters {
     body.add(pose);
     const vest = new THREE.Mesh(this.vestGeo, this.vestMat);
     vest.visible = false;
-    root.add(body, shadow, ring, beam, vest);
+    const shield = new THREE.Mesh(shieldGeo, shieldMat());
+    shield.visible = false;
+    shield.renderOrder = 3;
+    root.add(body, shadow, ring, beam, vest, shield);
     if (show) ring.visible = false;
     let aim = null;
     if (kind === 'self') {
@@ -360,8 +398,9 @@ export class Characters {
       root.add(aim);
     }
     root.userData = {
-      mat: m, kind, char, skin, body, pose, torso, legL, legR, armL, armR, ring, beam, aim, vest, cloaked: false,
+      mat: m, kind, char, skin, body, pose, torso, legL, legR, armL, armR, ring, beam, aim, vest, shield, cloaked: false,
       phase: Math.random() * 6, seed: Math.random() * 6, atk: 0, spawn: 0, speed: 0, grow: 1, lx: null, lz: 0,
+      castSkill: null, castT: 9, dashK: 0, scanK: 0, shieldK: 0,
     };
     // 그룹 단위로 컬링하므로 자식의 자동 컬링은 끈다
     root.traverse((o) => (o.frustumCulled = false));
@@ -390,6 +429,12 @@ export class Characters {
     u.beam.scale.set(sx, 1, sz);
     u.beam.position.set(0.42 * (1 - sx), 0, 0.9 * (1 - sz));
     if (u.aim) u.aim.scale.set(sx, 1, sz);
+  }
+
+  // 스킬을 썼다: 잠깐 그 스킬의 자세를 취한다
+  cast(root, skill) {
+    root.userData.castSkill = skill;
+    root.userData.castT = 0;
   }
 
   // 등장 애니메이션을 처음부터 다시 (부활, 새 라운드)
@@ -447,8 +492,20 @@ export class Characters {
       pose.position.y = PIVOT_Y + Math.abs(Math.cos(u.phase)) * 0.07 * amt + breathe * 0.012;
     }
 
+    if (!rolling) this.skillPose(u, dt, t, s, sw);
+    else u.pose.rotation.y = 0;
+
     u.beam.visible = !!s.beam;
-    u.vest.visible = !!s.vest;
+    u.vest.visible = !!s.vest && !s.shield;
+    // 방패: 톡 하고 부풀었다가 끝나면 스르르 사라진다
+    u.shieldK = approach(u.shieldK, s.shield ? 1 : 0, dt * (s.shield ? 9 : 5));
+    u.shield.visible = u.shieldK > 0.01;
+    if (u.shield.visible) {
+      const k = s.shield ? easeOutBack(u.shieldK) : u.shieldK;
+      u.shield.scale.setScalar((0.55 + 0.45 * k) * u.grow);
+      u.shield.material.uniforms.uA.value = u.shieldK;
+      u.shield.material.uniforms.uT.value = t;
+    }
     if (s.vest) u.vest.scale.setScalar(1 + Math.sin(t * 5) * 0.03);
     const cloak = !!s.cloak;
     if (cloak !== u.cloaked) {
@@ -459,6 +516,78 @@ export class Characters {
     if (u.aim) u.aim.visible = !!s.aimReady;
   }
 }
+
+// 스킬 자세: 기본 걷기/조준 자세 위에 덧씌운다 (Characters.prototype 에 붙인다)
+Characters.prototype.skillPose = function (u, dt, t, s, sw) {
+  u.castT += dt;
+  const dur = CAST_DUR[u.castSkill] || 0.6;
+  const p = u.castT / dur;
+  const k = u.castSkill && p < 1 ? envelope(p) : 0;
+  u.dashK = approach(u.dashK, s.dash ? 1 : 0, dt * 6);
+  u.scanK = approach(u.scanK, s.scan ? 1 : 0, dt * 4);
+  const { torso, armL, armR, legL, legR, pose } = u;
+  torso.rotation.y = 0;
+
+  // 질주: 몸을 앞으로 숙이고 보폭과 팔 흔들기가 커진다
+  if (u.dashK > 0.01) {
+    const d = u.dashK;
+    torso.rotation.x += 0.2 * d;
+    legL.rotation.x *= 1 + 0.4 * d;
+    legR.rotation.x *= 1 + 0.4 * d;
+    armL.rotation.x = lerp(armL.rotation.x, -sw * 1.5, d);
+    armR.rotation.x = lerp(armR.rotation.x, -0.7 + sw * 0.6, d * (1 - u.atk));
+  }
+  // 매의 눈: 몸을 천천히 좌우로 돌리며 둘러본다
+  pose.rotation.y = Math.sin(t * 1.7 + u.seed) * 0.5 * u.scanK;
+  // 방패가 켜져 있는 동안: 살짝 웅크리고 한 팔로 몸을 가린다
+  if (u.shieldK > 0.01 && s.shield) {
+    const b = u.shieldK;
+    pose.position.y -= 0.05 * b;
+    armL.rotation.x = lerp(armL.rotation.x, -1.3, b);
+    armL.rotation.z = lerp(armL.rotation.z, 0.6, b);
+  }
+  if (!k) return;
+  switch (u.castSkill) {
+    case 'heal': // 두 팔을 하늘로, 발끝으로 살짝
+      armL.rotation.x = lerp(armL.rotation.x, -2.7, k);
+      armL.rotation.z = lerp(armL.rotation.z, -0.45, k);
+      armR.rotation.x = lerp(armR.rotation.x, -2.5, k);
+      pose.position.y += 0.07 * k;
+      break;
+    case 'magnet': { // 두 팔을 앞으로 뻗었다가 끌어당긴다
+      const pull = p < 0.45 ? -1.5 : lerp(-1.5, -0.7, Math.min(1, (p - 0.45) / 0.3));
+      armL.rotation.x = lerp(armL.rotation.x, pull, k);
+      armL.rotation.z = lerp(armL.rotation.z, 0.2, k);
+      armR.rotation.x = lerp(armR.rotation.x, pull, k);
+      torso.rotation.x -= 0.12 * k * (p > 0.45 ? 1 : 0.3);
+      break;
+    }
+    case 'scan': // 손을 이마에 대고 멀리 본다
+      armL.rotation.x = lerp(armL.rotation.x, -2.45, k);
+      armL.rotation.z = lerp(armL.rotation.z, 0.8, k);
+      torso.rotation.x -= 0.08 * k;
+      break;
+    case 'shield': // 순간적으로 몸을 낮춰 버틴다
+      pose.position.y -= 0.08 * k;
+      torso.rotation.x += 0.1 * k;
+      break;
+    case 'stealth': // 몸을 웅크리며 연기 속으로
+      pose.position.y -= 0.14 * k;
+      torso.rotation.x += 0.35 * k;
+      armL.rotation.x = lerp(armL.rotation.x, 0.5, k);
+      break;
+    case 'dash': // 출발: 앞으로 확 숙인다
+      torso.rotation.x += 0.3 * k;
+      pose.position.y -= 0.05 * k;
+      break;
+    case 'flare': { // 뒤로 젖혔다가 앞으로 던진다
+      const arm = p < 0.35 ? lerp(0, 0.9, p / 0.35) : lerp(0.9, -2.3, Math.min(1, (p - 0.35) / 0.3));
+      armL.rotation.x = lerp(armL.rotation.x, arm, k);
+      torso.rotation.y = lerp(0, p < 0.35 ? 0.25 : -0.2, k);
+      break;
+    }
+  }
+};
 
 // 처치 이펙트: 바닥 충격파 링 + 흩어지는 파편. 내가 보고 있던 플레이어(또는 나)가 쓰러질 때만 쓴다.
 const BURST_N = 14;

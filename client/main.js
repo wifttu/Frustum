@@ -10,7 +10,8 @@ import { DEFAULT_SERVER, normalizeServer } from './settings.js';
 import { prefs, savePrefs } from './prefs.js';
 import { CHARACTERS, ORBS, PROGRESS, SKILLS, UPGRADES, charOf, orbTier, statsOf, xpToNext } from './shared/progress.js';
 import { Characters, DeathFx, growOf, merge } from './character.js';
-import { charImg, iconText, imgEl, mapImg, setIcon, skinImg } from './icons.js';
+import { SkillFx } from './skillfx.js';
+import { charImg, iconText, imgEl, itemImg, mapImg, setIcon, skillImg, skinImg, srcText, upImg } from './icons.js';
 import { Minimap } from './minimap.js';
 import { buildDeco, buildFloorTexture, buildItemGeos, buildWalls, buildWater } from './world.js';
 import { Showcase, radarOf } from './showcase.js';
@@ -214,6 +215,7 @@ function syncItems(list) {
 // 캐릭터(모델 + 애니메이션)와 처치 이펙트
 const chars = new Characters(mask);
 const deathFx = new DeathFx(scene);
+const skillFx = new SkillFx(scene);
 
 // 흙먼지: 달리거나 구를 때 발밑에서 피어오른다 (InstancedMesh 하나, 시야 밖은 마스크로 가려진다)
 const DUST_N = 96;
@@ -579,8 +581,7 @@ function onMessage(m) {
       if (!at) continue;
       const [vol, pan] = id === myId ? [1, 0] : spatial(at.x, at.z);
       sfx.skill(skill, vol, pan);
-      if (skill === 'heal' || skill === 'magnet' || skill === 'scan') deathFx.spawn(at.x, at.z, skill === 'heal' ? 'heal' : 'level');
-      if (skill === 'shield') deathFx.spawn(at.x, at.z, 'shield');
+      castFx(id, skill, at);
     }
   } else if (m.t === 'h') {
     // 손전등 피해: 보이는 대상에게만 숫자를 띄운다
@@ -588,7 +589,10 @@ function onMessage(m) {
       if (dmg < 0) {
         // 치유
         const at = v === myId ? view : ents.get(v);
-        if (at) popNumber(at.x, at.z, `+${-dmg}`, 'heal');
+        if (at) {
+          popNumber(at.x, at.z, `+${-dmg}`, 'heal');
+          skillFx.sparks(at.x, at.z, { n: 8, color: 0x8affb0, spread: 0.5, rise: 1.3, dur: 0.9 });
+        }
         continue;
       }
       const at = v === myId ? view : ents.get(v);
@@ -621,6 +625,7 @@ function onSnapshot(m) {
   zoneTarget = m.zh || 0;
   flareCd = fcd;
   buffs.vest = vestT || 0;
+  if (buffs.cloak > 0 && !(cloakT > 0) && alive) skillFx.smoke(view.x, view.z, { n: 8, dur: 0.7 });
   buffs.cloak = cloakT || 0;
   buffs.shield = shieldT || 0;
   buffs.scan = scanT || 0;
@@ -662,6 +667,8 @@ function onSnapshot(m) {
     // 빔/구르기가 새로 시작될 때 소리
     if (flags & 1 && !(e.flags & 1)) sfx.beam(...spatial(ex, ez));
     if (flags & 2 && !(e.flags & 2)) sfx.roll(...spatial(ex, ez));
+    if (flags & 32 && !(e.flags & 32)) dashStartFx(e.mesh, e);
+    if (!(flags & 4) && e.flags & 4) skillFx.smoke(ex, ez, { n: 8, dur: 0.7 }); // 은신이 풀릴 때
     e.flags = flags;
     e.hpPct = hpPct ?? 100;
     e.lv = lv || 1;
@@ -682,7 +689,7 @@ function onSnapshot(m) {
   if (m.xp !== undefined) prog.xp = m.xp;
   if (m.ff) syncFireflies(m.ff);
   for (const type of m.pk || []) {
-    toast(ITEMS[type].name, ITEMS[type].desc, 'buff');
+    toast(ITEMS[type].name, ITEMS[type].desc, 'buff', itemImg(type));
     sfx.pickup();
     buzz(25);
   }
@@ -809,7 +816,7 @@ function applyMyStats() {
   const sk = SKILLS[sim.skill];
   const btn = $('roll');
   btn.dataset.label = sk.name;
-  btn.querySelector('i').textContent = sk.icon;
+  btn.querySelector('i').replaceChildren(imgEl(skillImg(sim.skill), 'sk'));
   btn.setAttribute('aria-label', sk.name);
   chars.setBeamStats(selfMesh, prog.stats.range, prog.stats.arc);
 }
@@ -829,7 +836,7 @@ function drawChoices() {
       const b = document.createElement('button');
       b.className = 'card';
       const lvl = (prog.ups[key] || 0) + 1;
-      b.innerHTML = `<i>${u.icon}</i><b></b><span></span><em>${'●'.repeat(lvl)}${'○'.repeat(u.max - lvl)}</em>`;
+      b.innerHTML = `<i><img class="up" src="${upImg(key)}" alt="" draggable="false"></i><b></b><span></span><em>${'●'.repeat(lvl)}${'○'.repeat(u.max - lvl)}</em>`;
       b.querySelector('b').textContent = u.name;
       b.querySelector('span').textContent = u.desc;
       b.addEventListener('pointerdown', (e) => {
@@ -931,10 +938,80 @@ const ffScl = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
 const ffColor = new THREE.Color();
 let ffColorsDirty = true;
+let ffPrev = [];
+const sucked = new Map(); // 끌어오기로 빨려 들어가는 중인 반딧불 id → 언제까지 숨길지
 function syncFireflies(list) {
-  fireflies = list.slice(0, FF_MAX);
+  ffPrev = fireflies;
+  const t = performance.now();
+  for (const [id, until] of sucked) if (until < t) sucked.delete(id);
+  fireflies = list.filter((f) => !sucked.has(f[0])).slice(0, FF_MAX);
   ffColorsDirty = true;
 }
+// ── 스킬 효과 ──
+// 스킬을 쓴 순간: 캐릭터는 그 스킬 자세를 취하고, 발밑과 주변에 차분한 효과가 난다
+function castFx(id, skill, at) {
+  const mesh = id === myId ? selfMesh : at.mesh;
+  if (mesh) chars.cast(mesh, skill);
+  const { x, z } = at;
+  if (skill === 'heal') {
+    skillFx.ring(x, z, { r0: 0.4, r1: SKILLS.heal.radius, dur: 0.85, color: 0x7dff9a, a: 0.65, follow: at });
+    skillFx.ring(x, z, { r0: 0.3, r1: SKILLS.heal.radius * 0.55, dur: 0.6, color: 0xc8ffd0, a: 0.35, follow: at });
+    skillFx.sparks(x, z, { n: 14, color: 0x8affb0, spread: 0.7, rise: 1.6, dur: 1 });
+  } else if (skill === 'magnet') {
+    skillFx.ring(x, z, { r0: SKILLS.magnet.radius, r1: 0.6, dur: 0.5, color: 0xffe27a, a: 0.5, follow: at });
+    suckFireflies(at);
+  } else if (skill === 'scan') {
+    skillFx.ring(x, z, { r0: 0.5, r1: SKILLS.scan.radius, dur: 1.1, color: 0xc8a8ff, a: 0.55, follow: at });
+    at.scanPulse = 1.3;
+  } else if (skill === 'shield') {
+    skillFx.sparks(x, z, { n: 10, color: 0x9fe8ff, spread: 0.9, y: 0.5, rise: 0.5, out: 1.6, dur: 0.5 });
+  } else if (skill === 'stealth') {
+    skillFx.smoke(x, z, { n: 14 });
+  }
+}
+// 질주 출발: 앞으로 숙이며 발밑에서 흙먼지 고리
+function dashStartFx(mesh, at) {
+  chars.cast(mesh, 'dash');
+  skillFx.ring(at.x, at.z, { r0: 0.3, r1: 1.8, dur: 0.35, color: 0xfff0c0, a: 0.45 });
+}
+// 질주 중에는 바람 줄기, 매의 눈이 켜져 있는 동안은 잔잔한 고리가 주기적으로 퍼진다
+function skillTrails(at, dt, dashing, scanning) {
+  if (dashing) {
+    const mx = at.x - (at.tx ?? at.x);
+    const mz = at.z - (at.tz ?? at.z);
+    if (Math.hypot(mx, mz) > 0.001) at.my = Math.atan2(mx, mz);
+    at.streakT = (at.streakT || 0) - dt;
+    if (at.streakT <= 0) {
+      at.streakT = 0.05;
+      skillFx.streak(at.x, at.z, at.my ?? at.yaw ?? 0);
+    }
+  }
+  at.tx = at.x;
+  at.tz = at.z;
+  if (scanning) {
+    at.scanPulse = (at.scanPulse ?? 1.3) - dt;
+    if (at.scanPulse <= 0) {
+      at.scanPulse = 1.3;
+      skillFx.ring(at.x, at.z, { r0: 0.5, r1: SKILLS.scan.radius * 0.75, dur: 1.2, color: 0xc8a8ff, a: 0.22, width: 0.06, follow: at });
+    }
+  }
+}
+// 끌어오기: 주변 반딧불이 보석처럼 휘어 날아와 몸에 쏙 들어간다
+function suckFireflies(at) {
+  const R = SKILLS.magnet.radius;
+  const seen = new Set();
+  const until = performance.now() + 1500;
+  for (const [id, x, z, v] of [...fireflies, ...ffPrev]) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    if (Math.hypot(x - at.x, z - at.z) > R) continue;
+    sucked.set(id, until);
+    skillFx.gem(x, z, ORB_LOOK[orbTier(v || ORBS.small.v)].core, at, Math.random() * 0.12);
+  }
+  fireflies = fireflies.filter((f) => !sucked.has(f[0]));
+  ffColorsDirty = true;
+}
+
 // 레벨업 빛기둥: 아래에서 위로 옅어지는 황금빛 기둥이 솟았다가 사라진다
 const auraTex = (() => {
   const c = document.createElement('canvas');
@@ -1064,7 +1141,7 @@ function drawShop() {
   $('shopName').textContent = c.name;
   const sk = SKILLS[c.skill];
   iconText($('shopAbility'), c.icon, c.desc);
-  $('shopSkill').textContent = `${sk.icon} ${sk.name} · ${sk.desc}`;
+  srcText($('shopSkill'), skillImg(c.skill), `${sk.name} · ${sk.desc}`);
   $('shopCount').textContent = `${profile.owned.length}/${CHAR_IDS.length}`;
   $('shopPrev').disabled = showcase.index === 0;
   $('shopNext').disabled = showcase.index === CHAR_IDS.length - 1;
@@ -1277,7 +1354,7 @@ function drawLobby() {
   const sk = SKILLS[c.skill];
   setIcon($('avatar'), profile.icon || c.icon);
   $('lobbyCharName').textContent = profile.skin === 'default' ? c.name : `${c.name} · ${SKINS[profile.skin].name}`;
-  $('lobbySkill').textContent = `${sk.icon} ${sk.name} · ${c.desc}`;
+  srcText($('lobbySkill'), skillImg(c.skill), `${sk.name} · ${c.desc}`);
   $('modeText').textContent = `${RULE_NAMES[menuRule]} · ${MODE_NAMES[menuMode]}`;
   $('mapText').textContent = lobby.map ? `맵: ${MAPS[lobby.map].name}` : '맵: 순환';
   $('modeCard').style.setProperty('--map', `url(${mapImg(lobby.map)})`);
@@ -1469,7 +1546,7 @@ function noteRecent() {
 }
 
 // 버프 칩: 남은 시간이 있는 효과만 보여준다
-const BUFF_ICONS = { sneakers: '👟', vest: '🛡️', cloak: '👻', dash: '💨', shield: '🛡️', scan: '👁️' };
+const BUFF_IMG = { sneakers: itemImg('sneakers'), vest: itemImg('vest'), cloak: skillImg('stealth'), dash: skillImg('dash'), shield: skillImg('shield'), scan: skillImg('scan') };
 const BUFF_NAMES = { dash: '질주', shield: '방패', scan: '매의 눈', cloak: '은신' };
 // 내 머리 위 체력바 (다른 플레이어 이름표와 같은 모양)
 $('labels').insertAdjacentHTML('beforeend', '<div id="selfBar" class="self"><s><u></u></s></div>');
@@ -1489,7 +1566,7 @@ function drawBuffs() {
     ...list.map(([t, r]) => {
       const el = document.createElement('div');
       el.className = 'buff ' + t;
-      el.textContent = `${BUFF_ICONS[t]} ${BUFF_NAMES[t] || ITEMS[t].name} ${Math.ceil(r)}`;
+      srcText(el, BUFF_IMG[t], `${BUFF_NAMES[t] || ITEMS[t].name} ${Math.ceil(r)}`);
       return el;
     }),
   );
@@ -1522,10 +1599,11 @@ function flash() {
 
 // 화면 중앙 알림 (처치 확인, 라운드 시작)
 let toastTimer = 0;
-function toast(title, sub = '', cls = '') {
+function toast(title, sub = '', cls = '', img = '') {
   const el = $('toast');
   el.className = cls;
-  $('toastTitle').textContent = title;
+  if (img) srcText($('toastTitle'), img, title);
+  else $('toastTitle').textContent = title;
   $('toastSub').textContent = sub;
   el.hidden = false;
   // 애니메이션 재시작
@@ -1571,6 +1649,7 @@ function fixedStep() {
   if (flare && flareCd <= 0) {
     flareCd = CFG.FLARE_COOLDOWN;
     sfx.flare();
+    chars.cast(selfMesh, 'flare'); // 던지는 동작
   } else flare = false;
 
   const inp = { seq: ++seq, mx: input.mx, mz: input.mz, yaw: wrapAngle(input.yaw), atk, roll, flare };
@@ -1588,7 +1667,10 @@ function fixedStep() {
     const wasDashing = sim.dashT > 0;
     stepPlayer(sim, inp, DT, curMap.solid);
     if (sim.rollT > 0 && !wasRolling) sfx.roll();
-    if (sim.dashT > 0 && !wasDashing) sfx.skill('dash');
+    if (sim.dashT > 0 && !wasDashing) {
+      sfx.skill('dash');
+      dashStartFx(selfMesh, view);
+    }
     sim.cast = null; // 그 밖의 스킬 효과는 서버가 적용한다
     // 발소리
     if (Math.hypot(inp.mx, inp.mz) > 0.3 && sim.rollT <= 0) {
@@ -1679,8 +1761,13 @@ function frame(now) {
     vest: buffs.vest > 0 || buffs.shield > 0,
     cloak: buffs.cloak > 0,
     level: prog.level,
+    dash: alive && sim.dashT > 0,
+    shield: alive && buffs.shield > 0,
+    scan: alive && buffs.scan > 0,
   });
+  if (alive) skillTrails(view, dt, sim.dashT > 0, buffs.scan > 0);
   deathFx.update(dt);
+  skillFx.update(dt);
   drawAura(dt);
   if (alive) dustFor(selfMesh, dt, sim.rollT > 0);
   drawDust(dt);
@@ -1700,7 +1787,11 @@ function frame(now) {
     e.mesh.position.set(e.x, 0, e.z);
     e.mesh.rotation.y = e.yaw;
     e.rollP = e.flags & 2 ? Math.min(1, Math.max(0, e.rollP) + dt / CFG.ROLL_TIME) : -1;
-    chars.animate(e.mesh, dt, tSec, { beam: !!(e.flags & 1), roll: e.rollP, cloak: !!(e.flags & 4), vest: !!(e.flags & 8), level: e.lv });
+    chars.animate(e.mesh, dt, tSec, {
+      beam: !!(e.flags & 1), roll: e.rollP, cloak: !!(e.flags & 4), vest: !!(e.flags & 8), level: e.lv,
+      dash: !!(e.flags & 32), shield: !!(e.flags & 64), scan: !!(e.flags & 16),
+    });
+    skillTrails(e, dt, !!(e.flags & 32), !!(e.flags & 16));
     if (!(e.flags & 4)) dustFor(e.mesh, dt, e.rollP >= 0);
     if (e.hitT > 0) {
       // 맞으면 잠깐 움찔
@@ -2080,7 +2171,7 @@ else if (params.has('auto')) connect($('name').value || 'Player', menuMode, menu
 // 디버그/자동 테스트용 핸들
 window.__frustum = {
   music, get fullscreen() { return isFullscreen(); }, dustCount: () => dustMesh.count,
-  ents, roster, sim, view, stats, mask, input, sfx, prefs, buffs, itemMeshes, profile, prog, drawShop, showcase, lobby, net, get party() { return party; },
+  skillFx, ents, roster, sim, view, stats, mask, input, sfx, prefs, buffs, itemMeshes, profile, prog, drawShop, showcase, lobby, net, get party() { return party; },
   get map() { return curMap.id; },
   get alive() { return alive; },
   get myId() { return myId; },
