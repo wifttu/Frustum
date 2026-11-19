@@ -944,6 +944,16 @@ function syncFireflies(list) {
   ffPrev = fireflies;
   const t = performance.now();
   for (const [id, until] of sucked) if (until < t) sucked.delete(id);
+  // 없어진 반딧불: 옆에 플레이어가 있으면 먹힌 것 → 자석에 붙듯 그 플레이어에게 날아간다
+  const next = new Set(list.map((f) => f[0]));
+  for (const [id, fx, fz, v] of fireflies) {
+    if (next.has(id) || sucked.has(id)) continue;
+    const p = ffDrawn.get(id) || { x: fx, y: 0.9, z: fz };
+    const m = nearestMagnet(p.x, p.z, 1.4);
+    const look = ORB_LOOK[orbTier(v || ORBS.small.v)];
+    if (m) skillFx.gem(p.x, p.z, look.core, m.at, 0, { mode: 'snap', y0: p.y, s: look.size * 0.9 });
+  }
+  for (const id of ffDrawn.keys()) if (!next.has(id)) ffDrawn.delete(id);
   fireflies = list.filter((f) => !sucked.has(f[0])).slice(0, FF_MAX);
   ffColorsDirty = true;
 }
@@ -1001,13 +1011,27 @@ function suckFireflies(at) {
   const R = SKILLS.magnet.radius;
   const seen = new Set();
   const until = performance.now() + 1500;
-  for (const [id, x, z, v] of [...fireflies, ...ffPrev]) {
+  let longest = 0.5;
+  for (const [id, fx, fz, v] of [...fireflies, ...ffPrev]) {
     if (seen.has(id)) continue;
     seen.add(id);
-    if (Math.hypot(x - at.x, z - at.z) > R) continue;
+    if (Math.hypot(fx - at.x, fz - at.z) > R) continue;
     sucked.set(id, until);
-    skillFx.gem(x, z, ORB_LOOK[orbTier(v || ORBS.small.v)].core, at, Math.random() * 0.12);
+    const p = ffDrawn.get(id) || { x: fx, y: 0.9, z: fz };
+    const look = ORB_LOOK[orbTier(v || ORBS.small.v)];
+    const delay = 0.12 + Math.random() * 0.12; // 손을 뻗은 뒤에 끌려오기 시작한다
+    const dur = 0.4 + Math.hypot(p.x - at.x, p.z - at.z) * 0.045 + Math.random() * 0.1;
+    longest = Math.max(longest, delay + dur);
+    skillFx.gem(p.x, p.z, look.core, at, delay, { mode: 'spiral', y0: p.y, s: look.size * 0.9, dur });
   }
+  // 몸 둘레의 작은 빛 알갱이들이 소용돌이치며 빨려 든다
+  for (let i = 0; i < 14; i++) {
+    const a = (i / 14) * Math.PI * 2;
+    const r = 1.6 + Math.random() * 1.6;
+    skillFx.gem(at.x + Math.sin(a) * r, at.z + Math.cos(a) * r, 0xfff0b0, at, 0.05 + Math.random() * 0.25, { mode: 'spiral', y0: 0.4 + Math.random() * 1.1, s: 0.32, dur: 0.55 + Math.random() * 0.25, trail: false });
+  }
+  // 다 모이면 몸에서 작게 퍼지는 빛 (빨아들였다)
+  skillFx.ring(at.x, at.z, { r0: 0.3, r1: 1.6, dur: 0.35, color: 0xffe27a, a: 0.6, follow: at, delay: longest });
   fireflies = fireflies.filter((f) => !sucked.has(f[0]));
   ffColorsDirty = true;
 }
@@ -1044,16 +1068,70 @@ function drawAura(dt) {
   aura.rotation.y += dt * 2;
   aura.material.opacity = 1 - k * k;
 }
+// 자석: 줍는 거리 바깥 MAGNET_BAND 안의 반딧불은 그 플레이어 쪽으로 떨리며 끌려가는 모습을 보인다 (그림만, 판정은 서버)
+const MAGNET_BAND = 1.8;
+const ffDrawn = new Map(); // id → 마지막으로 그린 위치 { x, y, z } (먹힐 때 거기서부터 날아간다)
+function magnetsNow() {
+  const list = [];
+  if (alive) list.push({ at: view, pick: prog.stats.pickRadius || PROGRESS.PICK_RADIUS });
+  for (const [id, e] of ents) {
+    if (e.flags & 4 && kindOf(id) === 'enemy') continue;
+    list.push({ at: e, pick: PROGRESS.PICK_RADIUS + (CHARACTERS[roster.get(id)?.char]?.pick || 0) });
+  }
+  return list;
+}
+function nearestMagnet(x, z, extra) {
+  let best = null;
+  let bd = Infinity;
+  for (const m of magnetsNow()) {
+    const d = Math.hypot(m.at.x - x, m.at.z - z);
+    if (d < m.pick + extra && d < bd) {
+      bd = d;
+      best = m;
+    }
+  }
+  return best;
+}
 function drawFireflies(t) {
   ffMesh.count = ffGlow.count = ffShadow.count = fireflies.length;
+  const mags = magnetsNow();
   for (let i = 0; i < fireflies.length; i++) {
-    const [id, x, z, v] = fireflies[i];
+    let [id, x, z, v] = fireflies[i];
     const look = ORB_LOOK[orbTier(v || ORBS.small.v)];
     const ph = id * 2.399;
-    const s = look.size;
-    const fy = 0.55 + s * 0.12 + Math.sin(t * 2.4 + ph) * 0.12;
-    // 보석: 제자리에서 돌며 위아래로 둥실
-    ffQ.setFromAxisAngle(UP, t * 1.8 + ph);
+    let s = look.size;
+    let fy = 0.55 + s * 0.12 + Math.sin(t * 2.4 + ph) * 0.12;
+    // 자석: 가까운 플레이어 쪽으로 기울며 파르르 떨린다 (가까울수록 세게)
+    let pullK = 0;
+    let px = 0;
+    let pz = 0;
+    let near = null;
+    let nd = 0;
+    for (const m of mags) {
+      const d = Math.hypot(m.at.x - x, m.at.z - z);
+      const k = Math.min(1, 1 - (d - m.pick) / MAGNET_BAND);
+      if (k > pullK && d > 0.01) {
+        pullK = k;
+        near = m;
+        nd = d;
+      }
+    }
+    if (near) {
+      pullK *= pullK; // 가까워질수록 급격히 세진다
+      const move = Math.max(0, Math.min(nd - 0.3, pullK * 1.2));
+      px = ((near.at.x - x) / nd) * move;
+      pz = ((near.at.z - z) / nd) * move;
+      const shake = 0.05 * pullK;
+      x += px + Math.sin(t * 43 + ph) * shake;
+      z += pz + Math.cos(t * 37 + ph) * shake;
+      fy += (1.0 - fy) * pullK * 0.6;
+      s *= 1 - 0.12 * pullK;
+    }
+    const dr = ffDrawn.get(id);
+    if (dr) Object.assign(dr, { x, y: fy, z });
+    else ffDrawn.set(id, { x, y: fy, z });
+    // 보석: 제자리에서 돌며 위아래로 둥실 (끌려갈 때는 더 빨리 돈다)
+    ffQ.setFromAxisAngle(UP, t * (1.8 + pullK * 6) + ph);
     ffMesh.setMatrixAt(i, ffMat.compose(ffPos.set(x, fy, z), ffQ, ffScl.setScalar(s)));
     // 빛: 큰 보석일수록 크게 숨 쉰다
     const g = s * (0.75 + 0.22 * Math.sin(t * (s > 1.8 ? 5 : 3.5) + ph));

@@ -20,7 +20,7 @@ export const PROGRESS = Object.freeze({
   FIREFLY_MAX: 40,
   FIREFLY_EVERY: 0.6, // 새로 생기는 간격(초)
   FIREFLY_START: 30,
-  PICK_RADIUS: 1.2,
+  PICK_RADIUS: 1.7, // 이 안의 반딧불은 자석처럼 끌려와 먹힌다 (가까이 가면 미리 떨리며 끌려오는 모습이 보인다)
   DEATH_DROP: 0.6, // 쓰러지면 지금 레벨에서 모은 경험치의 이만큼 + 레벨 보너스를 큰 구슬로 흘린다
 });
 
