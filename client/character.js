@@ -279,7 +279,7 @@ export const SIGNATURE = {
 const lerp = (a, b, t) => a + (b - a) * t;
 const approach = (v, to, k) => v + (to - v) * Math.min(1, k);
 // 스킬 동작 길이(초). 그동안 팔·몸이 그 스킬 자세로 갔다가 돌아온다.
-const CAST_DUR = { heal: 0.8, magnet: 0.7, scan: 1.0, shield: 0.5, stealth: 0.45, dash: 0.4, flare: 0.5 };
+const CAST_DUR = { heal: 0.8, magnet: 1.05, scan: 1.0, shield: 0.5, stealth: 0.45, dash: 0.4, flare: 0.5 };
 // 0→1→0 부드러운 봉우리 (앞 20% 동안 올라가고 뒤 35% 동안 내려온다)
 const envelope = (p) => (p < 0.2 ? Math.sin((p / 0.2) * Math.PI / 2) : p > 0.65 ? Math.cos(((p - 0.65) / 0.35) * Math.PI / 2) : 1);
 
@@ -493,7 +493,10 @@ export class Characters {
     }
 
     if (!rolling) this.skillPose(u, dt, t, s, sw);
-    else u.pose.rotation.y = 0;
+    else {
+      u.pose.rotation.y = 0;
+      u.pose.position.z = 0;
+    }
 
     u.beam.visible = !!s.beam;
     u.vest.visible = !!s.vest && !s.shield;
@@ -527,6 +530,7 @@ Characters.prototype.skillPose = function (u, dt, t, s, sw) {
   u.scanK = approach(u.scanK, s.scan ? 1 : 0, dt * 4);
   const { torso, armL, armR, legL, legR, pose } = u;
   torso.rotation.y = 0;
+  pose.position.z = 0;
 
   // 질주: 몸을 앞으로 숙이고 보폭과 팔 흔들기가 커진다
   if (u.dashK > 0.01) {
@@ -554,12 +558,19 @@ Characters.prototype.skillPose = function (u, dt, t, s, sw) {
       armR.rotation.x = lerp(armR.rotation.x, -2.5, k);
       pose.position.y += 0.07 * k;
       break;
-    case 'magnet': { // 두 팔을 앞으로 뻗었다가 끌어당긴다
-      const pull = p < 0.45 ? -1.5 : lerp(-1.5, -0.7, Math.min(1, (p - 0.45) / 0.3));
-      armL.rotation.x = lerp(armL.rotation.x, pull, k);
-      armL.rotation.z = lerp(armL.rotation.z, 0.2, k);
-      armR.rotation.x = lerp(armR.rotation.x, pull, k);
-      torso.rotation.x -= 0.12 * k * (p > 0.45 ? 1 : 0.3);
+    case 'magnet': {
+      // 끌어오기: 두 팔을 앞으로 쭉 뻗어(손을 펼치듯 살짝 벌림) 붙잡고 → 몸을 뒤로 젖히며 한 걸음 물러나 끌어당긴다.
+      // 당기는 동안 팔이 작게 떨려 무언가 무거운 것을 끌어오는 느낌을 준다.
+      const reach = Math.min(1, p / 0.3);
+      const pull = p < 0.3 ? 0 : Math.min(1, (p - 0.3) / 0.45);
+      const tug = pull > 0 && pull < 1 ? Math.sin(t * 38) * 0.06 : 0;
+      const arm = lerp(-1.7 * reach, -0.55, pull) + tug;
+      armL.rotation.x = lerp(armL.rotation.x, arm, k);
+      armR.rotation.x = lerp(armR.rotation.x, arm, k);
+      armL.rotation.z = lerp(armL.rotation.z, lerp(-0.35 * reach, 0.15, pull), k);
+      torso.rotation.x += lerp(0.12 * reach, -0.2, pull) * k;
+      pose.position.z = -0.12 * pull * k;
+      pose.position.y -= 0.04 * pull * k;
       break;
     }
     case 'scan': // 손을 이마에 대고 멀리 본다
