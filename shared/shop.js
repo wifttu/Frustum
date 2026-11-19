@@ -1,6 +1,7 @@
 // 상점 규칙: 스킨, 뽑기(등급·확률·천장), 출석 보상.
 // 화면과 분리된 순수 로직이라 테스트할 수 있다. 재화는 게임으로 버는 코인뿐이고 실제 결제는 없다.
 import { CHARACTERS } from './progress.js';
+import { normalizeProgress } from './missions.js';
 
 // 스킨(의상): 컨셉마다 모자와 소품이 달라진다. 모자·소품은 모든 플레이어에게 보이고,
 // color 는 내 화면에서의 후드/망토 색이다(다른 사람에게는 아군 파랑, 적 빨강으로 보인다).
@@ -47,7 +48,7 @@ export const DAILY = Object.freeze({ BASE: 60, PER_STREAK: 15, MAX_STREAK: 7 });
 export const charTier = (id) => (CHARACTERS[id].price > 450 ? 'legend' : 'epic');
 
 export function newProfile() {
-  return { xp: 0, coins: 0, owned: ['explorer'], char: 'explorer', skins: ['default'], skin: 'default', pity: 0, daily: '', streak: 0, friends: [], recent: [], icon: '', fc: '', tutorial: 0 };
+  return normalizeProgress({ xp: 0, coins: 0, owned: ['explorer'], char: 'explorer', skins: ['default'], skin: 'default', pity: 0, daily: '', streak: 0, friends: [], recent: [], icon: '', fc: '', tutorial: 0 });
 }
 
 // 저장된 값을 안전하게 정리한다 (오래된 저장 데이터, 손상된 값 대비)
@@ -84,7 +85,7 @@ export function normalizeProfile(raw) {
   p.fc = typeof p.fc === 'string' && /^[A-Z0-9]{6}$/.test(p.fc) ? p.fc : '';
   // 아이콘: 지금 쓸 수 있는 것만 인정한다 ('' = 고른 캐릭터의 아이콘)
   if (!iconsFor(p).some((x) => !x.locked && x.icon === p.icon)) p.icon = '';
-  return p;
+  return normalizeProgress(p); // 미션·업적·랭크
 }
 
 function pickTier(rnd) {
