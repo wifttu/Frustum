@@ -54,6 +54,9 @@ export const ITEMS = Object.freeze({
   cloak: { name: '그림자 망토', desc: '6초 동안 상대에게 안 보임', time: 6 },
 });
 export const ITEM_TYPES = Object.keys(ITEMS);
+// 감정표현: 번호로 주고받는다 (글자를 보내지 않으니 욕설·도배 걱정이 없다)
+export const EMOTES = Object.freeze(['👍', '😂', '😮', '😡', '👋', '❤️', '🎉', '😭']);
+export const EMOTE_GAP = 1.5; // 같은 플레이어가 다시 보내려면 기다릴 시간(초)
 export const ITEM_RULES = Object.freeze({
   MAX: 8, // 맵 위 최대 개수
   EVERY: 5, // 새로 생기는 간격(초)

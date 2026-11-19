@@ -1,5 +1,5 @@
 // 권위 서버 게임 로직. 네트워크와 분리되어 있어 테스트와 오프라인 모드에서 그대로 쓴다.
-import { CFG, FLARE_VIEW, SCAN_VIEW, ITEM_RULES, ITEM_TYPES, ITEMS, RULES, ZONE, zoneHalf } from '../shared/config.js';
+import { CFG, EMOTE_GAP, EMOTES, FLARE_VIEW, SCAN_VIEW, ITEM_RULES, ITEM_TYPES, ITEMS, RULES, ZONE, zoneHalf } from '../shared/config.js';
 import { MAP_ROTATION, MAP_SIZE, MAPS, isFree } from '../shared/map.js';
 import { flareLanding, stepPlayer } from '../shared/sim.js';
 import { canSee, segmentBlocked, wrapAngle } from '../shared/vision.js';
@@ -43,6 +43,7 @@ export class Game {
     this.kills = [];
     this.blocks = []; // 반사 조끼가 막은 공격 [공격자, 대상]
     this.casts = []; // 스킬 사용 [플레이어, 스킬]
+    this.emotes = []; // 감정표현 [플레이어, 번호]
     this.events = []; // 라운드 시작/종료 알림
     this.endT = 0; // > 0 이면 라운드 종료 후 휴식 중
     this.winner = null;
@@ -301,6 +302,7 @@ export class Game {
       const gap = Math.max(0, q.level - p.level);
       this.gainXp(p, (PROGRESS.XP_KILL + q.level * PROGRESS.XP_KILL_PER_LEVEL) * (1 + gap * PROGRESS.BOUNTY_PER_GAP));
       this.dropFireflies(q);
+      if (p.isBot && Math.random() < 0.2) this.emote(p, Math.random() < 0.5 ? 1 : 4); // 봇도 가끔 😂 👋
     }
     this.checkRoundEnd();
   }
@@ -356,6 +358,14 @@ export class Game {
       p.statsDirty = true;
       if (p.isBot) while (p.choices.length) this.choose(p, Math.floor(Math.random() * p.choices[0].length));
     }
+  }
+
+  // 감정표현: 번호만 받고, 너무 자주 보내면 무시한다
+  emote(p, idx) {
+    if (!p || !Number.isInteger(idx) || idx < 0 || idx >= EMOTES.length) return;
+    if (this.tick - (p.emoteTick ?? -1e9) < EMOTE_GAP * CFG.TICK_RATE) return;
+    p.emoteTick = this.tick;
+    this.emotes.push([p.id, idx]);
   }
 
   // 레벨업 카드 고르기: idx = 첫 번째 대기 중인 카드 묶음에서의 번호
@@ -796,6 +806,11 @@ export class Game {
     if (this.hits.length) {
       all({ t: 'h', l: this.hits });
       this.hits = [];
+    }
+    if (this.emotes.length) {
+      // 감정표현: 보이는 플레이어 것만 클라이언트가 그린다
+      all({ t: 'em', l: this.emotes });
+      this.emotes = [];
     }
     // 내 성장 정보: 바뀌었을 때만
     for (const p of humans) {

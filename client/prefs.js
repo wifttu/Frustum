@@ -9,6 +9,7 @@ const defaults = {
   vibrate: true, // 처치/사망 시 진동
   fullscreen: true, // 터치하면 전체 화면으로 (주소창·네비게이션 바 숨김)
   music: true, // 로비 배경음악
+  musicGame: true, // 게임 중 배경음악
   showMinimap: true, // 미니맵 표시
   server: '', // 온라인 서버 주소 (비우면 기본값)
   showStats: false, // 성능 정보(fps 등) 표시

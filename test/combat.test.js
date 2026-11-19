@@ -327,3 +327,18 @@ test('관전: 쓰러지면 잡은 상대의 시야로 보고, 다음 대상으�
   snap = game.snapshotFor(a, game.computeVisibility());
   assert.equal(snap.w, 0);
 });
+
+test('감정표현: 번호만 받고, 너무 자주 보내면 무시한다', () => {
+  const { game, add, sent } = setup({ TEAMS: 0 });
+  const a = add('A');
+  game.emote(a, 2);
+  game.emote(a, 3); // 바로 또 보내면 무시
+  game.emote(a, 99); // 없는 번호
+  game.broadcast();
+  const msgs = sent.get(a.id).filter((m) => m.t === 'em');
+  assert.deepEqual(msgs.map((m) => m.l), [[[a.id, 2]]]);
+  for (let i = 0; i < CFG.TICK_RATE * 2; i++) game.step();
+  game.emote(a, 5);
+  game.broadcast();
+  assert.ok(sent.get(a.id).some((m) => m.t === 'em' && m.l[0][1] === 5));
+});

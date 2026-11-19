@@ -1022,3 +1022,27 @@ body.lefty #stickZone { left: auto; right: calc(34px + env(safe-area-inset-right
 #watchBar b { font-size: 14px; }
 #watchNext { border: 0; border-radius: 999px; padding: 6px 12px; background: #2f8fe6; color: #fff; font-weight: 800; font-family: inherit; }
 #watchNext[hidden] { display: none; }
+
+/* 감정표현 */
+#emoteBtn {
+  pointer-events: auto; position: absolute; top: calc(86px + env(safe-area-inset-top)); left: calc(104px + env(safe-area-inset-left));
+  width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: var(--glass); font-size: 16px; padding: 0;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+#emoteBtn:active { transform: scale(.92); }
+#emotePick {
+  pointer-events: auto; position: absolute; top: calc(86px + env(safe-area-inset-top)); left: calc(144px + env(safe-area-inset-left)); z-index: 8;
+  display: grid; grid-template-columns: repeat(4, 40px); gap: 4px; padding: 6px; border-radius: 14px;
+  background: rgba(20, 16, 30, .9); border: 1px solid rgba(255, 255, 255, .18); animation: pop .15s ease-out;
+}
+#emotePick[hidden] { display: none; }
+#emotePick button { width: 40px; height: 40px; border: 0; border-radius: 10px; background: rgba(255, 255, 255, .08); font-size: 22px; padding: 0; }
+#emotePick button:active { transform: scale(.9); background: rgba(255, 210, 90, .3); }
+#emoteLayer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.emote {
+  position: absolute; left: 0; top: 0; font-size: 30px; line-height: 1; padding: 4px 6px; border-radius: 14px;
+  background: rgba(255, 255, 255, .92); box-shadow: 0 4px 10px rgba(0, 0, 0, .4); animation: emotePop .35s cubic-bezier(.2, 1.6, .4, 1);
+}
+.emote::after { content: ''; position: absolute; left: 50%; bottom: -6px; margin-left: -6px; border: 6px solid transparent; border-top-color: rgba(255, 255, 255, .92); border-bottom: 0; }
+@keyframes emotePop { from { scale: .2; } }
+body.lefty #emotePick { left: calc(144px + env(safe-area-inset-left)); }
