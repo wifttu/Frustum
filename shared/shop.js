@@ -47,7 +47,7 @@ export const DAILY = Object.freeze({ BASE: 60, PER_STREAK: 15, MAX_STREAK: 7 });
 export const charTier = (id) => (CHARACTERS[id].price > 450 ? 'legend' : 'epic');
 
 export function newProfile() {
-  return { xp: 0, coins: 0, owned: ['explorer'], char: 'explorer', skins: ['default'], skin: 'default', pity: 0, daily: '', streak: 0, friends: [], recent: [], icon: '', fc: '' };
+  return { xp: 0, coins: 0, owned: ['explorer'], char: 'explorer', skins: ['default'], skin: 'default', pity: 0, daily: '', streak: 0, friends: [], recent: [], icon: '', fc: '', tutorial: 0 };
 }
 
 // 저장된 값을 안전하게 정리한다 (오래된 저장 데이터, 손상된 값 대비)
@@ -61,6 +61,7 @@ export function normalizeProfile(raw) {
   if (!p.skins.includes(p.skin)) p.skin = 'default';
   p.pity = Number.isInteger(p.pity) ? p.pity : 0;
   p.streak = Number.isInteger(p.streak) ? p.streak : 0;
+  p.tutorial = p.tutorial ? 1 : 0; // 연습을 끝냈나 (보상은 한 번만)
   // 친구/최근 함께한 플레이어: 이름 목록 (계정이 없어 기기에만 저장)
   // { name, fc } 목록. 예전 저장 형식(이름 문자열)도 받는다. 친구 코드가 같으면 하나로 합친다.
   const people = (v, max) => {
