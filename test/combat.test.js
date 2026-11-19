@@ -342,3 +342,21 @@ test('감정표현: 번호만 받고, 너무 자주 보내면 무시한다', () 
   game.broadcast();
   assert.ok(sent.get(a.id).some((m) => m.t === 'em' && m.l[0][1] === 5));
 });
+
+test('연습 허수아비: 회복하지 않고 기본 손전등 딱 2방에 쓰러진다', () => {
+  const { game, add, place } = setup({ TEAMS: 0 });
+  const me = add('Me');
+  const dummy = game.addPlayer('허수아비', null, true);
+  dummy.dummy = true;
+  game.applyStats(dummy);
+  place(me, 0, 0, 0);
+  place(dummy, 0, 3, 0);
+  dummy.hp = dummy.stats.maxHp;
+  game.attack(me);
+  assert.equal(dummy.alive, true);
+  for (let i = 0; i < CFG.TICK_RATE * 10; i++) game.step(); // 10초 기다려도 회복하지 않는다
+  assert.equal(dummy.hp, dummy.stats.maxHp - Math.round(me.stats.damage));
+  me.cd = 0;
+  game.attack(me);
+  assert.equal(dummy.alive, false);
+});

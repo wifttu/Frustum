@@ -696,7 +696,8 @@ async function startTutorial() {
   dummy.skin = 'default';
   const spot = pickSpots(game.map);
   Object.assign(player, { x: spot.me[0], z: spot.me[1], yaw: 0, alive: true });
-  Object.assign(dummy, { x: spot.dummy[0], z: spot.dummy[1], yaw: 0, alive: true, hp: 60 });
+  game.applyStats(dummy); // 허수아비 체력 = 손전등 2방
+  Object.assign(dummy, { x: spot.dummy[0], z: spot.dummy[1], yaw: 0, alive: true, hp: dummy.stats.maxHp });
   game.rosterDirty = true;
   offline = { game, player };
   tutorSeen = false;
@@ -705,6 +706,11 @@ async function startTutorial() {
   input.yaw = 0;
   tutor = new Tutorial({
     $, sfx, game, player, dummy, skill: player.skill,
+    // 월드 → 화면 좌표 (화살표를 원근에 맞게 그리려고)
+    project: (x, z) => {
+      projV.set(x, 0.9, z).project(camera);
+      return [(projV.x + 1) * 0.5 * innerWidth, (1 - projV.y) * 0.5 * innerHeight];
+    },
     state: () => ({
       x: view.x, z: view.z, yaw: view.yaw, seen: tutorSeen, seenNow: ents.has(dummy.id), level: prog.level,
       ups: Object.values(prog.ups || {}).reduce((a, b) => a + b, 0), skill: sim.rollCd > 0, flare: flareCd > 0,

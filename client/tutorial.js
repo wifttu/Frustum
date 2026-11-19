@@ -5,18 +5,19 @@ import { segmentBlocked, wrapAngle } from './shared/vision.js';
 import { ORBS, SKILLS } from './shared/progress.js';
 
 export const TUTOR_REWARD = 100;
+const ARROW_HIDE = 3.2; // 허수아비와 이만큼 가까워지면 화살표를 숨긴다 (손전등 사거리 6m 안)
 
 // 단계: text 안내, hi 반짝일 버튼, arrow 허수아비 쪽 화살표, done 통과 조건
 function steps(skill) {
   return [
-    { icon: '🕹️', text: '왼쪽 아래를 누른 채 끌어서 걸어 보세요', sub: 'PC: W A S D', hi: 'stickZone', done: (s) => s.moved > 4 },
-    { icon: '👆', text: '오른쪽 화면을 좌우로 밀면 몸이 돌아가요', sub: 'PC: 마우스 끌기 또는 Q / E', done: (s) => s.turned > 2.4 },
-    { icon: '🔦', text: '앞의 밝은 부채꼴이 내 시야예요. 시야 밖의 상대는 안 보여요', sub: '화살표 쪽의 허수아비를 시야에 넣어 보세요', arrow: true, done: (s) => s.seen },
-    { icon: '💥', text: '허수아비를 빛 안에 넣고 손전등 버튼을 누르세요', sub: '두 번 맞히면 쓰러져요', hi: 'attack', arrow: true, done: (s) => s.down },
-    { icon: '💎', text: '경험치 보석을 먹어 보세요', sub: '노랑 < 초록 < 보라, 큰 보석일수록 많이 줘요', orbs: true, done: (s) => s.level >= 2 },
-    { icon: '🃏', text: '레벨업! 강화 카드 한 장을 고르세요', sub: '레벨이 오를 때마다 점점 강해져요', hi: 'choices', done: (s) => s.ups > 0 },
-    { icon: '✨', text: `고유 스킬 "${SKILLS[skill]?.name || '구르기'}" 버튼을 눌러 보세요`, sub: '캐릭터마다 스킬이 달라요', hi: 'roll', done: (s) => s.skill },
-    { icon: '🎆', text: '조명탄을 던지면 그곳이 잠깐 밝아져요', sub: '숨은 상대를 찾을 때 써 보세요', hi: 'flare', done: (s) => s.flare },
+    { icon: '🕹️', text: '화면 왼쪽을 누른 채 끌어서 걸어 보세요', hi: 'stickZone', done: (s) => s.moved > 4 },
+    { icon: '👆', text: '화면 오른쪽을 좌우로 밀어서 몸을 돌려 보세요', done: (s) => s.turned > 2.4 },
+    { icon: '🔦', text: '화살표 쪽으로 몸을 돌려 허수아비를 찾아보세요', sub: '앞쪽의 밝은 부채꼴이 내 시야예요. 그 밖의 상대는 안 보여요', arrow: true, done: (s) => s.seen },
+    { icon: '💥', text: '허수아비 앞까지 가서 손전등 버튼을 누르세요', sub: '앞쪽의 노란 빛이 닿아야 맞아요 · 2번 맞히면 쓰러져요', hi: 'attack', arrow: true, done: (s) => s.down },
+    { icon: '💎', text: '앞에 놓인 경험치 보석을 먹어 보세요', sub: '가까이 가면 빨려 들어와요 · 보라색 큰 보석일수록 많이 줘요', orbs: true, done: (s) => s.level >= 2 },
+    { icon: '🃏', text: '레벨업! 아래 강화 카드 중 하나를 누르세요', sub: '레벨이 오를 때마다 강해져요', hi: 'choices', done: (s) => s.ups > 0 },
+    { icon: '✨', text: `"${SKILLS[skill]?.name || '구르기'}" 버튼을 눌러 보세요`, sub: '캐릭터마다 고유 스킬이 달라요', hi: 'roll', done: (s) => s.skill },
+    { icon: '🎆', text: '조명탄 버튼을 눌러 보세요', sub: '던진 곳이 잠깐 밝아져서 숨은 상대가 보여요', hi: 'flare', done: (s) => s.flare },
   ];
 }
 
@@ -109,15 +110,26 @@ export class Tutorial {
     const st = this.list[this.i];
     const dummy = this.ctx.dummy;
     const view = { ...this.acc, seen: s.seen, down: !dummy.alive || s.killedDummy, level: s.level, ups: s.ups, skill: s.skill, flare: s.flare };
-    // 허수아비 쪽 화살표 (화면 가장자리)
+    // 허수아비 쪽 화살표: 내 캐릭터 둘레에 떠서 허수아비를 가리킨다 (보고 있어도 계속). 바로 앞까지 가면 사라진다.
     const arrow = this.ctx.$('tutorArrow');
-    const showArrow = st.arrow && dummy.alive && !s.seenNow;
+    const dist = Math.hypot(dummy.x - s.x, dummy.z - s.z);
+    const showArrow = st.arrow && dummy.alive && dist > ARROW_HIDE;
     arrow.hidden = !showArrow;
     if (showArrow) {
-      const rel = wrapAngle(Math.atan2(dummy.x - s.x, dummy.z - s.z) - s.yaw); // + 면 왼쪽
-      const th = -rel;
-      const R = Math.min(innerWidth, innerHeight) * 0.3;
-      arrow.style.transform = `translate(${(innerWidth / 2 + Math.sin(th) * R).toFixed(0)}px, ${(innerHeight * 0.55 - Math.cos(th) * R).toFixed(0)}px) translate(-50%, -50%) rotate(${th.toFixed(3)}rad)`;
+      // 월드 방향을 화면에 투영해서 원근 때문에 어긋나지 않게 한다
+      const [px, py] = this.ctx.project(s.x, s.z);
+      const ux = (dummy.x - s.x) / dist;
+      const uz = (dummy.z - s.z) / dist;
+      const [qx, qy] = this.ctx.project(s.x + ux * 1.5, s.z + uz * 1.5);
+      let dx = qx - px;
+      let dy = qy - py;
+      const l = Math.hypot(dx, dy) || 1;
+      dx /= l;
+      dy /= l;
+      this.bob = (this.bob || 0) + dt;
+      const R = 64 + Math.sin(this.bob * 6) * 7;
+      const th = Math.atan2(dx, -dy); // 화면 위쪽 기준 시계 방향
+      arrow.style.transform = `translate(${(px + dx * R).toFixed(1)}px, ${(py + dy * R).toFixed(1)}px) translate(-50%, -50%) rotate(${th.toFixed(3)}rad)`;
     }
     // 통과하면 잠깐 초록으로 반짝이고 다음 단계로
     if (this.doneT > 0) {
