@@ -878,3 +878,34 @@ body.cheating #coins::after { content: ' 🧪'; }
 .skill.cooling i { width: 60%; height: 60%; }
 .card i .up { display: block; width: 34px; height: 34px; object-fit: contain; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .5)); }
 #toast .ic.inline { width: 1.25em; height: 1.25em; }
+
+/* 그래픽 품질 / 데이터 백업 */
+.seg { display: flex; gap: 4px; flex: none; }
+#settings .seg button { margin: 0; padding: 7px 9px; font-size: 13px; border-radius: 9px; background: #1f2c39; color: #9fb2c4; border: 1px solid #2c3e50; }
+#settings .seg button.on { background: #ffd25a; color: #3a2208; border-color: #ffd25a; }
+.backupRow, .qualityRow { flex-wrap: wrap; }
+.backupRow .btns { display: flex; gap: 5px; flex: none; }
+#settings .backupRow .btns button { margin: 0; padding: 7px 10px; font-size: 13px; }
+#restorePanel { position: absolute; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; background: rgba(4, 3, 10, .72); }
+#restorePanel[hidden] { display: none; }
+#restorePanel .panel { width: min(460px, 92vw); }
+#restorePanel textarea {
+  width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 10px; border: 1px solid #2c3e50; background: #0f1620; color: #e8f0f8;
+  font: 12px/1.4 ui-monospace, monospace; resize: none; word-break: break-all;
+}
+#restorePanel .btns { display: flex; gap: 8px; justify-content: flex-end; }
+#restorePanel .btns button, #restorePanel .fileBtn { margin: 0; padding: 9px 14px; font-size: 14px; }
+#restorePanel .fileBtn { display: inline-flex; align-items: center; border-radius: 10px; background: #1f2c39; color: #cfe0f0; font-weight: 700; cursor: pointer; }
+#restorePanel .hint { font-size: 12px; color: #9fb2c4; margin: 6px 0; }
+#restoreMsg.err { color: #ff8a7a; } #restoreMsg.ok { color: #8affb0; }
+#restorePanel .panel {
+  padding: 16px 18px; border-radius: 16px; background: #121b24; border: 1px solid #22303e; display: flex; flex-direction: column; gap: 6px;
+  color: #e8f0f8; animation: pop .2s ease-out;
+}
+#restorePanel h2 { margin: 0; font-size: 18px; }
+#restorePanel button { border: 0; border-radius: 10px; background: #2f8fe6; color: #fff; font-weight: 700; }
+#restorePanel button.alt { background: #1f2c39; color: #cfe0f0; }
+#openSettings.dot::after { /* 백업 안 했으면 빨간 점 */
+  content: ''; position: absolute; top: 4px; right: 4px; width: 10px; height: 10px; border-radius: 50%; background: #ff4a5a; box-shadow: 0 0 0 2px #121b24;
+}
+#openSettings { position: relative; }

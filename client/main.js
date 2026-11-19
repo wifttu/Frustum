@@ -8,6 +8,7 @@ import { Input } from './input.js';
 import { Music, Sfx } from './audio.js';
 import { DEFAULT_SERVER, normalizeServer } from './settings.js';
 import { prefs, savePrefs } from './prefs.js';
+import { decodeBackup, encodeBackup } from './shared/backup.js';
 import { CHARACTERS, ORBS, PROGRESS, SKILLS, UPGRADES, charOf, orbTier, statsOf, xpToNext } from './shared/progress.js';
 import { Characters, DeathFx, growOf, merge } from './character.js';
 import { SkillFx } from './skillfx.js';
@@ -30,8 +31,16 @@ const canvas = $('game');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
 renderer.setClearColor(0x000000, 1);
 renderer.info.autoReset = false;
-const BASE_PR = Math.min(devicePixelRatio || 1, 2);
-let resScale = 1;
+// 그래픽 품질: 해상도 상한, 고정 배율, 꾸밈·흙먼지 표시. auto 는 프레임에 맞춰 해상도를 스스로 조절한다.
+const QUALITY = {
+  auto: { cap: 2, adaptive: true },
+  low: { cap: 1, scale: 0.8, deco: false, dust: false },
+  mid: { cap: 1.5, scale: 1 },
+  high: { cap: 2, scale: 1 },
+};
+const qual = () => QUALITY[prefs.quality] || QUALITY.auto;
+let BASE_PR = Math.min(devicePixelRatio || 1, qual().cap);
+let resScale = qual().scale ?? 1;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(55, 1, 0.5, 120);
@@ -130,6 +139,8 @@ function buildScenery() {
     glowMesh.renderOrder = 2;
     scene.add(glowMesh);
   }
+  if (decoMesh) decoMesh.visible = qual().deco !== false;
+  if (glowMesh) glowMesh.visible = qual().deco !== false;
   hemi.color.setHex(curMap.look.sky);
   hemi.groundColor.setHex(curMap.look.earth);
   sun.color.setHex(curMap.look.sun);
@@ -244,7 +255,7 @@ function puff(x, z, n = 1, spread = 0.25, big = 1) {
 // 움직이는 캐릭터마다 일정 간격으로 먼지를 낸다
 function dustFor(mesh, dt, rolling) {
   const u = mesh.userData;
-  if (!mesh.visible) return;
+  if (!mesh.visible || qual().dust === false) return;
   u.dustT = (u.dustT || 0) - dt;
   if (u.dustT > 0) return;
   if (rolling) {
@@ -2002,7 +2013,9 @@ function frame(now) {
       `draw ${stats.calls}  tri ${stats.tris}\n` +
       `벽 ${nWalls}/${curMap.walls.length}  플레이어 ${nPlayers}/${Math.max(0, roster.size - 1)}`;
     // 프레임이 떨어지면 해상도를 낮추고, 여유가 있으면 되돌린다
-    if (frameEma > 24 && resScale > 0.55) {
+    if (!qual().adaptive) {
+      // 고정 품질
+    } else if (frameEma > 24 && resScale > 0.55) {
       resScale -= 0.1;
       resize();
     } else if (frameEma < 15 && resScale < 1) {
@@ -2193,7 +2206,107 @@ function exitGame() {
   else if (myId) net.send({ t: 'leave' });
   showMenu('');
 }
+// ── 그래픽 품질 ──
+const QUALITY_NOTE = {
+  auto: '자동: 폰 성능에 맞춰 해상도를 조절해요',
+  low: '낮음: 오래된 폰도 부드럽게 (꾸밈·흙먼지 끔)',
+  mid: '보통: 화질과 배터리의 중간',
+  high: '높음: 가장 선명하게 (배터리를 더 써요)',
+};
+function applyQuality() {
+  const q = qual();
+  BASE_PR = Math.min(devicePixelRatio || 1, q.cap);
+  resScale = q.scale ?? Math.min(1, resScale);
+  if (decoMesh) decoMesh.visible = q.deco !== false;
+  if (glowMesh) glowMesh.visible = q.deco !== false;
+  for (const b of $('qualityPick').children) b.classList.toggle('on', b.dataset.q === (QUALITY[prefs.quality] ? prefs.quality : 'auto'));
+  $('qualityNote').textContent = QUALITY_NOTE[prefs.quality] || QUALITY_NOTE.auto;
+  resize();
+}
+for (const b of $('qualityPick').children) {
+  b.addEventListener('click', () => {
+    prefs.quality = b.dataset.q;
+    savePrefs();
+    applyQuality();
+  });
+}
+
+// ── 데이터 백업 ── (이 기기에만 저장되므로 코드/파일로 사본을 남긴다)
+navigator.storage?.persist?.().catch(() => {}); // 브라우저가 저장 공간을 함부로 비우지 않게 요청
+function backupCode() {
+  const p = { ...profile };
+  if (cheatCoinsOn() && prefs.realCoins !== null) p.coins = prefs.realCoins; // 치트 코인 말고 진짜 코인
+  return encodeBackup(p);
+}
+const needBackup = () => !prefs.backupAt && (profile.owned.length > 1 || profile.skins.length > 1 || profile.xp > 1500);
+function drawBackup(msg = '') {
+  const when = prefs.backupAt ? new Date(prefs.backupAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+  $('backupNote').textContent = msg || (when ? `마지막 백업: ${when} · 새로 모은 것은 다시 백업하세요` : '코인·캐릭터·스킨은 이 기기에만 저장돼요. 백업 코드를 꼭 보관하세요');
+  $('openSettings').classList.toggle('dot', needBackup());
+}
+function markBackup(msg) {
+  prefs.backupAt = Date.now();
+  savePrefs();
+  drawBackup(msg);
+}
+function openRestore(code = '', msg = '') {
+  $('restoreCode').value = code;
+  $('restoreMsg').textContent = msg;
+  $('restoreMsg').className = 'hint';
+  $('restorePanel').hidden = false;
+  if (code) $('restoreCode').select();
+}
+$('backupCopy').addEventListener('click', async () => {
+  const code = backupCode();
+  try {
+    await navigator.clipboard.writeText(code);
+    markBackup('복사했어요! 메모장이나 "나에게 보내기"에 붙여 넣어 두세요');
+  } catch {
+    openRestore(code, '아래 코드를 길게 눌러 전체 선택 → 복사해서 보관하세요');
+    markBackup();
+  }
+});
+$('backupFile').addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([backupCode()], { type: 'text/plain' }));
+  a.download = `frustum-backup-${dayKey()}.txt`;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+  markBackup('파일로 저장했어요 (다운로드 폴더)');
+});
+$('backupRestore').addEventListener('click', () => openRestore());
+$('restoreClose').addEventListener('click', () => ($('restorePanel').hidden = true));
+$('restoreFile').addEventListener('change', async (e) => {
+  const f = e.target.files?.[0];
+  if (f) $('restoreCode').value = (await f.text()).trim();
+  e.target.value = '';
+});
+$('restoreGo').addEventListener('click', () => {
+  const r = decodeBackup($('restoreCode').value);
+  const msg = $('restoreMsg');
+  if (!r) {
+    msg.textContent = '코드가 올바르지 않아요. 빠진 글자 없이 전부 붙여 넣었는지 확인해 주세요.';
+    msg.className = 'hint err';
+    return;
+  }
+  const when = r.savedAt ? new Date(r.savedAt).toLocaleString('ko-KR') : '';
+  const sum = `코인 ${Math.floor(r.profile.coins)} · 캐릭터 ${r.profile.owned.length}개 · 의상 ${r.profile.skins.length}개`;
+  if (!confirm(`${when ? when + ' 백업\n' : ''}${sum}\n\n이 기기의 지금 데이터를 이 백업으로 바꿀까요?`)) return;
+  if (cheatCoinsOn()) prefs.realCoins = r.profile.coins; // 치트 중이면 진짜 코인 자리에
+  prefs.backupAt = r.savedAt || Date.now();
+  savePrefs();
+  try {
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(r.profile));
+  } catch {}
+  msg.textContent = '복구했어요! 다시 불러오는 중…';
+  msg.className = 'hint ok';
+  setTimeout(() => location.reload(), 500);
+});
+
 function openSettings() {
+  drawBackup();
   $('leave').hidden = !myId;
   $('leave').textContent = party?.active && !offline ? '방으로 돌아가기' : '게임 나가기';
   $('settings').hidden = false;
@@ -2210,6 +2323,8 @@ $('leave').addEventListener('click', () => {
   exitGame();
 });
 applyPrefs();
+applyQuality();
+drawBackup();
 
 // 내 친구 코드: 처음 실행할 때 한 번 만든다
 if (!profile.fc) {

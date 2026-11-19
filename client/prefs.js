@@ -12,6 +12,8 @@ const defaults = {
   showMinimap: true, // 미니맵 표시
   server: '', // 온라인 서버 주소 (비우면 기본값)
   showStats: false, // 성능 정보(fps 등) 표시
+  quality: 'auto', // 그래픽 품질: auto(성능에 맞춰 자동) / low / mid / high
+  backupAt: 0, // 마지막으로 백업 코드를 만든 때
   // 치트 모드: 전체 스위치 + 항목별 스위치. 게임 안 치트는 혼자(AI 상대)일 때만 켜진다.
   cheat: false,
   cheatCoins: true, // 코인 무한
