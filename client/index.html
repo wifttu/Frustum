@@ -67,6 +67,7 @@
         <div>
           <input id="name" maxlength="12" placeholder="닉네임 입력" autocomplete="off" aria-label="닉네임" />
           <div id="rank"><b id="rankLv">모험가 Lv 1</b><div class="bar"><div id="rankFill"></div></div><small id="rankText"></small></div>
+          <button id="rankBadge" aria-label="랭크 보기"></button>
         </div>
       </div>
       <div id="lobbyLogo">FRUSTUM<small>한밤의 캠핑장 · 손전등 술래잡기</small></div>
@@ -75,6 +76,7 @@
         <button id="openChars"><i>🧢</i><span>캐릭터</span></button>
         <button id="openShop"><i>🛍️</i><span>상점</span></button>
         <button id="openFriends"><i>👥</i><span>친구</span></button>
+        <button id="openMissions"><i>🎯</i><span>미션</span></button>
         <button id="daily" hidden><i>🎁</i><span>출석</span></button>
       </div>
       <div id="lobbyChar"><b id="lobbyCharName"></b><span id="lobbySkill"></span></div>
@@ -86,6 +88,16 @@
       </div>
       <div id="status"></div>
       <div id="tutorPrompt" hidden><span>처음이세요? <b>30초 연습</b>으로 조작을 배워요 <em>🪙 +100</em></span><button id="tutorYes">연습하기</button><button id="tutorNo" aria-label="닫기">✕</button></div>
+    </div>
+
+    <div id="missionPanel" class="sheet" hidden>
+      <div class="panel">
+        <h2>미션 · 업적 · 랭크</h2>
+        <div id="missionTabs" class="pick"><button data-tab="daily">일일 미션</button><button data-tab="ach">업적</button><button data-tab="rank">랭크</button></div>
+        <div id="missionBody"></div>
+        <p id="missionNote" class="note"></p>
+        <button id="closeMissions">닫기</button>
+      </div>
     </div>
 
     <div id="modePanel" class="sheet" hidden>

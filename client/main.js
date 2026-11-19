@@ -9,6 +9,10 @@ import { Music, Sfx } from './audio.js';
 import { DEFAULT_SERVER, normalizeServer } from './settings.js';
 import { prefs, savePrefs } from './prefs.js';
 import { decodeBackup, encodeBackup } from './shared/backup.js';
+import {
+  ACHIEVEMENTS, DAILY_POOL, RANKS, achState, applyRank, claimAch, claimDaily as claimMission, ensureDaily, hasClaimable, rankDelta, rankOf as tierOf, record,
+  seasonDaysLeft, seasonRollover,
+} from './shared/missions.js';
 import { CHARACTERS, ORBS, PROGRESS, SKILLS, UPGRADES, charOf, orbTier, statsOf, xpToNext } from './shared/progress.js';
 import { Characters, DeathFx, growOf, merge } from './character.js';
 import { SkillFx } from './skillfx.js';
@@ -475,6 +479,119 @@ async function startOffline(name, gameMode, gameRule) {
   onMessage({ t: 'w', id: player.id, team: player.team, ...game.info() });
 }
 
+// ── 미션 · 업적 · 랭크 ── (치트 모드, 연습 중에는 기록하지 않는다)
+const tracking = () => !tutor && !prefs.cheat && !!myId;
+function track(ev, n = 1) {
+  if (!tracking() || !(n > 0)) return;
+  for (const d of record(profile, ev, n)) toast('미션 완료! 🎯', `${d.text} · 로비에서 🪙 ${d.coins} 받기`, 'buff');
+  saveProfile();
+}
+// 판이 끝났을 때: 판 수·승리·1등을 기록하고 순위로 랭크 점수를 바꾼다
+function roundRank(won, me) {
+  if (!tracking() || !me) return null;
+  track('round');
+  if (won) track('win');
+  const rows = [...roster.entries()].sort((a, b) => pointsOf(b[1]) - pointsOf(a[1]));
+  const place = rows.findIndex(([id]) => id === myId) + 1;
+  if (place === 1) track('top');
+  const r = applyRank(profile, rankDelta(place, rows.length, me.score || 0, !offline));
+  saveProfile();
+  if (r.up) setTimeout(() => toast('승급! 🏅', `${r.after.name} 등급이 됐어요`, 'buff'), 900);
+  return r;
+}
+let missionTab = 'daily';
+function drawRankBadge() {
+  const r = tierOf(profile.rank.rp);
+  const el = $('rankBadge');
+  el.textContent = `🏅 ${r.name} ${profile.rank.rp}`;
+  el.style.setProperty('--rc', r.color);
+  $('openMissions').classList.toggle('hasNew', hasClaimable(profile));
+}
+function missionRow(icon, title, sub, n, goal, btn) {
+  const row = document.createElement('div');
+  row.className = 'mrow' + (btn.cls === 'ok' ? ' done' : '');
+  row.innerHTML = '<i></i><div class="mtext"><b></b><div class="mbar"><i></i></div><small></small></div><button></button>';
+  row.querySelector('i').textContent = icon;
+  row.querySelector('b').innerHTML = title;
+  row.querySelector('.mbar i').style.width = `${Math.min(100, (n / goal) * 100).toFixed(0)}%`;
+  row.querySelector('small').textContent = sub;
+  const b = row.querySelector('button');
+  b.textContent = btn.text;
+  b.className = btn.cls || '';
+  b.disabled = btn.cls !== 'can';
+  if (btn.cls === 'can') b.addEventListener('click', btn.on);
+  return row;
+}
+function claimed(coins) {
+  if (!coins) return;
+  saveProfile();
+  drawProfile();
+  sfx.levelUp();
+  toast(`🪙 +${coins}`, '보상을 받았어요', 'buff');
+  drawMissions();
+}
+function drawMissions() {
+  for (const b of $('missionTabs').children) b.classList.toggle('on', b.dataset.tab === missionTab);
+  const body = $('missionBody');
+  body.replaceChildren();
+  const note = [];
+  if (missionTab === 'daily') {
+    const m = ensureDaily(profile);
+    m.list.forEach((it, i) => {
+      const d = DAILY_POOL[it.id];
+      const done = it.n >= d.goal;
+      body.append(missionRow('🎯', d.text, `${it.n} / ${d.goal}`, it.n, d.goal, it.got ? { text: '받음 ✓', cls: 'ok' } : done ? { text: `🪙 ${d.coins} 받기`, cls: 'can', on: () => claimed(claimMission(profile, i)) } : { text: `🪙 ${d.coins}` }));
+    });
+    const now = new Date();
+    const left = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1) - now;
+    note.push(`새 미션까지 ${Math.floor(left / 3600000)}시간 ${Math.floor((left % 3600000) / 60000)}분`);
+  } else if (missionTab === 'ach') {
+    for (const key of Object.keys(ACHIEVEMENTS)) {
+      const s = achState(profile, key);
+      const stars = '★'.repeat(s.got) + '☆'.repeat(s.a.tiers.length - s.got);
+      const title = `${s.a.name}<em>${stars}</em>`;
+      if (s.maxed) body.append(missionRow(s.a.icon, title, `모두 달성 (${s.v})`, 1, 1, { text: '완료 ✓', cls: 'ok' }));
+      else body.append(missionRow(s.a.icon, title, `${s.a.text(s.goal)} · ${Math.min(s.v, s.goal)} / ${s.goal}`, s.v, s.goal, s.claimable ? { text: `🪙 ${s.coins} 받기`, cls: 'can', on: () => claimed(claimAch(profile, key)) } : { text: `🪙 ${s.coins}` }));
+    }
+  } else {
+    seasonRollover(profile);
+    const r = tierOf(profile.rank.rp);
+    const big = document.createElement('div');
+    big.className = 'rankBig';
+    big.style.setProperty('--rc', r.color);
+    big.innerHTML = `<div class="medal">🏅</div><div style="flex:1"><b></b><small class="rp"></small><div class="mbar"><i></i></div><small class="next"></small></div>`;
+    big.querySelector('b').textContent = r.name;
+    big.querySelector('.rp').textContent = `${profile.rank.rp}점 · 이번 시즌 최고 ${profile.rank.best}점`;
+    big.querySelector('.mbar i').style.width = `${(r.prog * 100).toFixed(0)}%`;
+    big.querySelector('.next').textContent = r.next !== null ? `다음 등급까지 ${r.next - profile.rank.rp}점 · 시즌 끝까지 ${seasonDaysLeft()}일` : `최고 등급! · 시즌 끝까지 ${seasonDaysLeft()}일`;
+    const list = document.createElement('div');
+    list.className = 'rankList';
+    RANKS.forEach((t, i) => {
+      const d = document.createElement('div');
+      d.style.setProperty('--rc', t.color);
+      if (i === r.i) d.className = 'me';
+      d.innerHTML = '<b></b><span></span>';
+      d.querySelector('b').textContent = t.name;
+      d.querySelector('span').textContent = `${t.min}점~ · 시즌 보상 🪙${t.reward}`;
+      list.append(d);
+    });
+    body.append(big, list);
+    note.push('판이 끝날 때 순위로 점수가 오르내려요 (1등 +30 … 꼴등 -9, 잡은 수마다 +2). 혼자 하기(봇전)는 절반. 시즌은 한 달이고, 끝나면 등급 보상을 주고 점수가 절반이 돼요.');
+  }
+  if (prefs.cheat) note.unshift('🧪 치트 모드가 켜져 있으면 미션·업적·랭크가 오르지 않아요.');
+  $('missionNote').textContent = note.join(' ');
+  drawRankBadge();
+}
+function openMissions(tab = missionTab) {
+  missionTab = tab;
+  drawMissions();
+  $('missionPanel').hidden = false;
+}
+$('openMissions').addEventListener('click', () => openMissions());
+$('rankBadge').addEventListener('click', () => openMissions('rank'));
+$('closeMissions').addEventListener('click', () => ($('missionPanel').hidden = true));
+for (const b of $('missionTabs').children) b.addEventListener('click', () => openMissions(b.dataset.tab));
+
 // ── 연습(튜토리얼) ──
 let tutor = null; // 진행 중인 연습
 const startGrace = () => (tutor ? 0 : CFG.START_GRACE); // 연습에는 시작 대기 시간이 없다
@@ -590,6 +707,7 @@ function onMessage(m) {
         sfx.death();
         buzz(200);
       } else if (k === myId) {
+        track('kill');
         streak++;
         toast(streak > 1 ? `${streak}연속 잡았다!` : '잡았다!', roster.get(v)?.name ?? '');
         sfx.kill();
@@ -610,8 +728,11 @@ function onMessage(m) {
     const me = roster.get(myId);
     const xpGot = prog.earned - roundStart.earned;
     const coinGot = Math.floor(profile.coins) - Math.floor(roundStart.coins);
+    const rk = roundRank(won, me);
     $('bannerReward').innerHTML = '';
-    for (const [icon, label, val] of [['⭐', '레벨', `Lv ${prog.level}`], ['🔦', '잡은 수', `${me?.score ?? 0}`], ['✨', '경험치', `+${xpGot}`], ['🪙', '코인', `+${coinGot}`]]) {
+    const chips = [['⭐', '레벨', `Lv ${prog.level}`], ['🔦', '잡은 수', `${me?.score ?? 0}`], ['✨', '경험치', `+${xpGot}`], ['🪙', '코인', `+${coinGot}`]];
+    if (rk) chips.push(['🏅', rk.after.name, `${rk.delta >= 0 ? '+' : ''}${rk.delta}`]);
+    for (const [icon, label, val] of chips) {
       const c = document.createElement('div');
       c.innerHTML = '<i></i><b></b><span></span>';
       c.querySelector('i').textContent = icon;
@@ -644,6 +765,8 @@ function onMessage(m) {
   } else if (m.t === 'st') {
     // 내 성장 정보
     const leveled = m.lv > prog.level;
+    if (m.earned > prog.earned) track('xp', m.earned - prog.earned);
+    if (leveled) track('level', m.lv);
     addProfileXp(m.earned - prog.earned);
     Object.assign(prog, { level: m.lv, next: m.next, ups: m.ups, choices: m.ch, more: m.more, stats: m.st, earned: m.earned });
     applyMyStats();
@@ -1033,6 +1156,10 @@ function syncFireflies(list) {
     const m = nearestMagnet(p.x, p.z, 1.4);
     const look = ORB_LOOK[orbTier(v || ORBS.small.v)];
     if (m) skillFx.gem(p.x, p.z, look.core, m.at, 0, { mode: 'snap', y0: p.y, s: look.size * 0.9 });
+    if (m?.at === view) {
+      track('orb');
+      if (orbTier(v || ORBS.small.v) === 'large') track('orbBig');
+    }
   }
   for (const id of ffDrawn.keys()) if (!next.has(id)) ffDrawn.delete(id);
   fireflies = list.filter((f) => !sucked.has(f[0])).slice(0, FF_MAX);
@@ -1041,6 +1168,7 @@ function syncFireflies(list) {
 // ── 스킬 효과 ──
 // 스킬을 쓴 순간: 캐릭터는 그 스킬 자세를 취하고, 발밑과 주변에 차분한 효과가 난다
 function castFx(id, skill, at) {
+  if (id === myId) track('skill');
   const mesh = id === myId ? selfMesh : at.mesh;
   if (mesh) chars.cast(mesh, skill);
   const { x, z } = at;
@@ -1098,6 +1226,10 @@ function suckFireflies(at) {
     seen.add(id);
     if (Math.hypot(fx - at.x, fz - at.z) > R) continue;
     sucked.set(id, until);
+    if (at === view) {
+      track('orb');
+      if (orbTier(v || ORBS.small.v) === 'large') track('orbBig');
+    }
     const p = ffDrawn.get(id) || { x: fx, y: 0.9, z: fz };
     const look = ORB_LOOK[orbTier(v || ORBS.small.v)];
     const delay = 0.12 + Math.random() * 0.12; // 손을 뻗은 뒤에 끌려오기 시작한다
@@ -1507,6 +1639,7 @@ function enterLobby() {
   showcase.open(profile.char);
   showcase.setSkin(profile.skin);
   drawLobby();
+  drawRankBadge();
   $('tutorPrompt').hidden = !!(profile.tutorial || prefs.tutorSeen);
 }
 function drawLobby() {
@@ -1810,6 +1943,7 @@ function fixedStep() {
     flareCd = CFG.FLARE_COOLDOWN;
     sfx.flare();
     chars.cast(selfMesh, 'flare'); // 던지는 동작
+    track('flare');
   } else flare = false;
 
   const inp = { seq: ++seq, mx: input.mx, mz: input.mz, yaw: wrapAngle(input.yaw), atk, roll, flare };
@@ -1826,10 +1960,14 @@ function fixedStep() {
     const wasRolling = sim.rollT > 0;
     const wasDashing = sim.dashT > 0;
     stepPlayer(sim, inp, DT, curMap.solid);
-    if (sim.rollT > 0 && !wasRolling) sfx.roll();
+    if (sim.rollT > 0 && !wasRolling) {
+      sfx.roll();
+      track('skill');
+    }
     if (sim.dashT > 0 && !wasDashing) {
       sfx.skill('dash');
       dashStartFx(selfMesh, view);
+      track('skill');
     }
     sim.cast = null; // 그 밖의 스킬 효과는 서버가 적용한다
     // 발소리
@@ -2318,7 +2456,7 @@ const needBackup = () => !prefs.backupAt && (profile.owned.length > 1 || profile
 function drawBackup(msg = '') {
   const when = prefs.backupAt ? new Date(prefs.backupAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
   $('backupNote').textContent = msg || (when ? `마지막 백업: ${when} · 새로 모은 것은 다시 백업하세요` : '코인·캐릭터·스킨은 이 기기에만 저장돼요. 백업 코드를 꼭 보관하세요');
-  $('openSettings').classList.toggle('dot', needBackup());
+  $('openSettings').classList.toggle('hasNew', needBackup());
 }
 function markBackup(msg) {
   prefs.backupAt = Date.now();
@@ -2402,6 +2540,12 @@ $('leave').addEventListener('click', () => {
 applyPrefs();
 applyQuality();
 drawBackup();
+{
+  // 시즌이 바뀌었으면 지난 시즌 보상
+  const sr = seasonRollover(profile);
+  if (sr) saveProfile();
+  if (sr) setTimeout(() => toast('새 시즌 시작! 🏅', `지난 시즌 ${sr.rank} 보상 🪙 ${sr.coins}`, 'buff'), 1200);
+}
 
 // 내 친구 코드: 처음 실행할 때 한 번 만든다
 if (!profile.fc) {
