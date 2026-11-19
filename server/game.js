@@ -30,6 +30,7 @@ export class Game {
     this.itemT = 0;
     this.nextItem = 1;
     this.useItems = opts.items !== false;
+    this.useFireflies = opts.fireflies !== false; // 연습(튜토리얼)은 반딧불을 직접 놓는다
     this.fireflies = []; // 경험치 반딧불 {id, x, z, v}
     this.ffT = 0;
     this.ffVer = 0; // 반딧불 목록이 바뀔 때마다 증가 (바뀌었을 때만 전송)
@@ -491,7 +492,7 @@ export class Game {
     for (let i = 0; i < ITEM_RULES.START; i++) this.spawnItem();
     this.fireflies.length = 0;
     this.ffVer++;
-    for (let i = 0; i < PROGRESS.FIREFLY_START; i++) this.spawnFirefly();
+    if (this.useFireflies) for (let i = 0; i < PROGRESS.FIREFLY_START; i++) this.spawnFirefly();
     this.rosterDirty = true;
     this.events.push({ t: 'n', map: this.map.id });
   }
@@ -576,7 +577,7 @@ export class Game {
 
     // 반딧불: 생겨나고, 가까이 오면 줍는다 (자석 강화면 더 멀리서)
     this.ffT += DT;
-    if (this.ffT >= PROGRESS.FIREFLY_EVERY && this.fireflies.length < PROGRESS.FIREFLY_MAX) {
+    if (this.useFireflies && this.ffT >= PROGRESS.FIREFLY_EVERY && this.fireflies.length < PROGRESS.FIREFLY_MAX) {
       this.ffT = 0;
       this.spawnFirefly();
     }
@@ -619,7 +620,7 @@ export class Game {
         continue;
       }
       if (p.isBot) {
-        this.applyInput(p, botThink(p, this, DT));
+        if (!p.dummy) this.applyInput(p, botThink(p, this, DT)); // dummy: 연습용 허수아비 (가만히 서 있다)
         continue;
       }
       // 틱당 입력 1개씩만 적립 → 입력을 몰아 보내는 스피드핵 방지

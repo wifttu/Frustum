@@ -40,6 +40,10 @@
       <div id="buffs"></div>
       <div id="toast" hidden><b id="toastTitle"></b><span id="toastSub"></span></div>
       <div id="dead" hidden><em>잡혔다!</em><span id="deadBy"></span><b id="respawn"></b></div>
+      <div id="stickZone"><span>누르고 끌기</span></div>
+      <div id="tutor" hidden><i id="tutorIcon"></i><div><small id="tutorCount"></small><b id="tutorText"></b><span id="tutorSub"></span></div><button id="tutorSkip">건너뛰기</button></div>
+      <div id="tutorArrow" hidden></div>
+      <div id="tutorDone" hidden><div class="panel"><b>연습 끝! 🎉</b><p>이제 실전에서 경험치를 모아 왕귀해 보세요.<br />시야 밖의 상대는 안 보이니 조명탄과 소리를 잘 쓰세요.</p><em id="tutorReward"></em><div class="btns"><button id="tutorPlay">실전 게임 시작</button><button id="tutorLobby" class="alt">로비로</button></div></div></div>
       <div id="mapIntro" hidden><img alt="" /><small>이번 맵</small><b></b></div>
       <div id="banner" hidden><b id="bannerTitle"></b><span id="bannerSub"></span><div id="bannerReward"></div><div id="bannerList"></div></div>
       <div id="stick"><div id="knob"></div></div>
@@ -81,6 +85,7 @@
         <button id="play">게임 시작</button>
       </div>
       <div id="status"></div>
+      <div id="tutorPrompt" hidden><span>처음이세요? <b>30초 연습</b>으로 조작을 배워요 <em>🪙 +100</em></span><button id="tutorYes">연습하기</button><button id="tutorNo" aria-label="닫기">✕</button></div>
     </div>
 
     <div id="modePanel" class="sheet" hidden>
@@ -269,6 +274,7 @@
         <label><span>진동<small>처치하거나 당했을 때</small></span><input type="checkbox" id="setVibrate" /></label>
         <label><span>미니맵 표시<small>왼쪽 위 지도</small></span><input type="checkbox" id="setMinimap" /></label>
         <label><span>성능 정보 표시<small>fps, 드로우콜 등</small></span><input type="checkbox" id="setStats" /></label>
+        <button id="tutorAgain" class="soft">🎓 연습(튜토리얼) 다시 하기</button>
         <button id="closeSettings">닫기</button>
         <button id="leave" class="alt" hidden>게임 나가기</button>
       </div>

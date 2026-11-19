@@ -12,6 +12,7 @@ import { decodeBackup, encodeBackup } from './shared/backup.js';
 import { CHARACTERS, ORBS, PROGRESS, SKILLS, UPGRADES, charOf, orbTier, statsOf, xpToNext } from './shared/progress.js';
 import { Characters, DeathFx, growOf, merge } from './character.js';
 import { SkillFx } from './skillfx.js';
+import { TUTOR_REWARD, Tutorial, pickSpots } from './tutorial.js';
 import { charImg, iconText, imgEl, itemImg, mapImg, setIcon, skillImg, skinImg, srcText, upImg } from './icons.js';
 import { Minimap } from './minimap.js';
 import { buildDeco, buildFloorTexture, buildItemGeos, buildWalls, buildWater } from './world.js';
@@ -474,6 +475,75 @@ async function startOffline(name, gameMode, gameRule) {
   onMessage({ t: 'w', id: player.id, team: player.team, ...game.info() });
 }
 
+// ── 연습(튜토리얼) ──
+let tutor = null; // 진행 중인 연습
+const startGrace = () => (tutor ? 0 : CFG.START_GRACE); // 연습에는 시작 대기 시간이 없다
+let tutorSeen = false; // 허수아비를 한 번이라도 시야에 넣었나
+async function startTutorial() {
+  $('tutorPrompt').hidden = true;
+  prefs.tutorSeen = true;
+  savePrefs();
+  $('status').textContent = '불러오는 중…';
+  const { Game } = await import('./server/game.js');
+  const game = new Game({ mode: 'ffa', rule: 'dm', map: 'camp', FIXED_MAP: true, BOT_FILL: 0, START_GRACE: 0, ROUND_TIME: 3600, items: false, fireflies: false });
+  const name = $('name').value.trim() || 'Player';
+  const player = game.addPlayer(name, (msg) => onMessage(JSON.parse(msg)), false, profile.char, profile.skin);
+  const dummy = game.addPlayer('허수아비', null, true);
+  dummy.dummy = true;
+  dummy.char = 'explorer';
+  dummy.skin = 'default';
+  const spot = pickSpots(game.map);
+  Object.assign(player, { x: spot.me[0], z: spot.me[1], yaw: 0, alive: true });
+  Object.assign(dummy, { x: spot.dummy[0], z: spot.dummy[1], yaw: 0, alive: true, hp: 60 });
+  game.rosterDirty = true;
+  offline = { game, player };
+  tutorSeen = false;
+  document.body.classList.add('tutorial');
+  onMessage({ t: 'w', id: player.id, team: player.team, ...game.info() });
+  input.yaw = 0;
+  tutor = new Tutorial({
+    $, sfx, game, player, dummy, skill: player.skill,
+    state: () => ({
+      x: view.x, z: view.z, yaw: view.yaw, seen: tutorSeen, seenNow: ents.has(dummy.id), level: prog.level,
+      ups: Object.values(prog.ups || {}).reduce((a, b) => a + b, 0), skill: sim.rollCd > 0, flare: flareCd > 0,
+    }),
+    onFinish: () => {
+      const first = !profile.tutorial;
+      if (first) {
+        profile.tutorial = 1;
+        profile.coins += TUTOR_REWARD;
+        saveProfile();
+        drawProfile();
+      }
+      $('tutorReward').textContent = first ? `보상 🪙 +${TUTOR_REWARD}` : '';
+      $('tutorDone').hidden = false;
+      sfx.win();
+    },
+  });
+}
+function endTutorial() {
+  tutor?.stop();
+  tutor = null;
+  $('tutorDone').hidden = true;
+  document.body.classList.remove('tutorial');
+}
+$('tutorYes').addEventListener('click', () => startTutorial());
+$('tutorNo').addEventListener('click', () => {
+  prefs.tutorSeen = true;
+  savePrefs();
+  $('tutorPrompt').hidden = true;
+});
+$('tutorSkip').addEventListener('click', () => exitGame());
+$('tutorLobby').addEventListener('click', () => exitGame());
+$('tutorPlay').addEventListener('click', () => {
+  exitGame();
+  $('play').click();
+});
+$('tutorAgain').addEventListener('click', () => {
+  $('settings').hidden = true;
+  startTutorial();
+});
+
 function onMessage(m) {
   if (m.t === 'w') {
     Object.assign(prog, { hp: PROGRESS.BASE_HP, xp: 0, level: 1, next: xpToNext(1), ups: {}, choices: null, more: 0, stats: statsOf({}, CFG, profile.char), earned: 0 });
@@ -488,7 +558,7 @@ function onMessage(m) {
     roundTime = m.rtm || CFG.ROUND_TIME;
     roundStart = { earned: 0, coins: profile.coins };
     if (m.map) setMap(m.map);
-    showMapIntro(m.map || curMap.id);
+    if (!document.body.classList.contains('tutorial')) showMapIntro(m.map || curMap.id);
     $('menu').style.display = 'none';
     party?.hideRoom();
     $('invite').hidden = true;
@@ -564,7 +634,7 @@ function onMessage(m) {
     roundStart = { earned: prog.earned, coins: profile.coins };
     if (m.map) {
       setMap(m.map);
-      showMapIntro(m.map);
+      if (!tutor) showMapIntro(m.map);
     }
     roundEnd = 0;
     snapNext = true;
@@ -1437,6 +1507,7 @@ function enterLobby() {
   showcase.open(profile.char);
   showcase.setSkin(profile.skin);
   drawLobby();
+  $('tutorPrompt').hidden = !!(profile.tutorial || prefs.tutorSeen);
 }
 function drawLobby() {
   const c = CHARACTERS[profile.char];
@@ -1727,7 +1798,7 @@ function fixedStep() {
   const roll = input.consume('roll') && canAct;
   let flare = input.consume('flare') && canAct;
   // 라운드 시작 직후에는 공격할 수 없다 (서버와 같은 규칙)
-  const grace = roundLeft > roundTime - CFG.START_GRACE;
+  const grace = roundLeft > roundTime - startGrace();
   if (!canAct || sim.rollT > 0 || grace) atk = false;
   if (atk && localCd <= 0) {
     localCd = prog.stats.cooldown;
@@ -1901,6 +1972,10 @@ function frame(now) {
   drawBuffs();
   if (myId) drawStatus();
   drawFireflies(tSec);
+  if (tutor) {
+    if (offline && ents.has(tutor.ctx.dummy.id)) tutorSeen = true;
+    tutor.update(dt);
+  }
 
   // 조명탄: 깜빡이는 불꽃
   flareSources.length = 0;
@@ -2028,7 +2103,7 @@ function frame(now) {
     if (roundEnd > 0) $('bannerSub').textContent = `${winnerText} · ${Math.ceil(roundEnd)}초 후 다음 라운드`;
     if (myId) drawScore();
     // 라운드 시작 카운트다운 (공격 금지 시간)
-    const count = roundEnd > 0 || !alive ? 0 : Math.max(0, roundLeft - (roundTime - CFG.START_GRACE));
+    const count = roundEnd > 0 || !alive ? 0 : Math.max(0, roundLeft - (roundTime - startGrace()));
     if (count !== lastCount) {
       if (count > 0) toast(String(count), curMap.name, 'count');
       else if (lastCount > 0) toast('시작!', '', 'count');
@@ -2202,6 +2277,7 @@ for (const [id, key] of Object.entries(RANGES)) {
 }
 // 게임에서 나온다: 온라인이면 연결은 유지하고 서버에 알린다 (친선 방에 있었다면 방으로 돌아간다)
 function exitGame() {
+  endTutorial();
   if (offline) offline = null;
   else if (myId) net.send({ t: 'leave' });
   showMenu('');
@@ -2307,6 +2383,7 @@ $('restoreGo').addEventListener('click', () => {
 
 function openSettings() {
   drawBackup();
+  $('tutorAgain').hidden = !!myId;
   $('leave').hidden = !myId;
   $('leave').textContent = party?.active && !offline ? '방으로 돌아가기' : '게임 나가기';
   $('settings').hidden = false;
