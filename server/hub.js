@@ -137,6 +137,7 @@ export class Hub {
       case 'i': if (s.player) s.game.queueInput(s.player.id, m.d); return;
       case 'u': if (s.player) s.game.choose(s.player, m.c); return;
       case 'wn': if (s.player) s.game.cycleWatch(s.player); return; // 관전 대상 바꾸기
+      case 'em': if (s.player) s.game.emote(s.player, m.e); return; // 감정표현
       case 'leave': return this.leaveGame(s);
     }
   }

@@ -35,6 +35,9 @@
       <div id="flash"></div>
       <button id="mute" aria-label="소리 켜기/끄기">🔊</button>
       <button id="gear" aria-label="설정">⚙️</button>
+      <button id="emoteBtn" aria-label="감정표현">😀</button>
+      <div id="emotePick" hidden></div>
+      <div id="emoteLayer"></div>
       <div id="gas"></div>
       <div id="gasText" hidden></div>
       <div id="buffs"></div>
@@ -271,6 +274,7 @@
         </div>
         <label id="fsRow"><span>전체 화면<small>주소창과 아래 버튼 바를 숨겨요</small></span><input type="checkbox" id="setFullscreen" /></label>
         <label><span>배경음악<small>로비에서 잔잔하게</small></span><input type="checkbox" id="setMusic" /></label>
+        <label><span>게임 중 음악<small>조용한 밤 분위기, 끝날 무렵 빨라져요</small></span><input type="checkbox" id="setMusicGame" /></label>
         <div id="installRow" class="installRow" hidden>
           <span>앱으로 설치<small id="installNote">홈 화면에서 주소창 없이 바로 열려요</small></span>
           <button id="installApp">📲 설치</button>

@@ -245,20 +245,43 @@ const CHORDS = [
   [164.81, 196.0, 246.94, 329.63], // Em7
 ];
 const BEAT = 0.42; // 초
+// 게임 중 음악: 한밤의 숲처럼 조용하고 살짝 긴장되는 곡. 낮은 심장 박동 같은 베이스 + 드문드문 맑은 음 + 풀벌레.
+// intensity(0..1): 남은 시간이 적거나 독구름 안이면 박동이 빨라진다.
+const CHORDS_GAME = [
+  [146.83, 174.61, 220.0, 293.66], // Dm
+  [116.54, 146.83, 174.61, 233.08], // Bb
+  [130.81, 164.81, 196.0, 261.63], // C
+  [110.0, 130.81, 164.81, 220.0], // Am
+];
+const BEAT_GAME = 0.36;
 
 export class Music {
   constructor(sfx) {
     this.sfx = sfx;
     this.on = false;
+    this.mode = 'lobby'; // 'lobby' | 'game'
+    this.intensity = 0;
     this.timer = 0;
     this.step = 0;
     this.next = 0;
     this.bus = null;
   }
 
-  start() {
+  start(mode = 'lobby') {
     const ctx = this.sfx.ctx;
-    if (this.on || !ctx) return;
+    if (!ctx) return;
+    if (this.on && this.mode === mode) return;
+    if (this.on) {
+      // 곡만 바꾼다 (잠깐 줄였다가 다시)
+      this.mode = mode;
+      this.step = 0;
+      this.bus.gain.cancelScheduledValues(ctx.currentTime);
+      this.bus.gain.setValueAtTime(0.0001, ctx.currentTime);
+      this.bus.gain.exponentialRampToValueAtTime(mode === 'game' ? 0.34 : 0.5, ctx.currentTime + 1.5);
+      return;
+    }
+    this.mode = mode;
+    this.step = 0;
     this.on = true;
     if (!this.bus) {
       this.bus = ctx.createGain();
@@ -266,7 +289,7 @@ export class Music {
     }
     this.bus.gain.cancelScheduledValues(ctx.currentTime);
     this.bus.gain.setValueAtTime(0.0001, ctx.currentTime);
-    this.bus.gain.exponentialRampToValueAtTime(0.5, ctx.currentTime + 1.5); // 서서히 커진다
+    this.bus.gain.exponentialRampToValueAtTime(mode === 'game' ? 0.34 : 0.5, ctx.currentTime + 1.5); // 서서히 커진다 (게임 중에는 효과음이 잘 들리게 작게)
     this.next = ctx.currentTime + 0.1;
     this.timer = setInterval(() => this.schedule(), 120);
     this.schedule();
@@ -288,6 +311,7 @@ export class Music {
   schedule() {
     const ctx = this.sfx.ctx;
     if (!this.on || !ctx || ctx.state !== 'running') return;
+    if (this.mode === 'game') return this.scheduleGame(ctx);
     while (this.next < ctx.currentTime + 0.5) {
       const bar = Math.floor(this.step / 8);
       const chord = CHORDS[bar % CHORDS.length];
@@ -304,6 +328,48 @@ export class Music {
       if (Math.random() < 0.25) this.crackle(this.next + Math.random() * BEAT);
       this.next += BEAT;
       this.step++;
+    }
+  }
+
+  scheduleGame(ctx) {
+    while (this.next < ctx.currentTime + 0.5) {
+      const bar = Math.floor(this.step / 8);
+      const chord = CHORDS_GAME[Math.floor(bar / 2) % CHORDS_GAME.length]; // 2마디마다 코드
+      const i = this.step % 8;
+      const hot = this.intensity > 0.5;
+      if (i === 0 && bar % 2 === 0) {
+        for (const f of chord.slice(0, 3)) this.note('sine', f / 2, this.next, BEAT_GAME * 15, 0.022);
+        this.note('triangle', chord[0] / 4, this.next, BEAT_GAME * 15, 0.03);
+      }
+      // 심장 박동: 쿵-쿵 (긴장되면 두 배로)
+      if (i === 0 || i === 4 || (hot && (i === 2 || i === 6))) {
+        this.note('sine', chord[0] / 2, this.next, 0.32, hot ? 0.11 : 0.08);
+        this.note('sine', chord[0] / 2, this.next + 0.16, 0.24, hot ? 0.06 : 0.04);
+      }
+      // 맑은 음: 드문드문, 같은 코드의 높은 음
+      if ((i === 3 || i === 6) && Math.random() < 0.55) this.note('triangle', chord[1 + ((this.step * 7) % 3)] * 2, this.next, BEAT_GAME * 2.2, 0.03);
+      if (hot && i === 7) this.note('triangle', chord[3] * 2, this.next, BEAT_GAME, 0.03);
+      // 풀벌레
+      if (Math.random() < 0.06) this.cricket(this.next + Math.random() * BEAT_GAME);
+      this.next += BEAT_GAME * (hot ? 0.85 : 1);
+      this.step++;
+    }
+  }
+
+  cricket(t) {
+    const ctx = this.sfx.ctx;
+    for (let k = 0; k < 3; k++) {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = 4200 + Math.random() * 600;
+      const s = t + k * 0.07;
+      g.gain.setValueAtTime(0.0001, s);
+      g.gain.exponentialRampToValueAtTime(0.012, s + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, s + 0.05);
+      o.connect(g).connect(this.bus);
+      o.start(s);
+      o.stop(s + 0.06);
     }
   }
 

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CFG, FLARE_VIEW, ITEMS, RULES, SCAN_VIEW, ZONE } from './shared/config.js';
+import { CFG, EMOTES, FLARE_VIEW, ITEMS, RULES, SCAN_VIEW, ZONE } from './shared/config.js';
 import { MAP_SIZE, MAPS } from './shared/map.js';
 import { stepPlayer } from './shared/sim.js';
 import { wrapAngle } from './shared/vision.js';
@@ -481,6 +481,66 @@ async function startOffline(name, gameMode, gameRule) {
   onMessage({ t: 'w', id: player.id, team: player.team, ...game.info() });
 }
 
+// ── 감정표현 ── 왼쪽 위 😀 → 8가지 중 하나. 보이는 플레이어 머리 위에 2초 동안 뜬다.
+const emoteBubbles = []; // { el, id, t }
+$('emotePick').append(
+  ...EMOTES.map((e, i) => {
+    const b = document.createElement('button');
+    b.textContent = e;
+    b.addEventListener('pointerdown', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      sendEmote(i);
+    });
+    return b;
+  }),
+);
+$('emoteBtn').addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  $('emotePick').hidden = !$('emotePick').hidden;
+});
+let emoteAt = 0;
+function sendEmote(i) {
+  $('emotePick').hidden = true;
+  if (!myId || performance.now() - emoteAt < 1500) return;
+  emoteAt = performance.now();
+  if (offline) offline.game.emote(offline.player, i);
+  else net.send({ t: 'em', e: i });
+}
+function showEmote(id, i) {
+  if (id !== myId && !ents.has(id)) return; // 시야 밖이면 안 보인다
+  if (!EMOTES[i]) return;
+  let b = emoteBubbles.find((x) => x.id === id);
+  if (!b) {
+    b = { el: $('emoteLayer').appendChild(document.createElement('div')), id, t: 0 };
+    b.el.className = 'emote';
+    emoteBubbles.push(b);
+  }
+  b.el.textContent = EMOTES[i];
+  b.t = 2.2;
+  b.el.style.animation = 'none';
+  void b.el.offsetWidth;
+  b.el.style.animation = '';
+  sfx.choose();
+}
+function drawEmotes(dt) {
+  for (let k = emoteBubbles.length - 1; k >= 0; k--) {
+    const b = emoteBubbles[k];
+    b.t -= dt;
+    const at = b.id === myId ? (alive ? view : null) : ents.get(b.id);
+    if (b.t <= 0 || !at) {
+      b.el.remove();
+      emoteBubbles.splice(k, 1);
+      continue;
+    }
+    const lv = b.id === myId ? prog.level : at.lv || 1;
+    projV.set(at.x, 3.3 * growOf(lv), at.z).project(camera);
+    b.el.style.transform = `translate(${((projV.x + 1) * 0.5 * innerWidth).toFixed(1)}px, ${((1 - projV.y) * 0.5 * innerHeight).toFixed(1)}px) translate(-50%, -100%)`;
+    b.el.style.opacity = Math.min(1, b.t * 3).toFixed(2);
+  }
+}
+
 // ── 관전 ── 쓰러진 동안: 데스매치는 나를 잡은 상대(킬캠), 서바이벌은 살아 있는 팀원부터
 let watchKey = '';
 function drawWatch(watching) {
@@ -812,6 +872,8 @@ function onMessage(m) {
       sfx.skill(skill, vol, pan);
       castFx(id, skill, at);
     }
+  } else if (m.t === 'em') {
+    for (const [id, i] of m.l) showEmote(id, i);
   } else if (m.t === 'h') {
     // 손전등 피해: 보이는 대상에게만 숫자를 띄운다
     for (const [k, v, dmg] of m.l) {
@@ -2136,6 +2198,7 @@ function frame(now) {
   drawBuffs();
   if (myId) drawStatus();
   drawFireflies(tSec);
+  drawEmotes(dt);
   if (tutor) {
     if (offline && ents.has(tutor.ctx.dummy.id)) tutorSeen = true;
     tutor.update(dt);
@@ -2162,6 +2225,7 @@ function frame(now) {
   gasMat.uniforms.uTime.value = now * 0.001;
   const inGas = inGame && alive && roundEnd <= 0 && Math.max(Math.abs(view.x), Math.abs(view.z)) > zoneNow;
   const danger = inGas ? Math.max(0.35, gas / ZONE.GAS_TIME) : inGame && alive ? Math.min(0.3, gas / ZONE.GAS_TIME) : 0;
+  music.intensity = inGame && roundEnd <= 0 && !tutor && (inGas || (roundLeft > 0 && roundLeft <= 30)) ? 1 : 0; // 막판·독구름: 음악 박동이 빨라진다
   $('gas').style.opacity = danger.toFixed(2);
   $('gasText').hidden = !inGas;
   if (inGas) {
@@ -2383,7 +2447,9 @@ if (!canFullscreen || standalone) $('fsRow').hidden = true;
 const music = new Music(sfx);
 function syncMusic() {
   const inMenu = !myId;
-  if (prefs.music && inMenu && sfx.ready) music.start();
+  if (!sfx.ready) return music.stop();
+  if (inMenu && prefs.music) music.start('lobby');
+  else if (!inMenu && prefs.musicGame) music.start('game');
   else music.stop();
 }
 addEventListener('pointerdown', () => setTimeout(syncMusic, 50), { capture: true });
@@ -2433,7 +2499,7 @@ function drawCheat() {
 }
 drawProfile();
 drawDaily();
-const CHECKS = { setCheat: 'cheat', setCheatCoins: 'cheatCoins', setCheatGod: 'cheatGod', setCheatXp: 'cheatXp', setCheatCd: 'cheatCd', setCheatSpeed: 'cheatSpeed', setFixed: 'fixedStick', setLefty: 'lefty', setVibrate: 'vibrate', setStats: 'showStats', setMinimap: 'showMinimap', setFullscreen: 'fullscreen', setMusic: 'music' };
+const CHECKS = { setMusicGame: 'musicGame', setCheat: 'cheat', setCheatCoins: 'cheatCoins', setCheatGod: 'cheatGod', setCheatXp: 'cheatXp', setCheatCd: 'cheatCd', setCheatSpeed: 'cheatSpeed', setFixed: 'fixedStick', setLefty: 'lefty', setVibrate: 'vibrate', setStats: 'showStats', setMinimap: 'showMinimap', setFullscreen: 'fullscreen', setMusic: 'music' };
 const RANGES = { setSens: 'sens', setVol: 'volume', setZoom: 'zoom' };
 for (const [id, key] of Object.entries(CHECKS)) {
   $(id).checked = prefs[key];
