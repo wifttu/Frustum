@@ -318,6 +318,7 @@ export class Game {
   // ── 성장 ──
   applyStats(p) {
     p.stats = statsOf(p.ups, this.cfg, p.char, p.level);
+    if (p.dummy) p.stats.maxHp = PROGRESS.BASE_DAMAGE * 2; // 연습용 허수아비: 손전등 딱 2방
     const ch = this.cheatOn(p);
     if (ch?.xp) p.stats.xpMul *= CHEAT.XP_MUL;
     if (ch?.cd) {
@@ -612,7 +613,7 @@ export class Game {
       p.vest = Math.max(0, p.vest - DT);
       // 체력 회복: 한동안 맞지 않으면
       p.hurtT += DT;
-      if (p.alive && p.hurtT >= p.stats.regenDelay && p.hp < p.stats.maxHp) p.hp = Math.min(p.stats.maxHp, p.hp + p.stats.regen * DT);
+      if (p.alive && !p.dummy && p.hurtT >= p.stats.regenDelay && p.hp < p.stats.maxHp) p.hp = Math.min(p.stats.maxHp, p.hp + p.stats.regen * DT);
       p.cloakT = Math.max(0, p.cloakT - DT);
       p.shieldT = Math.max(0, p.shieldT - DT);
       p.scanT = Math.max(0, p.scanT - DT);
