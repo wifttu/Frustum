@@ -1008,3 +1008,17 @@ body.lefty #stickZone { left: auto; right: calc(34px + env(safe-area-inset-right
 .rankList div { padding: 6px; border-radius: 10px; background: #221d36; text-align: center; font-size: 11px; color: #9f98b4; border: 1px solid #332c4a; }
 .rankList div b { display: block; font-size: 13px; color: var(--rc); }
 .rankList div.me { border-color: var(--rc); background: color-mix(in srgb, var(--rc) 15%, #221d36); }
+
+/* 관전 */
+#dead.watching { top: auto; bottom: calc(10px + env(safe-area-inset-bottom)); padding: 6px 18px; }
+#dead.watching em { font-size: 18px; letter-spacing: 3px; }
+#watchBar {
+  position: absolute; top: calc(78px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 6; pointer-events: auto;
+  display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 14px; border-radius: 999px; white-space: nowrap;
+  background: rgba(20, 16, 30, .85); border: 1px solid rgba(255, 255, 255, .2); color: #fff; font-size: 13px;
+}
+#watchBar[hidden] { display: none; }
+#watchBar span { color: #9fd4ff; font-weight: 800; }
+#watchBar b { font-size: 14px; }
+#watchNext { border: 0; border-radius: 999px; padding: 6px 12px; background: #2f8fe6; color: #fff; font-weight: 800; font-family: inherit; }
+#watchNext[hidden] { display: none; }

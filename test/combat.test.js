@@ -303,3 +303,27 @@ test('맵: 라운드마다 다음 맵으로 바뀌고, 클라이언트에 알린
   game.broadcast();
   assert.ok(sent.get(1).some((m) => m.t === 'n' && m.map === MAP_ROTATION[1]));
 });
+
+test('관전: 쓰러지면 잡은 상대의 시야로 보고, 다음 대상으로 바꿀 수 있다', () => {
+  const { game, add, place } = setup({ TEAMS: 0 });
+  const a = add('A');
+  const b = add('B');
+  const c = add('C');
+  place(a, 0, 0, 0);
+  place(b, 0, 3, Math.PI); // a 를 바라본다
+  place(c, 20, 20, 0);
+  a.hp = 1;
+  game.attack(b);
+  assert.equal(a.alive, false);
+  let snap = game.snapshotFor(a, game.computeVisibility());
+  assert.equal(snap.w, b.id);
+  // b 의 팀(= b 자신) 시야: b 는 목록에 들어 있다
+  assert.ok(snap.e.some((x) => x[0] === b.id));
+  game.cycleWatch(a);
+  snap = game.snapshotFor(a, game.computeVisibility());
+  assert.equal(snap.w, c.id);
+  // 살아나면 관전 끝
+  place(a, 0, 0, 0);
+  snap = game.snapshotFor(a, game.computeVisibility());
+  assert.equal(snap.w, 0);
+});

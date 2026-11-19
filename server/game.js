@@ -84,7 +84,7 @@ export class Game {
       id, name, team: 0, isBot, send,
       x: 0, z: 0, yaw: 0,
       alive: false, respawn: 0, gas: 0, cd: 0, speedT: 0, vest: 0, cloakT: 0, picked: [],
-      dashT: 0, shieldT: 0, scanT: 0, cast: null,
+      dashT: 0, shieldT: 0, scanT: 0, cast: null, watch: 0,
       hp: 0, xp: 0, level: 1, ups: {}, choices: [], hurtT: 0, statsDirty: true, ffVer: -1, earned: 0,
       // 캐릭터: 봇은 무작위. (계정이 없어 구매 여부는 클라이언트가 관리한다)
       char: isBot ? CHARACTER_KEYS[Math.floor(Math.random() * CHARACTER_KEYS.length)] : charOf(char),
@@ -292,6 +292,7 @@ export class Game {
       q.hp = 0;
       q.alive = false;
       q.respawn = cfg.RESPAWN_TIME;
+      q.watch = p.id; // 관전: 부활할 때까지 나를 잡은 상대를 본다 (서바이벌은 살아 있는 팀원이 먼저)
       q.queue.length = 0;
       p.score++;
       this.kills.push([p.id, q.id]);
@@ -683,19 +684,49 @@ export class Game {
     return vis;
   }
 
+  // ── 관전 ── 쓰러진 플레이어는 다른 플레이어의 눈으로 본다 (그 플레이어 팀의 시야를 받는다)
+  watchTarget(p) {
+    if (p.alive) {
+      p.watch = 0;
+      return null;
+    }
+    let w = this.players.get(p.watch);
+    // 서바이벌에서 팀원이 살아 있으면 팀원을 본다 (적 정보가 새지 않게)
+    if (!this.respawns && w && w.team !== p.team) {
+      const mate = [...this.players.values()].find((q) => q.alive && q !== p && q.team === p.team);
+      if (mate) w = mate;
+    }
+    if (!w || !w.alive) {
+      const alive = [...this.players.values()].filter((q) => q.alive && q !== p);
+      w = alive.find((q) => q.team === p.team) || alive.sort((a, b) => b.score - a.score || b.level - a.level)[0] || null;
+    }
+    p.watch = w ? w.id : 0;
+    return w;
+  }
+  // 관전 대상 바꾸기 (살아 있는 플레이어를 차례로)
+  cycleWatch(p) {
+    if (!p || p.alive) return;
+    const list = [...this.players.values()].filter((q) => q.alive && q !== p).sort((a, b) => a.id - b.id);
+    if (!list.length) return;
+    const i = list.findIndex((q) => q.id === p.watch);
+    p.watch = list[(i + 1) % list.length].id;
+  }
+
   // 플레이어별 스냅샷. 시야 밖 적은 아예 담지 않는다 → 클라이언트 메모리에 위치가 존재하지 않음.
   // e: [id, x, z, yaw, flags]  flags: 1 = 빔 발사 중, 2 = 구르는 중, 4 = 망토, 8 = 조끼(또는 방패), 16 = 매의 눈, 32 = 질주, 64 = 방패
   snapshotFor(p, vis) {
-    const seen = vis.get(p.team);
+    const w = this.watchTarget(p);
+    const team = w ? w.team : p.team; // 관전 중이면 보고 있는 플레이어 팀의 시야
+    const seen = vis.get(team);
     const e = [];
     for (const q of this.players.values()) {
       if (q === p || !q.alive) continue;
-      if (q.team !== p.team && !(seen && seen.has(q.id))) continue;
+      if (q.team !== team && !(seen && seen.has(q.id))) continue;
       e.push([q.id, q2(q.x), q2(q.z), q2(q.yaw), (q.beam > 0 ? 1 : 0) | (q.rollT > 0 ? 2 : 0) | (q.cloakT > 0 ? 4 : 0) | (q.vest > 0 || q.shieldT > 0 ? 8 : 0) | (q.scanT > 0 ? 16 : 0) | (q.dashT > 0 ? 32 : 0) | (q.shieldT > 0 ? 64 : 0), Math.ceil((q.hp / q.stats.maxHp) * 100), q.level]);
     }
     const f = [];
-    for (const fl of this.flares) if (fl.team === p.team) f.push([q2(fl.x), q2(fl.z), q2(fl.t)]);
-    const seenItems = vis.get('i' + p.team);
+    for (const fl of this.flares) if (fl.team === team) f.push([q2(fl.x), q2(fl.z), q2(fl.t)]);
+    const seenItems = vis.get('i' + team);
     const it = [];
     if (seenItems) for (const x of this.items) if (seenItems.has(x.id)) it.push([x.id, x.type, q2(x.x), q2(x.z)]);
     const pk = p.picked;
@@ -721,6 +752,7 @@ export class Game {
       ff,
       hp: Math.ceil(p.hp),
       xp: p.xp,
+      w: w ? w.id : 0, // 관전 중인 플레이어
     };
   }
 

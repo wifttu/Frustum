@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CFG, FLARE_VIEW, ITEMS, SCAN_VIEW, ZONE } from './shared/config.js';
+import { CFG, FLARE_VIEW, ITEMS, RULES, SCAN_VIEW, ZONE } from './shared/config.js';
 import { MAP_SIZE, MAPS } from './shared/map.js';
 import { stepPlayer } from './shared/sim.js';
 import { wrapAngle } from './shared/vision.js';
@@ -335,6 +335,8 @@ let localCd = 0;
 let localBeam = 0;
 let flareCd = 0;
 let killedBy = '';
+let watchId = 0; // 쓰러진 동안 보고 있는 플레이어 (서버가 정한다)
+const camFocus = { x: 0, z: 0, yaw: 0, init: false }; // 카메라가 따라가는 곳 (관전 대상으로 부드럽게 옮겨 간다)
 let roundStart = { earned: 0, coins: 0 }; // 판이 시작될 때의 경험치·코인 (결과 화면에서 차이를 보여준다)
 let streak = 0; // 죽지 않고 이어간 처치 수
 let lastCount = 0; // 라운드 시작 카운트다운 표시용
@@ -478,6 +480,29 @@ async function startOffline(name, gameMode, gameRule) {
   offline = { game, player };
   onMessage({ t: 'w', id: player.id, team: player.team, ...game.info() });
 }
+
+// ── 관전 ── 쓰러진 동안: 데스매치는 나를 잡은 상대(킬캠), 서바이벌은 살아 있는 팀원부터
+let watchKey = '';
+function drawWatch(watching) {
+  const on = !!watching && !!myId && roundEnd <= 0;
+  const key = on ? `${watchId}|${killedBy}` : '';
+  $('dead').classList.toggle('watching', on);
+  if (key === watchKey) return;
+  watchKey = key;
+  $('watchBar').hidden = !on;
+  if (!on) return;
+  const r = roster.get(watchId);
+  const who = r?.name ?? '';
+  $('watchName').textContent = who === killedBy ? `${who} (나를 잡은 상대)` : r?.team === myTeam ? `${who} (팀원)` : who;
+  $('watchNext').hidden = !!RULES[rule]?.respawn; // 부활을 기다리는 동안은 킬캠만
+}
+$('watchNext').addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (offline) offline.game.cycleWatch(offline.player);
+  else net.send({ t: 'wn' });
+  sfx.choose();
+});
 
 // ── 미션 · 업적 · 랭크 ── (치트 모드, 연습 중에는 기록하지 않는다)
 const tracking = () => !tutor && !prefs.cheat && !!myId;
@@ -821,6 +846,7 @@ const kindOf = (id) => (roster.get(id)?.team === myTeam ? 'ally' : 'enemy');
 
 function onSnapshot(m) {
   const [x, z, yaw, al, resp, cdNow, rollT, rollCd, rollDx, rollDz, fcd, gasT, speedT, vestT, cloakT, dashT, shieldT, scanT] = m.me;
+  watchId = m.w || 0;
   const wasAlive = alive;
   alive = !!al;
   roundLeft = m.rt ?? 0;
@@ -2147,28 +2173,40 @@ function frame(now) {
     }
   } else gasSfxT = 0;
 
-  // 1) 시야 마스크: 나 + 팀원 + 팀 조명탄의 시야 합집합
+  // 1) 시야 마스크: 나 + 팀원 + 팀 조명탄의 시야 합집합. 관전 중이면 보고 있는 플레이어 팀의 시야.
+  const watching = !alive && watchId ? ents.get(watchId) : null;
+  const visTeam = watching ? roster.get(watchId)?.team : myTeam;
   sources.length = 0;
   if (alive) sources.push(view);
-  for (const [id, e] of ents) if (roster.get(id)?.team === myTeam) sources.push(e);
+  for (const [id, e] of ents) if (roster.get(id)?.team === visTeam) sources.push(e);
   sources.push(...flareSources);
   // 매의 눈: 사방 시야 (나, 그리고 스킬을 쓴 아군)
   if (alive && buffs.scan > 0) sources.push({ x: view.x, z: view.z, yaw: 0, view: SCAN_VIEW });
-  for (const [id, e] of ents) if (e.flags & 16 && roster.get(id)?.team === myTeam) sources.push({ x: e.x, z: e.z, yaw: 0, view: SCAN_VIEW });
+  for (const [id, e] of ents) if (e.flags & 16 && roster.get(id)?.team === visTeam) sources.push({ x: e.x, z: e.z, yaw: 0, view: SCAN_VIEW });
+  drawWatch(watching);
   renderer.info.reset();
   mask.update(renderer, sources);
 
-  // 2) 카메라 (캐릭터 뒤 위쪽에서 따라가는 3인칭)
-  const s = Math.sin(view.yaw);
-  const c = Math.cos(view.yaw);
+  // 2) 카메라 (캐릭터 뒤 위쪽에서 따라가는 3인칭). 관전 중이면 보고 있는 플레이어를 따라간다.
+  const tgt = watching || view;
+  if (!camFocus.init || (!watching && alive)) Object.assign(camFocus, { x: tgt.x, z: tgt.z, yaw: tgt.yaw, init: true });
+  else {
+    const k = Math.min(1, dt * 5);
+    camFocus.x += (tgt.x - camFocus.x) * k;
+    camFocus.z += (tgt.z - camFocus.z) * k;
+    camFocus.yaw += wrapAngle(tgt.yaw - camFocus.yaw) * k;
+  }
+  const cv = camFocus;
+  const s = Math.sin(cv.yaw);
+  const c = Math.cos(cv.yaw);
   shake = Math.max(0, shake - dt * 2.6);
   const sk = shake * shake * 1.1;
   camera.position.set(
-    view.x - s * 9 * prefs.zoom + (Math.random() - 0.5) * sk,
+    cv.x - s * 9 * prefs.zoom + (Math.random() - 0.5) * sk,
     17 * prefs.zoom + (Math.random() - 0.5) * sk,
-    view.z - c * 9 * prefs.zoom + (Math.random() - 0.5) * sk,
+    cv.z - c * 9 * prefs.zoom + (Math.random() - 0.5) * sk,
   );
-  camera.lookAt(view.x + s * 4.5 * prefs.zoom, 0, view.z + c * 4.5 * prefs.zoom);
+  camera.lookAt(cv.x + s * 4.5 * prefs.zoom, 0, cv.z + c * 4.5 * prefs.zoom);
   camera.updateMatrixWorld();
   projView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
   frustum.setFromProjectionMatrix(projView);
