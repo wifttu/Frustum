@@ -35,9 +35,17 @@ function box([cx, cz, w, d, kind]) {
 }
 
 // def.outer: 바깥 울타리 모양, def.deco: 판정 없는 꾸밈 [x, z, 종류], def.look: 조명·물 모양 (클라이언트 전용)
+// def.half: 작은 맵. 바깥 울타리를 ±half 에 세우고, 그 밖은 들어갈 수 없는 어둠('void')으로 채운다.
 function makeMap(id, name, def) {
-  const outer = OUTER.map(([x, z, w, d]) => [x, z, w, d, def.outer || 'palisade']);
-  const walls = [...outer, ...def.walls].map(box);
+  const h = def.half || H;
+  const L = h * 2 + 1;
+  const outer = [[0, -h, L, 1], [0, h, L, 1], [-h, 0, 1, L], [h, 0, 1, L]].map(([x, z, w, d]) => [x, z, w, d, def.outer || 'palisade']);
+  // 울타리 바깥: 맵 끝까지 막는 큰 상자 4개 (그리지 않는다)
+  const t = H - h; // 두께
+  const voids = def.half
+    ? [[0, -(h + 0.5 + t / 2), MAP_SIZE + 1, t], [0, h + 0.5 + t / 2, MAP_SIZE + 1, t], [-(h + 0.5 + t / 2), 0, t, L], [h + 0.5 + t / 2, 0, t, L]].map((b) => [...b, 'void'])
+    : [];
+  const walls = [...outer, ...voids, ...def.walls].map(box);
   const water = (def.water || []).map(box);
   return {
     id, name, walls, water,
@@ -46,6 +54,7 @@ function makeMap(id, name, def) {
     ground: def.ground,
     deco: def.deco || [],
     look: { water: 'lake', sky: 0xfff0d8, earth: 0x6b5a45, sun: 0xfff2dc, ...def.look },
+    half: h, // 걸어 다닐 수 있는 범위 (작은 맵이면 32 보다 작다)
   };
 }
 // 꾸밈 대칭 복사
@@ -191,7 +200,36 @@ const FACTORY = makeMap('factory', '버려진 공장', {
   look: { water: 'toxic', sky: 0xffe2b8, earth: 0x5a5248, sun: 0xffd9a0 },
 });
 
-export const MAPS = { camp: CAMP, forest: FOREST, lake: LAKE, winter: WINTER, beach: BEACH, factory: FACTORY };
+// 7) 훈련장(연습 전용, 순환·선택에 없음): 30m x 30m 의 울타리 친 마당. 구역마다 연습할 거리가 있다.
+//   남쪽: 시작 마당 + 나무 가림막(처음에는 허수아비가 안 보인다)  서쪽: 허수아비  가운데: 상자·건초 엄폐물
+//   동쪽: 경비 허수아비 자리(숨을 건초 더미)  북쪽: 돌담 뒤 숨은 허수아비 + 조명탄 발판
+const TRAINING = makeMap('training', '훈련장', {
+  half: 15,
+  outer: 'fence',
+  ground: {
+    base: '#b39463', patches: ['rgba(205,175,125,.35)', 'rgba(150,120,80,.3)', 'rgba(120,150,80,.22)'], road: ['#8c7350', '#a08460'],
+    detail: 'sand', under: 'rgba(110,85,55,.45)',
+  },
+  walls: [
+    [0, -6, 12, 1.2, 'plank'], // 남쪽 가림막
+    [0.5, 10, 13, 1.2, 'stone'], // 북쪽 돌담 (숨은 허수아비를 가린다)
+    [0, 2, 2, 2, 'crates'], // 가운데 엄폐물
+    [5.5, -1.5, 1.8, 1.8, 'haybale'],
+    [6, 5, 1.8, 1.8, 'haybale'],
+    [-6.5, 5, 1.8, 1.8, 'haybale'],
+    [12.5, -10, 1.8, 1.8, 'haybale'],
+    [-12.5, -10, 2, 2, 'crates'],
+    [-12, 12, 1.6, 1.6, 'tree'],
+  ],
+  deco: [
+    [-4, -12, 'target'], [4, -12, 'target'], [-13.5, -3, 'flag'], [13.5, -3, 'flag'], [-13.5, 13.5, 'lamp'], [13.5, 13.5, 'lamp'],
+    [-13.5, -13.5, 'lamp'], [13.5, -13.5, 'lamp'], [0, -14, 'flag'], [-8, 8, 'drum'], [9, -6, 'pallet'], [-3, 6, 'log'],
+  ],
+  roads: [[[[0, -14], [0, -7.5], [-8, -4], [-10, 2], [-2, 4], [8, 2], [11, 8]], 0.9]],
+  look: { sky: 0xffe9c8, earth: 0x6a5a40, sun: 0xfff0d8 },
+});
+
+export const MAPS = { camp: CAMP, forest: FOREST, lake: LAKE, winter: WINTER, beach: BEACH, factory: FACTORY, training: TRAINING };
 export const MAP_ROTATION = ['camp', 'winter', 'forest', 'beach', 'lake', 'factory'];
 
 // 기존 코드 호환: 기본 맵(캠핑장)

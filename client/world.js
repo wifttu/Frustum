@@ -370,6 +370,49 @@ function warehouse(w, d) {
   return parts;
 }
 
+// ───── 훈련장 ─────
+// 나무 가림막: 판자 벽에 과녁을 그렸다
+function plankWall(L, T) {
+  const parts = [];
+  const n = Math.round(L / 0.55);
+  for (let i = 0; i < n; i++) {
+    const x = -L / 2 + (i + 0.5) * (L / n);
+    const h = 2.5 + ((i * 5) % 3) * 0.12;
+    parts.push([box(L / n - 0.05, h, T * 0.5, x, h / 2, 0), vary(i % 2 ? C.plank : shade(C.plank, 0.88), i, 0.15)]);
+  }
+  for (const y of [0.6, 1.9]) parts.push([box(L, 0.18, T * 0.7, 0, y, 0), C.logDark]);
+  for (const sx of [-1, 1]) parts.push([box(0.3, 2.9, T, sx * (L / 2 - 0.15), 1.45, 0), C.logDark]);
+  // 과녁 (양면)
+  for (const x of [-L * 0.28, L * 0.28]) {
+    for (const sz of [-1, 1]) {
+      const z = sz * (T * 0.26);
+      [[0.62, C.white], [0.48, C.red], [0.32, C.white], [0.16, C.red]].forEach(([r, c], j) => {
+        parts.push([new THREE.CylinderGeometry(r, r, 0.03, 20).rotateX(Math.PI / 2).translate(x, 1.45, z + sz * (0.01 + j * 0.008)), c]);
+      });
+    }
+  }
+  return parts;
+}
+// 둥근 건초 더미
+function haybale(k) {
+  const parts = [];
+  const lying = k % 2 === 0;
+  const roll = (x, y, z, r, len) => {
+    const g = new THREE.CylinderGeometry(r, r, len, 16);
+    if (lying) g.rotateZ(Math.PI / 2);
+    return g.translate(x, y, z);
+  };
+  parts.push([roll(0, lying ? 0.75 : 0.65, 0, 0.75, lying ? 1.4 : 1.3), C.straw]);
+  for (const t of [-0.45, 0, 0.45]) {
+    const g = new THREE.TorusGeometry(0.76, 0.03, 4, 18);
+    if (lying) g.rotateY(Math.PI / 2).translate(t, 0.75, 0);
+    else g.rotateX(Math.PI / 2).translate(0, 0.65 + t, 0);
+    parts.push([g, C.strawDark]);
+  }
+  parts.push([ball(0.4, 1.2, 0.4, 1.2, 0, 0.04, 0), C.strawDark]);
+  return parts;
+}
+
 function dress(w, i) {
   const L = Math.max(w.w, w.d);
   const T = Math.min(w.w, w.d);
@@ -385,6 +428,9 @@ function dress(w, i) {
     // 공장
     brick: () => brickWall(L, T), container: () => container(L, T, k), pipes: () => pipes(L, T), barrels: () => barrels(k),
     tank: () => tank(k, L), warehouse: () => warehouse(L, T),
+    // 훈련장
+    plank: () => plankWall(L, T), haybale: () => haybale(k),
+    void: () => [[box(0.01, 0.01, 0.01, 0, -20, 0), [0, 0, 0]]], // 울타리 밖 어둠 (그리지 않는다)
   };
   if (w.kind && kinds[w.kind]) return kinds[w.kind]();
   if (i < 4) return palisade(L, T);
@@ -578,6 +624,16 @@ export function buildFloorTexture(map, mapSize) {
       g.fill();
     }
   }
+  // 작은 맵: 울타리 밖은 어두운 흙
+  if (map.half && map.half < mapSize / 2) {
+    g.fillStyle = '#1c1812';
+    const inner = (map.half + 0.5) * k;
+    const mid = S / 2;
+    g.fillRect(0, 0, S, mid - inner);
+    g.fillRect(0, mid + inner, S, S - mid - inner);
+    g.fillRect(0, 0, mid - inner, S);
+    g.fillRect(mid + inner, 0, S - mid - inner, S);
+  }
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
@@ -744,6 +800,16 @@ const DECO = {
     return { p };
   },
   drum: (r) => ({ p: drum(0, 0, C.drums[Math.round(r * 9) % 4], 0.9) }),
+  // 훈련장: 과녁, 깃발
+  target: () => {
+    const p = [[cylY(0.06, 1.6, -0.35, 0.8, -0.2, 5), C.logDark], [cylY(0.06, 1.6, 0.35, 0.8, -0.2, 5), C.logDark]];
+    [[0.6, C.white], [0.46, C.red], [0.3, C.white], [0.14, C.red]].forEach(([r, c], j) => p.push([new THREE.CylinderGeometry(r, r, 0.08, 20).rotateX(Math.PI / 2 - 0.25).translate(0, 1.25, 0.02 * j), c]));
+    p.push([cylX(0.02, 0.5, 0.15, 1.3, 0.25).rotateY(0.4), C.logDark]); // 꽂힌 화살
+    return { p };
+  },
+  flag: (r) => ({
+    p: [[cylY(0.05, 3, 0, 1.5, 0, 6), C.logDark], [box(0.9, 0.55, 0.03, 0.47, 2.65, 0), C.tents[Math.round(r * 9) % 4]], [ball(0.08, 1, 1, 1, 0, 3.02, 0), C.hazard]],
+  }),
 };
 export function buildDeco(map, material) {
   const parts = [];

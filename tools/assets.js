@@ -1,6 +1,6 @@
 // 이미지 생성 장면들 (tools/render-assets.mjs 가 브라우저에서 실행한다)
 import * as THREE from 'three';
-import { MAPS, MAP_SIZE, isFree } from '../shared/map.js';
+import { MAPS, MAP_ROTATION, MAP_SIZE, isFree } from '../shared/map.js';
 import { CFG } from '../shared/config.js';
 import { CHARACTER_KEYS, SKILLS, UPGRADES } from '../shared/progress.js';
 import { SKIN_ICONS } from '../shared/shop.js';
@@ -88,6 +88,7 @@ const VIEWS = {
   winter: { cam: [16, 18, -18], at: [2, 0, 4], cast: [['bear', 6, -7, -2, 6, 1], ['explorer', -6.5, 8, 6, 2, 1], ['owl', 9, 9.5, 1, 14, 0]] },
   beach: { cam: [-6, 19, -6], at: [5, 0, 17], cast: [['runner', 9, 15, 12, 25, 1], ['collector', 4, 12, -4, 18, 1], ['ninja', 16, 18, 8, 10, 0]] },
   factory: { cam: [16, 18, -17], at: [3, 0, 6], cast: [['ninja', 6, -3, -1, 7, 1], ['runner', 4.5, 7.5, 11, 1, 1], ['healer', 13, 14, 5, 6, 0]] },
+  training: { cam: [11, 17, -19], at: [0, 0, 0], cast: [['explorer', -1, -9, -9, -1, 1], ['bear', -8, 1, 0, -8, 0], ['owl', 8, 1, 0, 2, 1]] },
 };
 
 function mapScene(id) {
@@ -603,12 +604,12 @@ window.renderAll = async (only = '') => {
     out[`maps/${id}`] = thumbs[id] = shoot(scene, camera, 512, 288, { post: vignette, quality: 0.86 });
   }
   // 순환: 맵 6개를 비스듬히 이어 붙인 그림
-  if (want('maps/auto') && Object.keys(thumbs).length === Object.keys(MAPS).length) {
+  if (want('maps/auto') && MAP_ROTATION.every((id) => thumbs[id])) {
     const c = document.createElement('canvas');
     c.width = 512;
     c.height = 288;
     const g = c.getContext('2d');
-    const ids = Object.keys(MAPS);
+    const ids = MAP_ROTATION; // 순환하는 맵만 (훈련장 제외)
     const imgs = await Promise.all(ids.map((id) => new Promise((ok) => { const im = new Image(); im.onload = () => ok(im); im.src = thumbs[id]; })));
     const n = imgs.length;
     const slant = 40;

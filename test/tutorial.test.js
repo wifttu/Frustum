@@ -27,3 +27,11 @@ test('연습 배치: 숨은 허수아비는 발판·경비·첫 허수아비 자
   const flare = { ...CFG, FOV: Math.PI * 2, VIEW_RANGE: CFG.FLARE_RADIUS, NEAR_RADIUS: 1 };
   assert.ok(canSee({ x: lx, z: lz, yaw: 0 }, ...L.hidden, CFG.PLAYER_RADIUS, map.walls, flare), '조명탄 빛에 보인다');
 });
+
+test('연습 배치: 게임을 훈련장으로 열면 정말 훈련장이다 (순환에 없는 맵)', async () => {
+  const { Game } = await import('../server/game.js');
+  const g = new Game({ mode: 'ffa', rule: 'dm', map: L.map, FIXED_MAP: true, BOT_FILL: 0 });
+  assert.equal(g.map.id, 'training');
+  g.newRound();
+  assert.equal(g.map.id, 'training');
+});

@@ -26,7 +26,7 @@ export class Minimap {
     g.fillStyle = 'rgba(70, 150, 220, .8)';
     map.water.forEach(rect);
     g.fillStyle = 'rgba(160, 180, 200, .75)';
-    map.walls.forEach(rect);
+    map.walls.filter((w) => w.kind !== 'void').forEach(rect);
   }
 
   // 월드 → 캔버스. 카메라가 +z 를 볼 때 화면 오른쪽이 -x 이므로 x 를 뒤집어 위쪽이 +z 가 되게 한다.
