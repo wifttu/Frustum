@@ -460,3 +460,36 @@ test('모닥불 점령: 새 라운드에는 점수가 0부터, 봇은 모닥불�
   }
   assert.ok(visited.size >= 3, `visited ${visited.size}`);
 });
+
+test('결과 화면: 혼자 하기는 다시하기를 누를 때까지 기다리고, 누르면 결과를 잠깐 보여 준 뒤 다음 판', () => {
+  const { game, add } = setup({ HOLD_END: true });
+  const a = add('A');
+  game.addPlayer('AI', null, true); // 혼자 하기: 사람 한 명 + AI
+  game.endRound(a.team);
+  for (let i = 0; i < CFG.TICK_RATE * 20; i++) game.step();
+  assert.ok(game.endT > 0, '누르기 전에는 다음 판으로 넘어가지 않는다');
+  game.again(a);
+  game.step();
+  assert.equal(game.endT, 0, '결과를 충분히 봤으면 바로 다음 판');
+  assert.equal(a.again, false);
+});
+
+test('결과 화면: 온라인은 시간이 되면 넘어가고, 사람이 모두 다시하기를 누르면 일찍 넘어간다', () => {
+  const { game, add } = setup({});
+  const a = add('A');
+  const b = add('B');
+  game.endRound(a.team);
+  game.again(a);
+  for (let i = 0; i < CFG.TICK_RATE * 3; i++) game.step();
+  assert.ok(game.endT > 0, '한 명만 눌렀으면 기다린다');
+  game.again(b);
+  game.step();
+  assert.equal(game.endT, 0, '모두 눌렀으면 바로');
+  // 아무도 안 누르면 정해진 시간 뒤에 넘어간다
+  game.endRound(a.team);
+  for (let i = 0; i < CFG.TICK_RATE * (CFG.INTERMISSION + 0.5); i++) game.step();
+  assert.equal(game.endT, 0);
+  // 판이 진행 중일 때 누른 것은 무시
+  game.again(a);
+  assert.ok(!a.again);
+});
