@@ -678,6 +678,15 @@ $('closeMissions').addEventListener('click', () => ($('missionPanel').hidden = t
 for (const b of $('missionTabs').children) b.addEventListener('click', () => openMissions(b.dataset.tab));
 
 // ── 연습(튜토리얼) ──
+// 허수아비 발밑의 노란 고리 (어둠 속에서도 보인다)
+const tutorRing = new THREE.Mesh(
+  new THREE.RingGeometry(0.95, 1.25, 40).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0xffd25a, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending }),
+);
+tutorRing.visible = false;
+tutorRing.renderOrder = 4;
+tutorRing.frustumCulled = false;
+scene.add(tutorRing);
 let tutor = null; // 진행 중인 연습
 const startGrace = () => (tutor ? 0 : CFG.START_GRACE); // 연습에는 시작 대기 시간이 없다
 let tutorSeen = false; // 허수아비를 한 번이라도 시야에 넣었나
@@ -706,13 +715,22 @@ async function startTutorial() {
   input.yaw = 0;
   tutor = new Tutorial({
     $, sfx, game, player, dummy, skill: player.skill,
-    // 월드 → 화면 좌표 (화살표를 원근에 맞게 그리려고)
-    project: (x, z) => {
-      projV.set(x, 0.9, z).project(camera);
-      return [(projV.x + 1) * 0.5 * innerWidth, (1 - projV.y) * 0.5 * innerHeight];
+    // 월드 → 화면 좌표 [x, y, 깊이(1 이상이면 카메라 뒤)] (표시를 원근에 맞게 그리려고)
+    project: (x, y, z) => {
+      projV.set(x, y, z).project(camera);
+      return [(projV.x + 1) * 0.5 * innerWidth, (1 - projV.y) * 0.5 * innerHeight, projV.z];
+    },
+    stickCenter: () => input.fixedCenter(),
+    ring: (x, z, on, t = 0) => {
+      tutorRing.visible = on;
+      if (!on) return;
+      tutorRing.position.set(x, 0.08, z);
+      const k = 1 + 0.18 * Math.sin(t * 6);
+      tutorRing.scale.set(k, 1, k);
     },
     state: () => ({
-      x: view.x, z: view.z, yaw: view.yaw, seen: tutorSeen, seenNow: ents.has(dummy.id), level: prog.level,
+      x: view.x, z: view.z, yaw: view.yaw, seen: tutorSeen, level: prog.level, xp: prog.xp, next: prog.next,
+      walking: Math.hypot(input.mx, input.mz) > 0.25 && sim.rollT <= 0 && sim.dashT <= 0, // 조이스틱으로 걷는 중 (구르기·질주 제외)
       ups: Object.values(prog.ups || {}).reduce((a, b) => a + b, 0), skill: sim.rollCd > 0, flare: flareCd > 0,
     }),
     onFinish: () => {
@@ -2701,4 +2719,5 @@ window.__frustum = {
   get myId() { return myId; },
   get flares() { return flares; },
   get offline() { return offline; },
+  get tutor() { return tutor; },
 };
