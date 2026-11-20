@@ -265,6 +265,7 @@ export class Game {
     for (const q of this.players.values()) {
       if (!q.alive || q.team === p.team) continue;
       if (q.rollT > 0) continue; // 구르기 무적
+      if (q.invuln) continue; // 연습용: 쓰러뜨릴 수 없는 허수아비 (빛이 그냥 지나간다)
       const dx = q.x - p.x;
       const dz = q.z - p.z;
       const d = Math.hypot(dx, dz);

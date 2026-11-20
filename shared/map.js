@@ -55,7 +55,14 @@ function makeMap(id, name, def) {
     deco: def.deco || [],
     look: { water: 'lake', sky: 0xfff0d8, earth: 0x6b5a45, sun: 0xfff2dc, ...def.look },
     half: h, // 걸어 다닐 수 있는 범위 (작은 맵이면 32 보다 작다)
+    gates: (def.gates || []).map(box), // 닫을 수 있는 문 (평소에는 열려 있다 = walls 에 없음)
   };
+}
+// 문을 닫은 맵: 문을 벽으로 더한 사본 (원래 맵은 그대로)
+export function closedMap(map) {
+  if (!map.gates?.length) return map;
+  const walls = [...map.walls, ...map.gates];
+  return { ...map, walls, solid: map.water.length ? [...walls, ...map.water] : walls, closed: true };
 }
 // 꾸밈 대칭 복사
 const deco4 = (list) => mirror4(list.map(([x, z, k]) => [x, z, 0, 0, k])).map(([x, z, , , k]) => [x, z, k]);
@@ -201,7 +208,7 @@ const FACTORY = makeMap('factory', '버려진 공장', {
 });
 
 // 7) 훈련장(연습 전용, 순환·선택에 없음): 30m x 30m 의 울타리 친 마당. 구역마다 연습할 거리가 있다.
-//   남쪽: 시작 마당 + 나무 가림막(처음에는 허수아비가 안 보인다)  서쪽: 허수아비  가운데: 상자·건초 엄폐물
+//   남쪽: 울타리 친 시작 마당(나무 가림막 + 가운데 문. 연습 처음에는 문이 닫혀 있다)  서쪽: 허수아비  가운데: 상자·건초 엄폐물
 //   동쪽: 경비 허수아비 자리(숨을 건초 더미)  북쪽: 돌담 뒤 숨은 허수아비 + 조명탄 발판
 const TRAINING = makeMap('training', '훈련장', {
   half: 15,
@@ -211,7 +218,8 @@ const TRAINING = makeMap('training', '훈련장', {
     detail: 'sand', under: 'rgba(110,85,55,.45)',
   },
   walls: [
-    [0, -6, 12, 1.2, 'plank'], // 남쪽 가림막
+    [-8, -6, 13, 1.2, 'plank'], // 남쪽 가림막 (시작 마당을 막는다)
+    [8, -6, 13, 1.2, 'plank'],
     [0.5, 10, 13, 1.2, 'stone'], // 북쪽 돌담 (숨은 허수아비를 가린다)
     [0, 2, 2, 2, 'crates'], // 가운데 엄폐물
     [5.5, -1.5, 1.8, 1.8, 'haybale'],
@@ -223,8 +231,9 @@ const TRAINING = makeMap('training', '훈련장', {
   ],
   deco: [
     [-4, -12, 'target'], [4, -12, 'target'], [-13.5, -3, 'flag'], [13.5, -3, 'flag'], [-13.5, 13.5, 'lamp'], [13.5, 13.5, 'lamp'],
-    [-13.5, -13.5, 'lamp'], [13.5, -13.5, 'lamp'], [0, -14, 'flag'], [-8, 8, 'drum'], [9, -6, 'pallet'], [-3, 6, 'log'],
+    [-13.5, -13.5, 'lamp'], [13.5, -13.5, 'lamp'], [0, -14, 'flag'], [-8, 8, 'drum'], [9, -4.5, 'pallet'], [-3, 6, 'log'],
   ],
+  gates: [[0, -6, 3, 1.2, 'gate']], // 시작 마당의 문 (가림막 사이 3m)
   roads: [[[[0, -14], [0, -7.5], [-8, -4], [-10, 2], [-2, 4], [8, 2], [11, 8]], 0.9]],
   look: { sky: 0xffe9c8, earth: 0x6a5a40, sun: 0xfff0d8 },
 });

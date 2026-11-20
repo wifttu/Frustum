@@ -393,6 +393,21 @@ function plankWall(L, T) {
   }
   return parts;
 }
+// 나무 문 (닫힌 상태): 양쪽 기둥 + 두 짝 문 + X 자 버팀목 + 자물쇠
+function gate(L, T) {
+  const parts = [];
+  for (const sx of [-1, 1]) parts.push([box(0.4, 3.1, T, sx * (L / 2 - 0.2), 1.55, 0), C.logDark], [cone(0.32, 0.4, sx * (L / 2 - 0.2), 3.3, 0, 4), C.logDark]);
+  for (const sx of [-1, 1]) {
+    const cx = (sx * (L - 0.8)) / 4;
+    const w = (L - 0.8) / 2 - 0.05;
+    parts.push([box(w, 2.3, T * 0.35, cx, 1.25, 0), C.plank]);
+    for (const y of [0.5, 2.0]) parts.push([box(w, 0.16, T * 0.45, cx, y, 0), C.logDark]);
+    parts.push([box(0.12, Math.hypot(w, 1.5), T * 0.45, 0, 0, 0).rotateZ(Math.atan2(w, 1.5) * sx).translate(cx, 1.25, 0), C.logDark]);
+  }
+  parts.push([box(0.32, 0.36, T * 0.6, 0, 1.3, 0), C.hazard], [new THREE.TorusGeometry(0.11, 0.035, 6, 12, Math.PI).translate(0, 1.5, 0), C.steel]);
+  parts.push([box(L - 0.4, 0.2, T * 0.5, 0, 2.75, 0), C.logDark]);
+  return parts;
+}
 // 둥근 건초 더미
 function haybale(k) {
   const parts = [];
@@ -429,7 +444,7 @@ function dress(w, i) {
     brick: () => brickWall(L, T), container: () => container(L, T, k), pipes: () => pipes(L, T), barrels: () => barrels(k),
     tank: () => tank(k, L), warehouse: () => warehouse(L, T),
     // 훈련장
-    plank: () => plankWall(L, T), haybale: () => haybale(k),
+    plank: () => plankWall(L, T), haybale: () => haybale(k), gate: () => gate(L, T),
     void: () => [[box(0.01, 0.01, 0.01, 0, -20, 0), [0, 0, 0]]], // 울타리 밖 어둠 (그리지 않는다)
   };
   if (w.kind && kinds[w.kind]) return kinds[w.kind]();
