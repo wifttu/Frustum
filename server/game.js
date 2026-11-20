@@ -24,8 +24,10 @@ export class Game {
     this.target = R.target ? (opts.TARGET ?? R.target[this.mode]) : 0; // 점수제 목표 킬
     this.roundT = 0; // 현재 라운드 경과 시간
     // 맵: 라운드마다 순서대로 바뀐다. walls 는 시야를 막고, solid(= walls + 물)는 이동을 막는다.
-    this.mapIdx = Math.max(0, MAP_ROTATION.indexOf(opts.map));
-    this.setMap(MAP_ROTATION[this.mapIdx]);
+    const idx = MAP_ROTATION.indexOf(opts.map);
+    this.mapIdx = Math.max(0, idx);
+    // 순환에 없는 맵(훈련장)도 이름으로 고르면 그 맵으로 연다
+    this.setMap(idx < 0 && Object.hasOwn(MAPS, opts.map ?? '') ? opts.map : MAP_ROTATION[this.mapIdx]);
     this.items = [];
     this.itemT = 0;
     this.nextItem = 1;
