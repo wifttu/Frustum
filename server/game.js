@@ -288,7 +288,7 @@ export class Game {
       q.hurtT = 0;
       this.hits.push([p.id, q.id, dmg]);
       if (st.leech) p.hp = Math.min(st.maxHp, p.hp + dmg * st.leech);
-      this.gainXp(p, PROGRESS.XP_HIT);
+      if (!q.dummy) this.gainXp(p, PROGRESS.XP_HIT); // 연습 허수아비는 경험치를 주지 않는다 (레벨업은 보석으로 배운다)
       if (q.hp > 0) continue;
       q.hp = 0;
       q.alive = false;
@@ -300,8 +300,10 @@ export class Game {
       this.rosterDirty = true;
       // 처치 보상: 상대 레벨이 높을수록 크고, 나보다 높은 레벨을 잡으면 현상금이 붙는다
       const gap = Math.max(0, q.level - p.level);
-      this.gainXp(p, (PROGRESS.XP_KILL + q.level * PROGRESS.XP_KILL_PER_LEVEL) * (1 + gap * PROGRESS.BOUNTY_PER_GAP));
-      this.dropFireflies(q);
+      if (!q.dummy) {
+        this.gainXp(p, (PROGRESS.XP_KILL + q.level * PROGRESS.XP_KILL_PER_LEVEL) * (1 + gap * PROGRESS.BOUNTY_PER_GAP));
+        this.dropFireflies(q);
+      }
       if (p.isBot && Math.random() < 0.2) this.emote(p, Math.random() < 0.5 ? 1 : 4); // 봇도 가끔 😂 👋
     }
     this.checkRoundEnd();
