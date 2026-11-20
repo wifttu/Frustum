@@ -16,7 +16,7 @@ import {
 import { CHARACTERS, ORBS, PROGRESS, SKILLS, UPGRADES, charOf, orbTier, statsOf, xpToNext } from './shared/progress.js';
 import { Characters, DeathFx, growOf, merge } from './character.js';
 import { SkillFx } from './skillfx.js';
-import { TUTOR_REWARD, Tutorial, pickSpots } from './tutorial.js';
+import { LAYOUT as TUTOR_LAYOUT, TUTOR_REWARD, Tutorial } from './tutorial.js';
 import { charImg, iconText, imgEl, itemImg, mapImg, setIcon, skillImg, skinImg, srcText, upImg } from './icons.js';
 import { Minimap } from './minimap.js';
 import { buildDeco, buildFloorTexture, buildItemGeos, buildWalls, buildWater } from './world.js';
@@ -698,7 +698,7 @@ async function startTutorial() {
   savePrefs();
   $('status').textContent = '불러오는 중…';
   const { Game } = await import('./server/game.js');
-  const game = new Game({ mode: 'ffa', rule: 'dm', map: 'camp', FIXED_MAP: true, BOT_FILL: 0, START_GRACE: 0, ROUND_TIME: 3600, items: false, fireflies: false });
+  const game = new Game({ mode: 'ffa', rule: 'dm', map: TUTOR_LAYOUT.map, FIXED_MAP: true, BOT_FILL: 0, START_GRACE: 0, ROUND_TIME: 3600, items: false, fireflies: false });
   const name = $('name').value.trim() || 'Player';
   const player = game.addPlayer(name, (msg) => onMessage(JSON.parse(msg)), false, profile.char, profile.skin);
   const dummy = game.addPlayer('허수아비', null, true);
@@ -707,10 +707,9 @@ async function startTutorial() {
   dummy.drops = [6, 6, 18];
   dummy.char = 'explorer';
   dummy.skin = 'default';
-  const spot = pickSpots(game.map);
-  Object.assign(player, { x: spot.me[0], z: spot.me[1], yaw: 0, alive: true });
+  Object.assign(player, { x: TUTOR_LAYOUT.start[0], z: TUTOR_LAYOUT.start[1], yaw: 0, alive: true });
   game.applyStats(dummy); // 허수아비 체력 = 손전등 2방
-  Object.assign(dummy, { x: spot.dummy[0], z: spot.dummy[1], yaw: 0, alive: true, hp: dummy.stats.maxHp });
+  Object.assign(dummy, { x: TUTOR_LAYOUT.dummy[0], z: TUTOR_LAYOUT.dummy[1], yaw: Math.PI, alive: true, hp: dummy.stats.maxHp });
   game.rosterDirty = true;
   offline = { game, player };
   document.body.classList.add('tutorial');
@@ -725,6 +724,11 @@ async function startTutorial() {
     },
     stickCenter: () => input.fixedCenter(),
     turnTo: (yaw) => (input.yaw += wrapAngle(yaw - input.yaw)),
+    // 조명탄 바로 다시 쓸 수 있게 (연습에서 엉뚱한 곳에 던졌을 때)
+    resetFlare: () => {
+      if (offline) offline.player.flareCd = 0;
+      flareCd = 0;
+    },
     ring: (x, z, on, t = 0, color = 0xffd25a) => {
       tutorRing.visible = on;
       if (!on) return;
@@ -734,7 +738,7 @@ async function startTutorial() {
       tutorRing.scale.set(k, 1, k);
     },
     state: () => ({
-      x: view.x, z: view.z, yaw: view.yaw, level: prog.level, xp: prog.xp, next: prog.next, hp: prog.hp, maxHp: prog.stats.maxHp,
+      x: view.x, z: view.z, yaw: view.yaw, level: prog.level, xp: prog.xp, next: prog.next, hp: prog.hp, maxHp: prog.stats.maxHp, regenDelay: prog.stats.regenDelay,
       walking: Math.hypot(input.mx, input.mz) > 0.25 && sim.rollT <= 0 && sim.dashT <= 0, // 조이스틱으로 걷는 중 (구르기·질주 제외)
       ups: Object.values(prog.ups || {}).reduce((a, b) => a + b, 0),
       skillUses: tstat.skill, flareUses: tstat.flare, hurt: tstat.hurt, flares, visible: (id) => ents.has(id),
