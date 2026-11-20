@@ -826,6 +826,14 @@ const DECO = {
     p: [[cylY(0.05, 3, 0, 1.5, 0, 6), C.logDark], [box(0.9, 0.55, 0.03, 0.47, 2.65, 0), C.tents[Math.round(r * 9) % 4]], [ball(0.08, 1, 1, 1, 0, 3.02, 0), C.hazard]],
   }),
 };
+// 모닥불 점령의 큰 모닥불 (한 개짜리 메시)
+export function buildCampfire(material, scale = 1.6) {
+  const { p } = DECO.campfire(0.3);
+  const mesh = new THREE.Mesh(merge(p.map(([geo, c]) => [geo.scale(scale, scale, scale), c])), material);
+  mesh.frustumCulled = false;
+  return mesh;
+}
+
 export function buildDeco(map, material) {
   const parts = [];
   const glows = [];

@@ -397,3 +397,66 @@ test('연습 경비 허수아비: 가까이 보이면 비추고, 체력이 많�
   for (let i = 0; i < CFG.TICK_RATE * 2; i++) game.step();
   assert.ok(me.hp >= hp);
 });
+
+test('모닥불 점령: 둘레 안에 우리 편만 있으면 1초에 1점, 상대도 있으면 쟁탈 중이라 0점', () => {
+  const { game, add, place } = setup({ rule: 'hill', mode: 'ffa', TEAMS: 0 });
+  const a = add('A');
+  const b = add('B');
+  const h = game.hill;
+  game.roundT = CFG.START_GRACE; // 시작 직후 대기 시간은 지났다
+  place(a, h.x, h.z, 0);
+  place(b, h.x + 20, h.z, 0);
+  for (let i = 0; i < CFG.TICK_RATE * 2; i++) game.step();
+  assert.equal(game.hillOwner, a.team);
+  assert.equal(Math.round(game.capPts.get(a.team)), 2);
+  assert.equal(Math.round(a.cap), 2);
+  // 상대가 들어오면 쟁탈 중: 아무도 점수를 얻지 못한다
+  place(b, h.x + 1, h.z, Math.PI);
+  for (let i = 0; i < CFG.TICK_RATE; i++) game.step();
+  assert.equal(game.hillFight, true);
+  assert.equal(game.hillOwner, 0);
+  assert.equal(Math.round(game.capPts.get(a.team)), 2);
+  assert.equal(game.capPts.get(b.team) || 0, 0);
+  // 스냅샷: 우리 편 기준 [차지한 편, 쟁탈, 우리 점수, 상대 최고 점수]
+  const snap = game.snapshotFor(a, game.computeVisibility());
+  assert.deepEqual(snap.cp, [0, 1, 2, 0]);
+  assert.equal(game.roster().p.find((r) => r[0] === a.id)[10], 2);
+});
+
+test('모닥불 점령: 목표 점수를 먼저 채우면 이기고, 시간이 끝나면 점수가 높은 편이 이긴다', () => {
+  const { game, add, place } = setup({ rule: 'hill', mode: 'ffa', TEAMS: 0, CAP_GOAL: 3 });
+  const a = add('A');
+  const b = add('B');
+  game.roundT = CFG.START_GRACE;
+  place(a, game.hill.x, game.hill.z, 0);
+  place(b, game.hill.x + 20, game.hill.z, 0);
+  for (let i = 0; i < CFG.TICK_RATE * 4 && !game.endT; i++) game.step();
+  assert.ok(game.endT > 0);
+  assert.equal(game.winner, a.team);
+
+  const t = setup({ rule: 'hill', mode: 'ffa', TEAMS: 0 });
+  const c = t.add('C');
+  const d = t.add('D');
+  t.game.capPts.set(c.team, 4);
+  t.game.capPts.set(d.team, 9);
+  c.score = 3; // 킬이 많아도 점수가 먼저
+  t.game.timeUp();
+  assert.equal(t.game.winner, d.team);
+});
+
+test('모닥불 점령: 새 라운드에는 점수가 0부터, 봇은 모닥불로 모인다', () => {
+  const game = new Game({ rule: 'hill', mode: 'duo' });
+  game.balanceBots();
+  game.capPts.set(1, 10);
+  for (const p of game.players.values()) p.cap = 5;
+  game.newRound();
+  assert.equal(game.capPts.size, 0);
+  for (const p of game.players.values()) assert.equal(p.cap, 0);
+  // 1분 동안: 여러 봇이 모닥불 둘레에 들어온다
+  const visited = new Set();
+  for (let i = 0; i < CFG.TICK_RATE * 60; i++) {
+    game.step();
+    for (const p of game.players.values()) if (p.alive && Math.hypot(p.x - game.hill.x, p.z - game.hill.z) < game.hill.r) visited.add(p.id);
+  }
+  assert.ok(visited.size >= 3, `visited ${visited.size}`);
+});

@@ -35,7 +35,7 @@ export const CFG = Object.freeze({
   // 생존전: 부활 없음. 마지막까지 살아남은 사람/팀이 라운드 승리.
   ROUND_TIME: 120, // 기본값. 실제 값은 아래 RULES 의 time 을 쓴다
   RESPAWN_TIME: 3, // 데스매치 부활 대기
-  INTERMISSION: 6, // 라운드 종료 후 다음 라운드까지
+  INTERMISSION: 8, // 라운드 종료 후 다음 라운드까지 (결과 시상대를 보는 시간)
   START_GRACE: 3, // 라운드 시작 직후 공격 금지 시간
   JOIN_GRACE: 10, // 라운드 시작 후 이 시간 안에 들어오면 바로 참가
 
@@ -88,6 +88,9 @@ export const RULES = Object.freeze({
   dm: { respawn: true, time: 180 },
   // 점수제 데스매치: 부활 있음. 목표 킬을 먼저 채우면 승리. 시간 초과 시 킬 수.
   score: { respawn: true, time: 300, target: { ffa: 10, duo: 15 } },
+  // 모닥불 점령: 부활 있음. 맵 가운데 모닥불 둘레에 우리 편만 있으면 1초에 1점(다른 편도 있으면 쟁탈 중이라 0점).
+  // 목표 점수를 먼저 채우면 승리. 시간 초과 시 점수 → 킬 수.
+  hill: { respawn: true, time: 180, hill: { ffa: 25, duo: 35 } },
 });
 
 // 조명탄을 시야원으로 쓸 때의 설정: 360도, 반경 FLARE_RADIUS

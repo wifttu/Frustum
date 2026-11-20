@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { CFG } from './shared/config.js';
 import { SKINS, skinFor } from './shared/shop.js';
 import { costume } from './costumes.js';
+import { LEGEND } from './legend.js';
 
 // 색은 정점에 직접 굽는다 (머티리얼 색은 흰색). 후드/망토만 팀 색이고 나머지는 공통.
 // 색은 sRGB 16진수로 적고 렌더링용 선형 값으로 바꿔 쓴다 (그대로 넣으면 물 빠진 색이 된다)
@@ -171,15 +172,15 @@ const ringGeo = new THREE.RingGeometry(0.5, 0.6, 28).rotateX(-Math.PI / 2).trans
 const shadowGeo = new THREE.CircleGeometry(0.44, 16).rotateX(-Math.PI / 2).translate(0, 0.03, 0);
 
 // 손전등 빔: 판정 범위(ATTACK_RANGE, ATTACK_ARC)와 같은 모양의 부채꼴. 손에서 멀어질수록 흐려진다.
-function makeBeamGeometry() {
+function makeBeamGeometry(near = [0.62, 0.58, 0.42], far = [0.05, 0.045, 0.025]) {
   const seg = 16;
   const pos = [0.42, 1.08, 0.9];
-  const col = [0.62, 0.58, 0.42];
+  const col = [...near];
   const idx = [];
   for (let i = 0; i <= seg; i++) {
     const a = -CFG.ATTACK_ARC / 2 + (CFG.ATTACK_ARC * i) / seg;
     pos.push(Math.sin(a) * CFG.ATTACK_RANGE, 0.5, Math.cos(a) * CFG.ATTACK_RANGE);
-    col.push(0.05, 0.045, 0.025);
+    col.push(...far);
     if (i > 0) idx.push(0, i, i + 1);
   }
   const g = new THREE.BufferGeometry();
@@ -189,6 +190,8 @@ function makeBeamGeometry() {
   return g;
 }
 const beamGeo = makeBeamGeometry();
+// 전설 의상의 빔: 흰 빛에 의상 색을 입힌다 (머티리얼 색 × 정점 밝기)
+const beamGeoWhite = makeBeamGeometry([0.6, 0.6, 0.6], [0.07, 0.07, 0.07]);
 // 조준 가이드: 빔 사거리 끝을 표시하는 얇은 호 (내 캐릭터만)
 const aimGeo = new THREE.RingGeometry(
   CFG.ATTACK_RANGE - 0.07, CFG.ATTACK_RANGE, 20, 1, -Math.PI / 2 - CFG.ATTACK_ARC / 2, CFG.ATTACK_ARC,
@@ -269,6 +272,18 @@ export class Characters {
       new THREE.MeshBasicMaterial({ color: 0x9fe8ff, transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending }),
     );
     this.vestGeo = new THREE.SphereGeometry(1.05, 18, 12).scale(1, 0.95, 1).translate(0, 0.95, 0);
+    this.mask = mask;
+    this.legendBeam = {};
+  }
+
+  // 손전등 빔 모양과 색: 전설 의상은 그 의상의 빛 색
+  beamOf(skin) {
+    const tint = LEGEND[skin]?.beam;
+    if (!tint) return [beamGeo, this.beam];
+    this.legendBeam[skin] ||= this.mask.apply(
+      new THREE.MeshBasicMaterial({ color: tint, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false }),
+    );
+    return [beamGeoWhite, this.legendBeam[skin]];
   }
 
   // 팀 종류 × 캐릭터 조합별 지오메트리 (처음 쓸 때 한 번 만든다)
@@ -305,7 +320,7 @@ export class Characters {
 
     const ring = new THREE.Mesh(ringGeo, this.ring[kind]);
     const shadow = new THREE.Mesh(shadowGeo, this.shadow);
-    const beam = new THREE.Mesh(beamGeo, this.beam);
+    const beam = new THREE.Mesh(...this.beamOf(skinFor(char, skin)));
     beam.visible = false;
     const body = new THREE.Group();
     body.add(pose);
@@ -342,6 +357,7 @@ export class Characters {
     u.legL.geometry = u.legR.geometry = g.leg;
     u.armL.geometry = g.armL;
     u.armR.geometry = g.armR;
+    [u.beam.geometry, u.beam.material] = this.beamOf(skinFor(char, skin));
     u.ring.material = this.ring[kind];
   }
 

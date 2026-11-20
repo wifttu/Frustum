@@ -1,6 +1,6 @@
 // 권위 서버 게임 로직. 네트워크와 분리되어 있어 테스트와 오프라인 모드에서 그대로 쓴다.
 import { CFG, EMOTE_GAP, EMOTES, FLARE_VIEW, SCAN_VIEW, ITEM_RULES, ITEM_TYPES, ITEMS, RULES, ZONE, zoneHalf } from '../shared/config.js';
-import { MAP_ROTATION, MAP_SIZE, MAPS, isFree } from '../shared/map.js';
+import { MAP_ROTATION, MAP_SIZE, MAPS, hillOf, isFree } from '../shared/map.js';
 import { flareLanding, stepPlayer } from '../shared/sim.js';
 import { canSee, segmentBlocked, wrapAngle } from '../shared/vision.js';
 import { botThink } from './bots.js';
@@ -28,6 +28,10 @@ export class Game {
     delete this.cfg.mode;
     delete this.cfg.rule;
     this.target = R.target ? (opts.TARGET ?? R.target[this.mode]) : 0; // 점수제 목표 킬
+    this.capGoal = R.hill ? (opts.CAP_GOAL ?? R.hill[this.mode]) : 0; // 모닥불 점령 목표 점수
+    this.capPts = new Map(); // 팀 → 모닥불 점수
+    this.hillOwner = 0; // 지금 모닥불을 차지한 팀 (0 = 없음)
+    this.hillFight = false; // 두 편 이상이 함께 있다 (쟁탈 중)
     this.roundT = 0; // 현재 라운드 경과 시간
     // 맵: 라운드마다 순서대로 바뀐다. walls 는 시야를 막고, solid(= walls + 물)는 이동을 막는다.
     const idx = MAP_ROTATION.indexOf(opts.map);
@@ -59,6 +63,7 @@ export class Game {
 
   setMap(id) {
     this.map = MAPS[id];
+    this.hill = hillOf(this.map); // 모닥불 점령에서 지킬 자리
     this.walls = this.map.walls;
     this.water = this.map.water;
   }
@@ -99,7 +104,7 @@ export class Game {
       hp: 0, xp: 0, level: 1, ups: {}, choices: [], hurtT: 0, statsDirty: true, ffVer: -1, earned: 0,
       char: chosen,
       // 스킨(의상): 캐릭터마다 다르다. 모자와 소품은 다른 플레이어에게도 보인다. 봇은 가끔 입는다.
-      skin: isBot ? botSkin(chosen) : skinFor(chosen, skin), beam: 0, score: 0, wins: 0,
+      skin: isBot ? botSkin(chosen) : skinFor(chosen, skin), beam: 0, score: 0, wins: 0, cap: 0,
       rollT: 0, rollCd: 0, rollDx: 0, rollDz: 1, flareCd: 0,
       queue: [], budget: 0, ack: 0, lastSeq: 0, ai: {},
       fc: typeof opts.fc === 'string' ? opts.fc : '',
@@ -111,7 +116,7 @@ export class Game {
     const seat = bots.find((q) => q.alive) || bots[0];
     if (seat) {
       this.players.delete(seat.id);
-      Object.assign(p, { team: seat.team, x: seat.x, z: seat.z, yaw: seat.yaw, alive: seat.alive, respawn: seat.respawn, score: seat.score, hp: seat.hp, xp: seat.xp, level: seat.level, ups: { ...seat.ups } });
+      Object.assign(p, { team: seat.team, x: seat.x, z: seat.z, yaw: seat.yaw, alive: seat.alive, respawn: seat.respawn, score: seat.score, cap: seat.cap, hp: seat.hp, xp: seat.xp, level: seat.level, ups: { ...seat.ups } });
     } else if (forced) {
       p.team = opts.team;
       if (this.endT <= 0 && (this.respawns || this.roundT < this.cfg.JOIN_GRACE)) this.spawn(p);
@@ -491,8 +496,37 @@ export class Game {
     }
   }
 
-  // 시간 초과. 서바이벌: 생존자가 많은 팀 → 킬이 많은 팀. 데스매치: 킬이 많은 팀. 동률이면 무승부(0)
+  // 모닥불 점령: 둘레 안에 살아 있는 편이 하나뿐이면 그 편이 1초에 1점 (둘 이상이면 쟁탈 중)
+  stepHill() {
+    const h = this.hill;
+    const inside = [];
+    const teams = new Set();
+    for (const p of this.players.values()) {
+      if (!p.alive || p.dummy || Math.hypot(p.x - h.x, p.z - h.z) > h.r) continue;
+      inside.push(p);
+      teams.add(p.team);
+    }
+    this.hillFight = teams.size > 1;
+    this.hillOwner = teams.size === 1 ? inside[0].team : 0;
+    if (!this.hillOwner || this.roundT < this.cfg.START_GRACE) return;
+    const pts = (this.capPts.get(this.hillOwner) || 0) + DT;
+    this.capPts.set(this.hillOwner, pts);
+    for (const p of inside) {
+      const before = Math.floor(p.cap);
+      p.cap += DT;
+      if (Math.floor(p.cap) !== before) this.rosterDirty = true; // 개인 점령 시간 (순위표·시상대)
+    }
+    if (pts >= this.capGoal - 1e-6) this.endRound(this.hillOwner);
+  }
+
+  // 시간 초과. 서바이벌: 생존자가 많은 팀 → 킬이 많은 팀. 데스매치: 킬이 많은 팀. 점령: 점수 → 킬. 동률이면 무승부(0)
   timeUp() {
+    if (this.capGoal) {
+      const kills = this.killsByTeam();
+      const rank = [...kills.keys()].map((t) => [t, Math.floor((this.capPts.get(t) || 0) + 1e-6), kills.get(t)]).sort((a, b) => b[1] - a[1] || b[2] - a[2]);
+      const tie = rank.length > 1 && rank[0][1] === rank[1][1] && rank[0][2] === rank[1][2];
+      return this.endRound(rank.length && !tie ? rank[0][0] : 0);
+    }
     if (this.respawns) {
       const rank = [...this.killsByTeam()].sort((a, b) => b[1] - a[1]);
       const tie = rank.length > 1 && rank[0][1] === rank[1][1];
@@ -521,12 +555,16 @@ export class Game {
     this.roundT = 0;
     this.winner = null;
     this.flares.length = 0;
+    this.capPts.clear();
+    this.hillOwner = 0;
+    this.hillFight = false;
     if (!this.cfg.FIXED_MAP) {
       this.mapIdx = (this.mapIdx + 1) % MAP_ROTATION.length;
       this.setMap(MAP_ROTATION[this.mapIdx]);
     }
     for (const p of this.players.values()) {
       p.score = 0;
+      p.cap = 0;
       p.flareCd = 0;
       this.resetProgress(p);
       p.queue.length = 0;
@@ -602,6 +640,10 @@ export class Game {
         died = true;
       }
       if (died) this.checkRoundEnd();
+      if (this.endT > 0) return;
+    }
+    if (this.capGoal) {
+      this.stepHill();
       if (this.endT > 0) return;
     }
 
@@ -781,6 +823,13 @@ export class Game {
     if (seenItems) for (const x of this.items) if (seenItems.has(x.id)) it.push([x.id, x.type, q2(x.x), q2(x.z)]);
     const pk = p.picked;
     p.picked = [];
+    // 모닥불 점령: [차지한 편(0 없음, 1 우리, 2 상대), 쟁탈 중, 우리 점수, 상대 중 최고 점수]
+    let cp;
+    if (this.capGoal) {
+      let top = 0;
+      for (const [t, v] of this.capPts) if (t !== team) top = Math.max(top, v);
+      cp = [this.hillOwner ? (this.hillOwner === team ? 1 : 2) : 0, this.hillFight ? 1 : 0, Math.floor((this.capPts.get(team) || 0) + 1e-6), Math.floor(top + 1e-6)];
+    }
     // 반딧불은 지형처럼 공개 정보: 바뀌었을 때만 통째로 보낸다
     let ff;
     if (p.ffVer !== this.ffVer) {
@@ -800,6 +849,7 @@ export class Game {
       it, // 보이는 아이템 [id, 종류, x, z]
       pk, // 방금 주운 아이템
       ff,
+      cp,
       hp: Math.ceil(p.hp),
       xp: p.xp,
       w: w ? w.id : 0, // 관전 중인 플레이어
@@ -808,14 +858,14 @@ export class Game {
 
   // 접속 시 알려주는 방 정보
   info() {
-    return { m: this.mode, r: this.rule, g: this.target, rtm: this.cfg.ROUND_TIME, map: this.map.id };
+    return { m: this.mode, r: this.rule, g: this.target, cg: this.capGoal, rtm: this.cfg.ROUND_TIME, map: this.map.id };
   }
 
-  // p: [id, 이름, 팀, 이번 라운드 킬, 생존 여부, 누적 승]  (위치 정보 없음)
+  // p: [id, 이름, 팀, 이번 라운드 킬, 생존 여부, 누적 승, 레벨, 캐릭터, 의상, 친구 코드, 모닥불 점령 초]  (위치 정보 없음)
   roster() {
     return {
       t: 'r',
-      p: [...this.players.values()].map((p) => [p.id, p.name, p.team, p.score, p.alive ? 1 : 0, p.wins, p.level, p.char, p.skin, p.fc]),
+      p: [...this.players.values()].map((p) => [p.id, p.name, p.team, p.score, p.alive ? 1 : 0, p.wins, p.level, p.char, p.skin, p.fc, Math.floor(p.cap + 1e-6)]),
     };
   }
 

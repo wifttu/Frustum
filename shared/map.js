@@ -253,3 +253,25 @@ export function isFree(x, z, clearance, walls = WALLS) {
   }
   return true;
 }
+
+// 모닥불 점령: 지킬 모닥불 자리. 맵 가운데에서 가장 가까운, 둘레가 트인 곳 (서버와 화면이 같은 계산을 한다)
+export const HILL_RADIUS = 3.5;
+const hills = new Map();
+export function hillOf(map) {
+  if (hills.has(map.id)) return hills.get(map.id);
+  const solid = [...map.walls, ...map.water];
+  let spot = [0, 0];
+  search: for (let r = 0; r < 14; r += 0.5) {
+    for (let a = 0; a < 16; a++) {
+      const x = Math.round(Math.cos((a / 16) * Math.PI * 2) * r * 2) / 2;
+      const z = Math.round(Math.sin((a / 16) * Math.PI * 2) * r * 2) / 2;
+      if (isFree(x, z, 2.6, solid)) {
+        spot = [x, z];
+        break search;
+      }
+    }
+  }
+  const hill = { x: spot[0], z: spot[1], r: HILL_RADIUS };
+  hills.set(map.id, hill);
+  return hill;
+}

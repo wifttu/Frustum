@@ -141,3 +141,15 @@ test('뽑기: 가진 캐릭터의 의상이 더 잘 나온다', () => {
   // 7명 중 2명을 가졌으니 무게가 같다면 2/7 ≈ 29%, 세 배면 6/11 ≈ 55%
   assert.ok(mine / (mine + other) > 0.45, `${mine}/${mine + other}`);
 });
+
+test('전설 의상: 모두 전용 효과(빛 색, 처치 이펙트)와 설명이 있다', async () => {
+  const { LEGEND } = await import('../client/legend.js');
+  const legends = Object.keys(SKINS).filter((id) => SKINS[id].tier === 'legend');
+  assert.equal(legends.length, CHARACTER_KEYS.length);
+  for (const id of legends) {
+    assert.ok(SKINS[id].fx, id);
+    assert.equal(typeof LEGEND[id]?.beam, 'number', id);
+    assert.equal(typeof LEGEND[id]?.kill, 'function', id);
+  }
+  assert.deepEqual(Object.keys(LEGEND).sort(), legends.sort(), '전설이 아닌 의상에는 효과가 없다');
+});

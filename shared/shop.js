@@ -5,36 +5,37 @@ import { normalizeProgress } from './missions.js';
 
 // 스킨(의상): 캐릭터마다 따로 있다 (char). 캐릭터의 특징에 맞춘 모자·소품이 붙고, 모자·소품은 모든 플레이어에게 보인다.
 // color 는 내 화면에서의 후드/망토 색이다(다른 사람에게는 아군 파랑, 적 빨강으로 보인다).
+// fx: 전설 의상 전용 효과 (손전등 빛 색과 처치 이펙트, client/legend.js). 모든 플레이어에게 보인다.
 export const SKINS = Object.freeze({
   default: { name: '기본', desc: '캐릭터 본래 모습', color: null, tier: 'common', char: null },
   // 탐험가: 어디든 가는 모험가
   explorer_safari: { char: 'explorer', name: '사파리 탐험가', desc: '챙 넓은 탐험 모자와 목에 건 쌍안경', color: 0xc8a868, tier: 'rare' },
   explorer_pirate: { char: 'explorer', name: '해적 선장', desc: '삼각 모자, 안대, 금화 목걸이', color: 0xa8322e, tier: 'epic' },
-  explorer_astro: { char: 'explorer', name: '우주 탐험가', desc: '우주 헬멧과 안테나, 분사구 달린 산소통', color: 0x39407e, tier: 'legend' },
+  explorer_astro: { char: 'explorer', name: '우주 탐험가', desc: '우주 헬멧과 안테나, 분사구 달린 산소통', color: 0x39407e, tier: 'legend', fx: '파란 우주 빛 · 처치하면 로켓 불꽃' },
   // 번개: 빠른 달리기
   runner_sprinter: { char: 'runner', name: '스프린터', desc: '땀받이 머리띠, 등번호 7, 형광 운동화', color: 0x2f7fd8, tier: 'rare' },
   runner_racer: { char: 'runner', name: '레이서', desc: '줄무늬 레이싱 헬멧과 등에 꽂은 체크무늬 깃발', color: 0xe03a2a, tier: 'epic' },
-  runner_thunder: { char: 'runner', name: '천둥 신', desc: '빛나는 번개 왕관, 먹구름 깃, 번개 문장', color: 0x5a3ab8, tier: 'legend' },
+  runner_thunder: { char: 'runner', name: '천둥 신', desc: '빛나는 번개 왕관, 먹구름 깃, 번개 문장', color: 0x5a3ab8, tier: 'legend', fx: '번개 빛 · 처치하면 하늘에서 벼락' },
   // 곰돌이: 튼튼한 몸, 방패
   bear_panda: { char: 'bear', name: '판다', desc: '판다 털모자와 등에 멘 대나무', color: 0xf2f2ee, tier: 'rare' },
   bear_polar: { char: 'bear', name: '북극곰', desc: '북극곰 털모자, 털목도리, 눈꽃 배지', color: 0xdfeeff, tier: 'epic' },
-  bear_knight: { char: 'bear', name: '기사 곰', desc: '깃털 투구, 어깨 갑옷, 방패 문장', color: 0x3a5fb0, tier: 'legend' },
+  bear_knight: { char: 'bear', name: '기사 곰', desc: '깃털 투구, 어깨 갑옷, 방패 문장', color: 0x3a5fb0, tier: 'legend', fx: '황금 빛 · 처치하면 황금 방패 폭발' },
   // 올빼미: 멀리 보는 눈
   owl_snow: { char: 'owl', name: '흰올빼미', desc: '하얀 깃털과 호박색으로 빛나는 금테 고글', color: 0xf4f2ea, tier: 'rare' },
   owl_detective: { char: 'owl', name: '탐정 올빼미', desc: '사냥 모자, 외알 안경, 나비넥타이, 돋보기', color: 0x8a6a40, tier: 'epic' },
-  owl_wizard: { char: 'owl', name: '별빛 마법사', desc: '별이 빛나는 뾰족 모자와 별 지팡이', color: 0x2a2f7a, tier: 'legend' },
+  owl_wizard: { char: 'owl', name: '별빛 마법사', desc: '별이 빛나는 뾰족 모자와 별 지팡이', color: 0x2a2f7a, tier: 'legend', fx: '보랏빛 · 처치하면 별가루 소용돌이' },
   // 반디: 반딧불을 모으는 등불
   collector_bee: { char: 'collector', name: '꿀벌', desc: '줄무늬 망토, 빛나는 더듬이, 반짝이는 날개', color: 0xf2c230, tier: 'rare' },
   collector_fairy: { char: 'collector', name: '반딧불 요정', desc: '빛나는 네 날개, 꽃 화관, 머리 위 등불', color: 0x7fe0c0, tier: 'epic' },
-  collector_lord: { char: 'collector', name: '등불 군주', desc: '반딧불 보석 왕관, 담비털 깃, 등불 지팡이', color: 0xa8283a, tier: 'legend' },
+  collector_lord: { char: 'collector', name: '등불 군주', desc: '반딧불 보석 왕관, 담비털 깃, 등불 지팡이', color: 0xa8283a, tier: 'legend', fx: '호박빛 · 처치하면 반딧불 떼' },
   // 그림자: 숨어서 노린다
   ninja_fox: { char: 'ninja', name: '여우 가면', desc: '여우 귀, 옆머리 여우 가면, 날리는 목도리', color: 0xe8e2d6, tier: 'rare' },
   ninja_samurai: { char: 'ninja', name: '사무라이', desc: '초승달 투구, 어깨 갑옷, 등에 멘 칼', color: 0xb8302a, tier: 'epic' },
-  ninja_void: { char: 'ninja', name: '밤그림자', desc: '보랏빛 눈, 긴 두건, 떠다니는 그림자', color: 0x2a1f44, tier: 'legend' },
+  ninja_void: { char: 'ninja', name: '밤그림자', desc: '보랏빛 눈, 긴 두건, 떠다니는 그림자', color: 0x2a1f44, tier: 'legend', fx: '그림자 빛 · 처치하면 어둠 속으로 빨려 듦' },
   // 약초꾼: 치유
   healer_mushroom: { char: 'healer', name: '버섯 약사', desc: '물방울무늬 버섯 모자와 물약 두 병', color: 0x9a6a4a, tier: 'rare' },
   healer_flower: { char: 'healer', name: '꽃 요정', desc: '새싹이 피운 꽃, 꽃 화관, 가슴 꽃', color: 0xff8ab8, tier: 'epic' },
-  healer_sage: { char: 'healer', name: '숲의 현자', desc: '잎사귀 사슴뿔, 잎 망토, 빛나는 지팡이', color: 0x2f8a4a, tier: 'legend' },
+  healer_sage: { char: 'healer', name: '숲의 현자', desc: '잎사귀 사슴뿔, 잎 망토, 빛나는 지팡이', color: 0x2f8a4a, tier: 'legend', fx: '초록 빛 · 처치하면 꽃잎과 포자' },
 });
 export const SKIN_KEYS = Object.keys(SKINS);
 export const skinOf = (id) => (Object.hasOwn(SKINS, id) ? id : 'default');
