@@ -95,6 +95,19 @@
       <div id="tutorPrompt" hidden><span>처음이세요? <b>30초 연습</b>으로 조작을 배워요 <em>🪙 +100</em></span><button id="tutorYes">연습하기</button><button id="tutorNo" aria-label="닫기">✕</button></div>
     </div>
 
+    <div id="creditsPanel" class="sheet" hidden>
+      <div class="panel credits">
+        <h2>크레딧 · 라이선스</h2>
+        <h3>이 게임이 직접 만든 것</h3>
+        <p class="note">그림(맵 미리보기, 캐릭터·의상·아이콘·스킬 그림)은 모두 게임 안의 3D 모델을 렌더링한 것이고, 3D 모델과 맵은 코드로 만든 도형입니다. 소리와 음악은 Web Audio 로 실시간 합성합니다. 외부 그림·모델·음원 파일을 쓰지 않습니다. 글꼴과 이모지는 기기에 깔린 기본 글꼴로 보입니다.</p>
+        <h3>사용한 오픈소스</h3>
+        <p class="note"><b>three.js</b> r170 — 3D 렌더링 · MIT License · Copyright © 2010-2024 three.js authors</p>
+        <p class="note"><b>ws</b> 8 — 게임 서버 통신 · MIT License · Copyright (c) 2011 Einar Otto Stangvik, (c) 2013 Arnout Kazemier and contributors, (c) 2016 Luigi Pinca and contributors</p>
+        <details><summary>MIT License 전문</summary><p class="note mit">Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions: The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</p></details>
+        <button id="closeCredits">닫기</button>
+      </div>
+    </div>
+
     <div id="missionPanel" class="sheet" hidden>
       <div class="panel">
         <h2>미션 · 업적 · 랭크</h2>
@@ -293,6 +306,7 @@
         <label><span>미니맵 표시<small>왼쪽 위 지도</small></span><input type="checkbox" id="setMinimap" /></label>
         <label><span>성능 정보 표시<small>fps, 드로우콜 등</small></span><input type="checkbox" id="setStats" /></label>
         <button id="tutorAgain" class="soft">🎓 연습(튜토리얼) 다시 하기</button>
+        <button id="openCredits" class="soft">📜 크레딧 · 라이선스</button>
         <button id="closeSettings">닫기</button>
         <button id="leave" class="alt" hidden>게임 나가기</button>
       </div>

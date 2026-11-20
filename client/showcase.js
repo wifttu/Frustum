@@ -85,6 +85,20 @@ export class Showcase {
     this.index = Math.max(0, Math.min(CHARACTER_KEYS.length - 1, this.index + d));
   }
 
+  // 드래그: 손가락을 따라 줄이 움직이고, 놓으면 튕긴 속도만큼 여러 명을 지나 가장 가까운 캐릭터에 멈춘다
+  // 화면에서 캐릭터 한 칸(GAP)이 몇 픽셀인지 (카메라 거리·시야각·화면비로 계산)
+  pxPerItem(w, h) {
+    const dist = 10.2;
+    const visibleW = 2 * dist * Math.tan(((this.camera.fov / 2) * Math.PI) / 180) * (w / h);
+    return (w / visibleW) * GAP;
+  }
+  dragTo(pos) {
+    const last = CHARACTER_KEYS.length - 1;
+    // 양 끝을 넘으면 고무줄처럼 조금만 따라간다
+    this.pos = pos < 0 ? pos * 0.35 : pos > last ? last + (pos - last) * 0.35 : pos;
+    this.index = Math.max(0, Math.min(last, Math.round(this.pos)));
+  }
+
   // 화면 좌표(픽셀)에서 각 캐릭터 머리 위 위치 → 자물쇠 표시용
   headPos(i, w, h) {
     const it = this.items[i];
@@ -93,7 +107,7 @@ export class Showcase {
   }
 
   render(renderer, dt, t, w, h) {
-    this.pos = lerp(this.pos, this.index, Math.min(1, dt * 9));
+    if (!this.dragging) this.pos = lerp(this.pos, this.index, Math.min(1, dt * 7));
     const cam = this.camera;
     cam.aspect = w / h;
     cam.updateProjectionMatrix();
