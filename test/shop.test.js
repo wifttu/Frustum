@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DAILY, GACHA, SKINS, TIERS, claimDaily, gacha, newProfile, normalizeProfile, rollOnce } from '../shared/shop.js';
+import { DAILY, GACHA, SKINS, SKIN_ICONS, TIERS, claimDaily, gacha, newProfile, normalizeProfile, rollOnce, skinFor, skinsOf } from '../shared/shop.js';
+import { CHARACTER_KEYS } from '../shared/progress.js';
 import { CHARACTERS } from '../shared/progress.js';
 
 const seeded = (seed) => () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
@@ -78,4 +79,65 @@ test('친구 목록: 예전 이름 목록도 옮기고, 같은 친구 코드는 
   assert.deepEqual(p.friends, [{ name: '민수', fc: '' }, { name: 'Jay', fc: 'ABC123' }]);
   assert.equal(p.fc, '');
   assert.equal(normalizeProfile({ fc: 'QWE234' }).fc, 'QWE234');
+});
+
+test('의상: 캐릭터마다 희귀·영웅·전설 한 벌씩, 다른 캐릭터의 의상은 입지 않는다', () => {
+  for (const c of CHARACTER_KEYS) {
+    const list = skinsOf(c);
+    assert.deepEqual(list.map((id) => SKINS[id].tier), ['rare', 'epic', 'legend'], c);
+    for (const id of list) {
+      assert.equal(skinFor(c, id), id);
+      assert.ok(SKIN_ICONS[id]);
+    }
+  }
+  assert.equal(Object.keys(SKINS).length, 1 + CHARACTER_KEYS.length * 3);
+  assert.equal(skinFor('owl', 'bear_panda'), 'default');
+  assert.equal(skinFor('owl', 'nope'), 'default');
+  assert.equal(skinFor('owl', 'default'), 'default');
+});
+
+test('의상: 캐릭터마다 입은 의상을 따로 기억한다', () => {
+  const p = normalizeProfile({
+    owned: ['explorer', 'bear', 'owl'], char: 'bear', skins: ['default', 'bear_panda', 'owl_snow'],
+    skinBy: { bear: 'bear_panda', owl: 'bear_panda', explorer: 'explorer_astro', ninja: 'x' },
+  });
+  assert.deepEqual(p.skinBy, { bear: 'bear_panda' }, '안 맞거나 없는 의상은 지운다');
+  assert.equal(p.skin, 'bear_panda');
+  // 예전 형식: skin 하나만 있던 저장 데이터
+  const q = normalizeProfile({ owned: ['explorer', 'owl'], char: 'owl', skins: ['default', 'owl_snow'], skin: 'owl_snow' });
+  assert.deepEqual(q.skinBy, { owl: 'owl_snow' });
+  assert.equal(q.skin, 'owl_snow');
+});
+
+test('의상: 예전 공용 의상은 같은 등급의 캐릭터별 의상으로 바뀐다 (지금 캐릭터 먼저)', () => {
+  const p = normalizeProfile({ owned: ['explorer', 'owl'], char: 'owl', skins: ['default', 'gold', 'strawberry', 'night'], skin: 'gold', coins: 0 });
+  assert.ok(!p.skins.includes('gold'));
+  assert.ok(p.skins.includes('owl_wizard') && p.skins.includes('owl_snow') && p.skins.includes('owl_detective'));
+  assert.equal(p.skins.length, 4);
+  assert.match(p.legacyNote, /3개/);
+  assert.equal(p.skin, 'owl_wizard', '입고 있던 예전 의상(전설)은 바뀐 새 의상으로 입혀 준다');
+  // 바꿀 의상이 남지 않으면 코인으로 돌려준다
+  const all = Object.keys(SKINS).filter((id) => SKINS[id].tier === 'legend');
+  const q = normalizeProfile({ skins: ['default', ...all, 'gold'], coins: 0 });
+  assert.equal(q.coins, GACHA.DUP.legend);
+  // 이미 옮긴 데이터를 다시 정리해도 그대로
+  const again = normalizeProfile(JSON.parse(JSON.stringify({ ...p, legacyNote: undefined })));
+  assert.deepEqual(again.skins, p.skins);
+  assert.equal(again.legacyNote, undefined);
+});
+
+test('뽑기: 가진 캐릭터의 의상이 더 잘 나온다', () => {
+  let mine = 0;
+  let other = 0;
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 3000; i++) {
+    const p = normalizeProfile({ owned: ['explorer', 'owl'], char: 'owl', coins: 1e6 });
+    const r = rollOnce(p, rnd);
+    if (r.kind !== 'skin') continue;
+    if (['explorer', 'owl'].includes(SKINS[r.id].char)) mine++;
+    else other++;
+  }
+  // 7명 중 2명을 가졌으니 무게가 같다면 2/7 ≈ 29%, 세 배면 6/11 ≈ 55%
+  assert.ok(mine / (mine + other) > 0.45, `${mine}/${mine + other}`);
 });

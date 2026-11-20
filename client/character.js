@@ -2,7 +2,8 @@
 // 외부 모델 파일 없음. 캐릭터 하나는 드로우콜 7~8회 (몸통/팔2/다리2/발밑 링/그림자/빔).
 import * as THREE from 'three';
 import { CFG } from './shared/config.js';
-import { SKINS } from './shared/shop.js';
+import { SKINS, skinFor } from './shared/shop.js';
+import { costume } from './costumes.js';
 
 // 색은 정점에 직접 굽는다 (머티리얼 색은 흰색). 후드/망토만 팀 색이고 나머지는 공통.
 // 색은 sRGB 16진수로 적고 렌더링용 선형 값으로 바꿔 쓴다 (그대로 넣으면 물 빠진 색이 된다)
@@ -106,87 +107,7 @@ function accessories(charId) {
 }
 const BODY_WIDTH = { bear: 1.18, runner: 0.92 }; // 몸집 (그 외 1)
 
-// 스킨(의상)별 모자와 소품. 색이 고정이라 아군/적 누구에게나 같은 모양으로 보인다.
-function costume(skinId) {
-  const H = HEAD_Y;
-  const c = (hex) => rgb(hex);
-  switch (skinId) {
-    case 'strawberry': { // 딸기 요정: 잎사귀 왕관, 꼭지, 씨앗
-      const parts = [[new THREE.CylinderGeometry(0.03, 0.04, 0.16, 6).translate(0, H + 0.5, -0.05), c(0x5a8a2a)]];
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2;
-        parts.push([
-          new THREE.SphereGeometry(0.15, 8, 6).scale(1, 0.28, 0.55).rotateZ(-0.45).rotateY(a).translate(Math.cos(a) * 0.16, H + 0.4, -0.05 - Math.sin(a) * 0.16),
-          c(0x4fae3c),
-        ]);
-      }
-      for (let i = 0; i < 12; i++) {
-        const a = (i / 12) * Math.PI * 2 + 0.3;
-        const up = 0.12 + (i % 3) * 0.1;
-        const r = Math.sqrt(Math.max(0, 0.4 * 0.4 - up * up));
-        if (Math.sin(a) > 0.55) continue; // 얼굴 쪽은 비운다
-        parts.push([new THREE.SphereGeometry(0.03, 5, 4).scale(1, 1.4, 1).translate(Math.cos(a) * r, H + up, -Math.sin(a) * r), c(0xfff0a0)]);
-      }
-      return parts;
-    }
-    case 'lime': // 개구리: 툭 튀어나온 눈
-      return [-1, 1].flatMap((s) => [
-        [new THREE.SphereGeometry(0.15, 10, 8).translate(s * 0.2, H + 0.36, 0.06), c(0x63b52c)],
-        [new THREE.SphereGeometry(0.105, 10, 8).translate(s * 0.2, H + 0.39, 0.15), c(0xffffff)],
-        [new THREE.SphereGeometry(0.055, 8, 6).translate(s * 0.2, H + 0.4, 0.23), c(0x15151a)],
-        [new THREE.SphereGeometry(0.05, 6, 5).scale(1.5, 0.5, 0.6).translate(s * 0.25, H - 0.02, 0.3), c(0xff9ab0)],
-      ]);
-    case 'pumpkin': // 호박 마법사: 챙 넓은 뾰족 모자
-      return [
-        [new THREE.CylinderGeometry(0.56, 0.56, 0.05, 20).rotateX(-0.18).translate(0, H + 0.3, -0.03), c(0x5a2f8a)],
-        [new THREE.ConeGeometry(0.3, 0.62, 12).rotateX(-0.3).translate(0, H + 0.6, -0.1), c(0x6a3aa2)],
-        [new THREE.ConeGeometry(0.11, 0.3, 8).rotateX(-1.1).translate(0, H + 0.9, -0.3), c(0x6a3aa2)],
-        [new THREE.CylinderGeometry(0.31, 0.33, 0.09, 14).rotateX(-0.2).translate(0, H + 0.36, -0.04), c(0xff8a2e)],
-        [new THREE.BoxGeometry(0.12, 0.11, 0.05).translate(0, H + 0.38, 0.29), c(0xffd23a)],
-        [new THREE.SphereGeometry(0.06, 6, 5).translate(0, H + 1.0, -0.42), c(0xffd23a)],
-      ];
-    case 'snow': // 눈사람: 중절모, 당근 코, 석탄 단추, 빨간 목도리
-      return [
-        [new THREE.CylinderGeometry(0.36, 0.36, 0.05, 18).translate(0, H + 0.34, -0.02), c(0x1c1c22)],
-        [new THREE.CylinderGeometry(0.23, 0.25, 0.36, 16).translate(0, H + 0.54, -0.02), c(0x25252c)],
-        [new THREE.CylinderGeometry(0.255, 0.255, 0.08, 16).translate(0, H + 0.41, -0.02), c(0xd83a3a)],
-        [new THREE.ConeGeometry(0.055, 0.26, 8).rotateX(Math.PI / 2).translate(0, H - 0.03, 0.46), c(0xff8a2e)],
-        [new THREE.TorusGeometry(0.22, 0.075, 6, 14).rotateX(Math.PI / 2).translate(0, 0.87, 0), c(0xd83a3a)],
-        [new THREE.BoxGeometry(0.12, 0.3, 0.06).rotateZ(0.2).translate(0.16, 0.72, 0.24), c(0xd83a3a)],
-        ...[0.72, 0.6, 0.48].map((y) => [new THREE.SphereGeometry(0.04, 6, 5).translate(0, y, 0.2 + (0.84 - y) * 0.28), c(0x1c1c22)]),
-      ];
-    case 'night': // 우주비행사: 헬멧 테, 안테나, 산소통, 가슴 계기판
-      return [
-        [new THREE.TorusGeometry(0.4, 0.07, 8, 24).rotateX(0.852).translate(0, H, 0), c(0xe8eef5)],
-        [new THREE.TorusGeometry(0.3, 0.07, 8, 20).rotateX(Math.PI / 2).translate(0, 0.86, 0), c(0xe8eef5)],
-        [new THREE.CylinderGeometry(0.02, 0.02, 0.34, 5).translate(0.22, H + 0.5, -0.1), c(0xc8d0d8)],
-        [new THREE.SphereGeometry(0.06, 8, 6).translate(0.22, H + 0.7, -0.1), [3, 0.6, 0.5]],
-        [new THREE.CapsuleGeometry(0.09, 0.26, 3, 8).translate(0.11, 0.66, -0.42), c(0xe8eef5)],
-        [new THREE.CapsuleGeometry(0.09, 0.26, 3, 8).translate(-0.11, 0.66, -0.42), c(0xe8eef5)],
-        [new THREE.BoxGeometry(0.2, 0.13, 0.04).translate(0, 0.68, 0.27), c(0xe8eef5)],
-        [new THREE.BoxGeometry(0.05, 0.05, 0.05).translate(-0.05, 0.69, 0.29), [0.6, 2.6, 3]],
-        [new THREE.BoxGeometry(0.05, 0.05, 0.05).translate(0.05, 0.69, 0.29), [3, 0.8, 0.6]],
-      ];
-    case 'gold': { // 황금 왕: 보석 왕관, 털 망토 깃
-      const gold = c(0xffc21a);
-      const parts = [[new THREE.CylinderGeometry(0.27, 0.25, 0.16, 16, 1, true).translate(0, H + 0.4, -0.02), gold]];
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2;
-        parts.push([new THREE.ConeGeometry(0.07, 0.2, 5).translate(Math.cos(a) * 0.25, H + 0.57, -0.02 + Math.sin(a) * 0.25), gold]);
-        parts.push([new THREE.SphereGeometry(0.04, 6, 5).translate(Math.cos(a) * 0.27, H + 0.41, -0.02 + Math.sin(a) * 0.27), i % 2 ? [2.6, 0.3, 0.4] : [0.4, 1.2, 3]]);
-      }
-      for (let i = 0; i < 9; i++) {
-        const a = (i / 9) * Math.PI * 2;
-        parts.push([new THREE.SphereGeometry(0.1, 7, 5).translate(Math.cos(a) * 0.25, 0.88, Math.sin(a) * 0.25), c(0xfdfdfd)]);
-        if (i % 3 === 0) parts.push([new THREE.SphereGeometry(0.03, 5, 4).translate(Math.cos(a) * 0.33, 0.9, Math.sin(a) * 0.33), c(0x1c1c22)]);
-      }
-      return parts;
-    }
-    default:
-      return [];
-  }
-}
-// 의상을 입으면 머리 위 장식(귀, 등불, 새싹 등)은 모자에 가려지므로 뺀다. 얼굴 장식(고글, 가리개)은 남긴다.
+// 의상이 머리 위를 덮으면 머리 위 장식(귀, 등불, 새싹 등)은 뺀다. 얼굴·몸 장식(고글, 가리개, 구급함)은 남긴다.
 function faceOnly(parts) {
   return parts.filter(([geo]) => {
     geo.computeBoundingBox();
@@ -195,7 +116,9 @@ function faceOnly(parts) {
 }
 
 function buildParts(teamHex, charId, skinId = 'default') {
-  const dressed = skinId !== 'default';
+  // 의상(캐릭터마다 다르다, client/costumes.js): 모자·소품, 왼손 소품, 남길 기본 장식, 후드 끝, 신발 색
+  const look = costume(skinId, HEAD_Y);
+  const acc = look.acc === 'all' ? accessories(charId) : look.acc === 'face' ? faceOnly(accessories(charId)) : [];
   const team = rgb(teamHex);
   const dark = shade(team, 0.72);
   const torso = merge([
@@ -218,25 +141,25 @@ function buildParts(teamHex, charId, skinId = 'default') {
     [new THREE.BoxGeometry(0.07, 0.36, 0.04).translate(-0.15, 0.66, 0.2), dark],
     // 후드: 얼굴만 내놓고 머리 위와 뒤를 덮는다 + 뾰족한 끝
     [new THREE.SphereGeometry(0.39, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.52).rotateX(-0.72).translate(0, HEAD_Y, 0), team],
-    ...(dressed ? [] : [[new THREE.ConeGeometry(0.15, 0.34, 10).rotateX(-1.2).translate(0, HEAD_Y + 0.28, -0.3), dark]]),
+    ...(look.tip ? [[new THREE.ConeGeometry(0.15, 0.34, 10).rotateX(-1.2).translate(0, HEAD_Y + 0.28, -0.3), dark]] : []),
     // 후드 테두리: 얼굴을 감싸는 도톰한 단
     [new THREE.TorusGeometry(0.385, 0.05, 6, 22).rotateX(0.852).translate(0, HEAD_Y, 0), dark],
     [new THREE.TorusGeometry(0.2, 0.06, 6, 14).rotateX(Math.PI / 2).translate(0, 0.86, 0), dark], // 목도리
     [new THREE.BoxGeometry(0.3, 0.3, 0.16).translate(0, 0.62, -0.3), PACK], // 배낭
-    ...(dressed ? faceOnly(accessories(charId)) : accessories(charId)),
-    ...costume(skinId),
+    ...acc,
+    ...look.parts,
   ]);
   const bw = BODY_WIDTH[charId];
   if (bw) torso.scale(bw, 1, bw);
   const leg = merge([
     [new THREE.CapsuleGeometry(0.1, 0.1, 3, 8).translate(0, -0.14, 0), PANTS],
-    [new THREE.SphereGeometry(0.12, 8, 6).scale(1, 0.75, 1.35).translate(0, -0.27, 0.04), BOOT],
+    [new THREE.SphereGeometry(0.12, 8, 6).scale(1, 0.75, 1.35).translate(0, -0.27, 0.04), look.boot === null ? BOOT : rgb(look.boot)],
   ]);
   const armParts = [
     [new THREE.CapsuleGeometry(0.08, 0.14, 3, 8).translate(0, -0.14, 0), team],
     [new THREE.SphereGeometry(0.085, 8, 6).translate(0, -0.3, 0), SKIN], // 손
   ];
-  const armL = merge(armParts);
+  const armL = merge([...armParts, ...look.arm]);
   const armR = merge([
     ...armParts,
     [new THREE.CylinderGeometry(0.055, 0.085, 0.3, 8).translate(0, -0.46, 0), METAL], // 손전등
@@ -351,6 +274,7 @@ export class Characters {
   // 팀 종류 × 캐릭터 조합별 지오메트리 (처음 쓸 때 한 번 만든다)
   // skin: 스킨(의상) ID. 모자와 소품이 붙고, 내 캐릭터는 후드/망토 색도 바뀐다.
   partsFor(kind, char, skin = 'default') {
+    skin = skinFor(char, skin); // 다른 캐릭터의 의상은 입지 않는다
     const color = kind === 'self' ? (SKINS[skin]?.color ?? SIGNATURE[char] ?? COLORS.self) : COLORS[kind];
     const key = `${kind}:${char}:${skin}`;
     if (!this.parts[key]) this.parts[key] = buildParts(color, char, skin);

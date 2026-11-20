@@ -23,7 +23,7 @@ import { buildDeco, buildFloorTexture, buildItemGeos, buildWalls, buildWater } f
 import { Showcase, radarOf } from './showcase.js';
 import { Net } from './net.js';
 import { initParty } from './party.js';
-import { DAILY, GACHA, SKINS, TIERS, claimDaily, dayKey, gacha, iconsFor, normalizeProfile, skinOf } from './shared/shop.js';
+import { DAILY, GACHA, SKINS, TIERS, claimDaily, dayKey, gacha, iconsFor, normalizeProfile, skinFor, skinsOf } from './shared/shop.js';
 
 const DT = 1 / CFG.TICK_RATE;
 const INTERP_MS = 110; // 원격 플레이어 보간 지연
@@ -298,8 +298,8 @@ function drawDust(dt) {
   dustMesh.count = n;
   dustMesh.instanceMatrix.needsUpdate = true;
 }
-const makePlayerMesh = (kind, char, skin) => chars.make(kind, charOf(char), false, skinOf(skin));
-const setKind = (mesh, kind, char, skin) => chars.setKind(mesh, kind, charOf(char), skinOf(skin));
+const makePlayerMesh = (kind, char, skin) => chars.make(kind, charOf(char), false, skinFor(charOf(char), skin));
+const setKind = (mesh, kind, char, skin) => chars.setKind(mesh, kind, charOf(char), skinFor(charOf(char), skin));
 
 const geo = {
   flare: new THREE.SphereGeometry(0.16, 8, 6).translate(0, 0.16, 0),
@@ -1533,6 +1533,15 @@ const profile = (() => {
     return normalizeProfile(null);
   }
 })();
+// 예전 공용 의상을 캐릭터별 의상으로 바꿨으면 한 번 알려 준다
+if (profile.legacyNote) {
+  const note = profile.legacyNote;
+  delete profile.legacyNote;
+  try {
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+  } catch {}
+  setTimeout(() => toast('의상이 새로워졌어요', note, '', '', 4000), 900);
+}
 const CHEAT_COINS = 9999999;
 const cheatCoinsOn = () => prefs.cheat && prefs.cheatCoins;
 const coinText = () => (cheatCoinsOn() ? '∞' : String(Math.floor(profile.coins)));
@@ -1585,6 +1594,7 @@ const lockEls = CHAR_IDS.map(() => {
   return $('shopLocks').appendChild(el);
 });
 function drawShop() {
+  dressShowcase();
   const id = showcase.current;
   const c = CHARACTERS[id];
   const owned = profile.owned.includes(id);
@@ -1612,6 +1622,7 @@ function drawShop() {
     btn.className = 'buy';
     btn.disabled = profile.coins < c.price;
   }
+  if (shopTab === 'skins') drawSkins(); // 스킨 탭: 위 정보 대신 그 캐릭터의 의상
 }
 // ── 상점 탭: 캐릭터 / 스킨 / 뽑기 ──
 let shopTab = 'chars';
@@ -1619,38 +1630,59 @@ function setShopTab(tab) {
   shopTab = tab;
   $('shop').dataset.tab = tab;
   for (const b of $('shopTabs').children) b.classList.toggle('on', b.dataset.tab === tab);
-  // 스킨/뽑기 탭에서는 지금 쓰는 캐릭터를 가운데에 세운다
+  // 스킨/뽑기 탭에서는 지금 쓰는 캐릭터를 가운데에 세운다 (스킨 탭에서도 좌우로 넘겨 다른 캐릭터의 의상을 본다)
   if (tab !== 'chars') showcase.open(profile.char);
-  showcase.setSkin(tab === 'chars' ? 'default' : profile.skin);
+  skinPeek = null;
   drawShop();
-  if (tab === 'skins') drawSkins();
   if (tab === 'gacha') drawGacha();
 }
 for (const b of $('shopTabs').children) b.addEventListener('click', () => setShopTab(b.dataset.tab));
 
+// 캐릭터마다 입은 의상 (스킨 탭에서 눌러 본 의상은 미리보기로 입혀 보여 준다)
+const wornBy = (id) => profile.skinBy[id] || 'default';
+let skinPeek = null; // { char, skin }
+const shownSkin = (id) => (skinPeek && skinPeek.char === id ? skinPeek.skin : wornBy(id));
+const dressShowcase = () => showcase.setSkins(shownSkin);
+const hexCss = (n) => `#${n.toString(16).padStart(6, '0')}`;
+
+// 스킨 탭: 가운데 캐릭터의 의상들 (기본 + 그 캐릭터만의 의상 3벌)
 function drawSkins() {
+  const id = showcase.current;
+  const c = CHARACTERS[id];
+  const list = ['default', ...skinsOf(id)];
+  const shown = shownSkin(id);
+  const sk = SKINS[shown];
+  const has = (sid) => profile.skins.includes(sid);
+  $('shopName').textContent = shown === 'default' ? c.name : `${c.name} · ${sk.name}`;
+  if (shown === 'default') iconText($('shopAbility'), c.icon, '캐릭터 본래 모습');
+  else $('shopAbility').textContent = `${TIERS[sk.tier].name} · ${sk.desc}`;
+  const count = list.filter((sid) => sid !== 'default' && has(sid)).length;
+  $('shopSkill').textContent =
+    (!has(shown) ? `${TIERS[sk.tier].name} 의상 · 뽑기에서 얻을 수 있어요` : `입고 있어요 · 의상 ${count}/${list.length - 1}`) +
+    (profile.owned.includes(id) ? '' : ' · 캐릭터 잠김');
   $('skinRow').replaceChildren(
-    ...Object.entries(SKINS).map(([id, sk]) => {
-      const owned = profile.skins.includes(id);
+    ...list.map((sid) => {
+      const s = SKINS[sid];
+      const owned = has(sid);
       const b = document.createElement('button');
-      b.className = `skin ${sk.tier}` + (profile.skin === id ? ' on' : '') + (owned ? '' : ' locked');
+      b.className = `skin ${s.tier}` + (wornBy(id) === sid ? ' on' : '') + (owned ? '' : ' locked') + (shown === sid ? ' peek' : '');
       b.innerHTML = '<i></i><span></span>';
-      // 의상을 입은 모습 (기본은 지금 고른 캐릭터)
-      b.querySelector('i').append(imgEl(id === 'default' ? charImg(showcase.current) : skinImg(id), 'portrait'));
-      if (sk.color !== null) b.querySelector('i').style.background = `radial-gradient(circle at 50% 35%, #fff6, #${sk.color.toString(16).padStart(6, '0')})`;
-      b.querySelector('span').textContent = owned ? sk.name : `🔒 ${sk.name}`;
+      b.querySelector('i').append(imgEl(sid === 'default' ? charImg(id) : skinImg(sid), 'portrait'));
+      const col = sid === 'default' ? null : s.color;
+      if (col !== null) b.querySelector('i').style.background = `radial-gradient(circle at 50% 35%, #fff6, ${hexCss(col)})`;
+      b.querySelector('span').textContent = s.name;
       b.addEventListener('click', () => {
-        // 가진 스킨은 입고, 없는 스킨은 미리보기만
-        showcase.setSkin(id);
-        $('shopName').textContent = sk.name;
-        $('shopAbility').textContent = sk.desc;
+        // 가진 의상은 입고, 없는 의상은 미리보기만
+        skinPeek = { char: id, skin: sid };
         if (owned) {
-          profile.skin = id;
+          if (sid === 'default') delete profile.skinBy[id];
+          else profile.skinBy[id] = sid;
+          if (profile.char === id) profile.skin = sid;
           saveProfile();
           sfx.choose();
-          drawSkins();
-          $('shopSkill').textContent = '입고 있어요';
-        } else $('shopSkill').textContent = `${TIERS[sk.tier].name} 의상 · 뽑기에서 얻을 수 있어요`;
+        } else sfx.firefly();
+        dressShowcase();
+        drawSkins();
       });
       return b;
     }),
@@ -1680,7 +1712,7 @@ function doGacha(n) {
       const card = document.createElement('div');
       card.className = `gcard ${r.tier}`;
       card.style.animationDelay = `${i * 0.12}s`;
-      const name = r.kind === 'coins' ? `코인 ${r.coins}` : r.kind === 'skin' ? `${SKINS[r.id].name} 스킨` : CHARACTERS[r.id].name;
+      const name = r.kind === 'coins' ? `코인 ${r.coins}` : r.kind === 'skin' ? `${CHARACTERS[SKINS[r.id].char].name} · ${SKINS[r.id].name}` : CHARACTERS[r.id].name;
       card.innerHTML = '<i></i><b></b><span></span>';
       // 캐릭터와 의상은 초상화, 코인은 동전
       if (r.kind === 'coins') card.querySelector('i').textContent = '🪙';
@@ -1720,7 +1752,7 @@ $('daily').addEventListener('click', () => {
 });
 
 function shopMove(d) {
-  if (shopTab !== 'chars') return;
+  if (shopTab === 'gacha') return;
   const before = showcase.index;
   showcase.move(d);
   if (showcase.index !== before) {
@@ -1738,6 +1770,7 @@ $('shopAct').addEventListener('click', () => {
     sfx.levelUp();
   } else sfx.choose();
   profile.char = id;
+  profile.skin = wornBy(id); // 그 캐릭터가 입고 있던 의상
   saveProfile();
   drawShop();
   drawProfile();
@@ -1755,7 +1788,7 @@ addEventListener('keydown', (e) => {
   let drag = null; // { x0, pos0, lastX, lastT, v, moved, idx }
   const shopTarget = (e) => e.target === $('shop') || e.target.closest('#shopLocks');
   $('shop').addEventListener('pointerdown', (e) => {
-    if (!shopTarget(e) || shopTab !== 'chars') return;
+    if (!shopTarget(e) || shopTab === 'gacha') return;
     drag = { x0: e.clientX, pos0: showcase.pos, lastX: e.clientX, lastT: performance.now(), v: 0, moved: false, idx: showcase.index };
     showcase.dragging = true;
     $('shop').setPointerCapture?.(e.pointerId);
@@ -1833,7 +1866,8 @@ function enterLobby() {
   if (net.ready) sendHello();
   showcase.lobby = true;
   showcase.open(profile.char);
-  showcase.setSkin(profile.skin);
+  skinPeek = null;
+  dressShowcase();
   drawLobby();
   drawRankBadge();
   $('tutorPrompt').hidden = !!(profile.tutorial || prefs.tutorSeen);
@@ -2088,7 +2122,7 @@ function flash() {
 
 // 화면 중앙 알림 (처치 확인, 라운드 시작)
 let toastTimer = 0;
-function toast(title, sub = '', cls = '', img = '') {
+function toast(title, sub = '', cls = '', img = '', ms = 1300) {
   const el = $('toast');
   el.className = cls;
   if (img) srcText($('toastTitle'), img, title);
@@ -2100,7 +2134,7 @@ function toast(title, sub = '', cls = '', img = '') {
   void el.offsetWidth;
   el.style.animation = '';
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (el.hidden = true), 1300);
+  toastTimer = setTimeout(() => (el.hidden = true), ms);
 }
 
 // 스킬 버튼: 쿨다운 중에는 남은 시간을 숫자로 보여준다

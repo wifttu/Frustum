@@ -4,8 +4,14 @@ import { MAP_ROTATION, MAP_SIZE, MAPS, isFree } from '../shared/map.js';
 import { flareLanding, stepPlayer } from '../shared/sim.js';
 import { canSee, segmentBlocked, wrapAngle } from '../shared/vision.js';
 import { botThink } from './bots.js';
-import { SKIN_KEYS, skinOf } from '../shared/shop.js';
+import { skinFor, skinsOf } from '../shared/shop.js';
 import { CHARACTER_KEYS, CHEAT, ORBS, PROGRESS, SKILLS, UPGRADES, charOf, cheatOf, randomOrb, rollChoices, statsOf, xpToNext } from '../shared/progress.js';
+
+// 봇 의상: 30% 확률로 그 캐릭터의 의상 하나
+const botSkin = (char) => {
+  const list = skinsOf(char);
+  return list.length && Math.random() < 0.3 ? list[Math.floor(Math.random() * list.length)] : 'default';
+};
 
 const DT = 1 / CFG.TICK_RATE;
 const MAX_QUEUE = 10;
@@ -83,16 +89,17 @@ export class Game {
   // opts.team: 친선 방처럼 팀을 정해서 넣을 때. opts.fc: 친구 코드(최근 함께한 플레이어 → 친구 추가용)
   addPlayer(name, send = null, isBot = false, char = null, skin = null, opts = {}) {
     const id = this.nextId++;
+    // 캐릭터: 봇은 무작위. (계정이 없어 구매 여부는 클라이언트가 관리한다)
+    const chosen = isBot ? CHARACTER_KEYS[Math.floor(Math.random() * CHARACTER_KEYS.length)] : charOf(char);
     const p = {
       id, name, team: 0, isBot, send,
       x: 0, z: 0, yaw: 0,
       alive: false, respawn: 0, gas: 0, cd: 0, speedT: 0, vest: 0, cloakT: 0, picked: [],
       dashT: 0, shieldT: 0, scanT: 0, cast: null, watch: 0,
       hp: 0, xp: 0, level: 1, ups: {}, choices: [], hurtT: 0, statsDirty: true, ffVer: -1, earned: 0,
-      // 캐릭터: 봇은 무작위. (계정이 없어 구매 여부는 클라이언트가 관리한다)
-      char: isBot ? CHARACTER_KEYS[Math.floor(Math.random() * CHARACTER_KEYS.length)] : charOf(char),
-      // 스킨(의상): 모자와 소품은 다른 플레이어에게도 보인다. 봇은 가끔 입는다.
-      skin: isBot ? (Math.random() < 0.3 ? SKIN_KEYS[1 + Math.floor(Math.random() * (SKIN_KEYS.length - 1))] : 'default') : skinOf(skin), beam: 0, score: 0, wins: 0,
+      char: chosen,
+      // 스킨(의상): 캐릭터마다 다르다. 모자와 소품은 다른 플레이어에게도 보인다. 봇은 가끔 입는다.
+      skin: isBot ? botSkin(chosen) : skinFor(chosen, skin), beam: 0, score: 0, wins: 0,
       rollT: 0, rollCd: 0, rollDx: 0, rollDz: 1, flareCd: 0,
       queue: [], budget: 0, ack: 0, lastSeq: 0, ai: {},
       fc: typeof opts.fc === 'string' ? opts.fc : '',

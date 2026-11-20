@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { MAPS, MAP_ROTATION, MAP_SIZE, isFree } from '../shared/map.js';
 import { CFG } from '../shared/config.js';
 import { CHARACTER_KEYS, SKILLS, UPGRADES } from '../shared/progress.js';
-import { SKIN_ICONS } from '../shared/shop.js';
+import { SKINS, SKIN_ICONS } from '../shared/shop.js';
 import { buildDeco, buildFloorTexture, buildItemGeos, buildWalls, buildWater } from '../world.js';
 import { Characters, merge, rgb, shade } from '../character.js';
 import { VisionMask } from '../fog.js';
@@ -199,15 +199,22 @@ const portrait = (() => {
   scene.add(key, rim);
   const chars = new Characters({ apply: (m) => m });
   const camera = new THREE.PerspectiveCamera(24, 1, 0.1, 50);
-  camera.position.set(0.85, 2.15, 4.3);
-  camera.lookAt(0, 1.5, 0);
   return { scene, chars, camera };
 })();
+const PORTRAIT_EYE = new THREE.Vector3(0.85, 2.15, 4.3);
+const PORTRAIT_AT = new THREE.Vector3(0, 1.5, 0);
 function shootPortrait(char, skin = 'default') {
   const { scene, chars, camera } = portrait;
   const m = chars.make('self', char, true, skin);
   m.rotation.y = 0.32;
   for (let i = 0; i < 12; i++) chars.animate(m, 0.1, 1 + i * 0.1, { roll: -1 });
+  // 모자·뿔·안테나가 잘리지 않게, 키가 크면 그만큼만 물러서서 찍는다 (최대 1.3배)
+  m.updateMatrixWorld(true);
+  const top = new THREE.Box3().setFromObject(m.userData.pose).max.y;
+  const k = Math.min(1.3, Math.max(1, (top + 0.06 - 0.56) / 1.88));
+  const at = PORTRAIT_AT.clone().setY(0.56 + 0.94 * k);
+  camera.position.copy(at).addScaledVector(PORTRAIT_EYE.clone().sub(PORTRAIT_AT), k);
+  camera.lookAt(at);
   scene.add(m);
   const url = shoot(scene, camera, 256, 256, { alpha: true });
   scene.remove(m);
@@ -638,7 +645,7 @@ window.renderAll = async (only = '') => {
     out['maps/auto'] = c.toDataURL('image/webp', 0.86);
   }
   for (const id of CHARACTER_KEYS) if (want(`chars/${id}`)) out[`chars/${id}`] = shootPortrait(id);
-  for (const id of Object.keys(SKIN_ICONS)) if (want(`skins/${id}`)) out[`skins/${id}`] = shootPortrait('explorer', id);
+  for (const id of Object.keys(SKIN_ICONS)) if (want(`skins/${id}`)) out[`skins/${id}`] = shootPortrait(SKINS[id].char, id); // 그 의상의 주인 캐릭터가 입은 모습
   for (const name of Object.values(FREE)) if (want(`icons/${name}`)) out[`icons/${name}`] = shootIcon(name);
   for (const id of Object.keys(SKILLS)) if (want(`skills/${id}`)) out[`skills/${id}`] = shootModel(SKILL_MODELS[id], 160);
   if (want('skills/flare')) out['skills/flare'] = shootModel(SKILL_MODELS.flare, 160);
