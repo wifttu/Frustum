@@ -72,9 +72,9 @@ export class Showcase {
     this.active = false;
   }
 
-  // 고른 캐릭터에 스킨(의상)을 입혀 보여준다
-  setSkin(skin = 'default') {
-    for (const it of this.items) this.chars.setKind(it.mesh, 'self', it.id, it.id === this.current ? skin : 'default');
+  // 캐릭터마다 의상을 입혀 보여준다 (skinOf(캐릭터 ID) → 의상 ID)
+  setSkins(skinOf) {
+    for (const it of this.items) this.chars.setKind(it.mesh, 'self', it.id, skinOf(it.id));
   }
 
   get current() {

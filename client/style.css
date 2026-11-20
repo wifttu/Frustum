@@ -659,7 +659,8 @@ body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
 #skinRow, #gachaPanel { display: none; }
 #shop[data-tab='skins'] #skinRow { display: flex; }
 #shop[data-tab='gacha'] #gachaPanel { display: block; }
-#shop:not([data-tab='chars']) :is(.nav, #shopAct, #shopStats, #shopCount) { display: none; }
+#shop:not([data-tab='chars']) :is(#shopAct, #shopStats, #shopCount) { display: none; }
+#shop[data-tab='gacha'] .nav { display: none; }
 #shop[data-tab='gacha'] #shopHead { display: none; }
 
 /* 스킨 고르기 */
@@ -669,12 +670,23 @@ body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
   max-width: 96vw; overflow-x: auto;
 }
 .skin {
-  flex: none; width: 74px; padding: 6px 2px 5px; border-radius: 12px; border: 2px solid transparent; background: rgba(255, 255, 255, .07);
+  flex: none; width: 80px; padding: 6px 2px 5px; border-radius: 12px; border: 2px solid transparent; background: rgba(255, 255, 255, .07);
   color: #fff; font-size: 11px; font-weight: 700; display: flex; flex-direction: column; align-items: center; gap: 4px;
 }
 .skin i { width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(255, 255, 255, .85); box-shadow: 0 2px 6px rgba(0, 0, 0, .5); }
 .skin.on { border-color: #ffd25a; background: rgba(255, 210, 90, .18); }
-.skin.locked { opacity: .6; }
+.skin.peek:not(.on) { border-color: rgba(255, 255, 255, .6); border-style: dashed; }
+.skin { position: relative; }
+.skin.locked i { opacity: .55; filter: saturate(.5); }
+.skin.locked::after { content: '🔒'; position: absolute; top: 3px; right: 5px; font-size: 13px; }
+.skin span { white-space: nowrap; letter-spacing: -.3px; }
+/* 가로 화면: 의상 카드를 오른쪽에 2×2 로 (가운데 캐릭터를 가리지 않게) */
+@media (orientation: landscape) {
+  #skinRow {
+    left: auto; bottom: auto; top: 54%; right: calc(68px + env(safe-area-inset-right)); transform: translateY(-50%);
+    flex-wrap: wrap; width: 196px; justify-content: center;
+  }
+}
 .skin.rare span { color: #9fd4ff; } .skin.epic span { color: #dcb8ff; } .skin.legend span { color: #ffd25a; }
 
 /* 뽑기 */
@@ -830,7 +842,7 @@ body.cheating #coins::after { content: ' 🧪'; }
 .slot i .ic { width: 1.55em; height: 1.55em; }
 #invite i .ic { width: 1.6em; height: 1.6em; }
 .skin i {
-  width: 46px; height: 46px; overflow: hidden; display: flex; align-items: flex-end; justify-content: center;
+  width: 54px; height: 54px; overflow: hidden; display: flex; align-items: flex-end; justify-content: center;
   background: radial-gradient(circle at 50% 35%, #8a7ab8, #3a3058);
 }
 .skin i .portrait { width: 118%; height: 118%; object-fit: cover; margin-bottom: -12%; }

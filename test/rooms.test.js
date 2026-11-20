@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MAX_PRIVATE_ROOMS, Rooms, roomCode } from '../server/rooms.js';
+import { skinFits } from '../shared/shop.js';
 
 test('방 코드: 영문/숫자 4~6자만 인정한다', () => {
   assert.equal(roomCode('abcd'), 'ABCD');
@@ -42,14 +43,18 @@ test('비공개 방 수에는 상한이 있다', () => {
   assert.equal(rooms.find({ room: 'OVER1' }), null);
 });
 
-test('스킨: 서버는 목록에 있는 스킨만 받아 로스터에 싣는다', () => {
+test('스킨: 서버는 그 캐릭터의 의상만 받아 로스터에 싣는다', () => {
   const rooms = new Rooms();
   const g = rooms.find({ rule: 'dm', mode: 'ffa', room: 'SKIN1' });
-  const a = g.addPlayer('A', () => {}, false, 'bear', 'gold');
+  const a = g.addPlayer('A', () => {}, false, 'bear', 'bear_knight');
   const b = g.addPlayer('B', () => {}, false, 'bear', 'toString');
-  assert.equal(a.skin, 'gold');
+  const c = g.addPlayer('C', () => {}, false, 'bear', 'owl_wizard'); // 다른 캐릭터의 의상
+  assert.equal(a.skin, 'bear_knight');
   assert.equal(b.skin, 'default');
-  assert.equal(g.roster().p.find((r) => r[0] === a.id)[8], 'gold');
+  assert.equal(c.skin, 'default');
+  assert.equal(g.roster().p.find((r) => r[0] === a.id)[8], 'bear_knight');
+  // 봇도 자기 캐릭터의 의상만 입는다
+  for (const p of g.players.values()) assert.ok(skinFits(p.skin, p.char), `${p.char}:${p.skin}`);
 });
 
 test('방 현황: 공개 방의 접속 인원만 알리고, 봇은 세지 않는다', () => {

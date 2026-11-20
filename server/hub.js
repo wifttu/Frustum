@@ -4,7 +4,7 @@
 import { CFG, RULES } from '../shared/config.js';
 import { MAPS } from '../shared/map.js';
 import { CHARACTERS, charOf, cheatOf } from '../shared/progress.js';
-import { FREE_ICONS, SKIN_ICONS, skinOf } from '../shared/shop.js';
+import { FREE_ICONS, SKIN_ICONS, skinFor } from '../shared/shop.js';
 import { Game } from './game.js';
 import { Rooms, roomCode } from './rooms.js';
 
@@ -146,7 +146,8 @@ export class Hub {
   updateProfile(s, m) {
     if (typeof m.n === 'string') s.prof.name = cleanName(m.n);
     if (typeof m.c === 'string') s.prof.char = charOf(m.c);
-    if (typeof m.s === 'string') s.prof.skin = skinOf(m.s);
+    if (typeof m.s === 'string') s.prof.skin = m.s;
+    s.prof.skin = skinFor(s.prof.char, s.prof.skin); // 그 캐릭터의 의상만
     if (typeof m.i === 'string') s.prof.icon = ICONS.has(m.i) ? m.i : '';
     // 치트: 혼자(AI 상대)일 때만 게임에서 켜진다. 게임 중에 바꾸면 바로 반영한다.
     if (m.ch !== undefined) {
