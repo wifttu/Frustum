@@ -248,6 +248,14 @@ body.lefty #buffs { right: auto; left: calc(20px + env(safe-area-inset-left)); a
 #bannerList span:last-child { font-weight: 700; }
 #bannerList .ally { color: var(--ally); } #bannerList .enemy { color: var(--enemy); }
 #bannerList .me { color: #fff; background: rgba(255, 210, 90, .2); }
+#bannerBtns { display: flex; gap: 8px; justify-content: center; margin-top: 12px; pointer-events: auto; }
+#bannerBtns button {
+  flex: 1; max-width: 170px; padding: 10px 14px; border: 0; border-radius: 12px; font-weight: 900; font-size: 15px; white-space: nowrap;
+  background: linear-gradient(180deg, #ffc94d, #f08a2c); color: #3a2208; box-shadow: 0 4px 0 #a85a14;
+}
+#bannerBtns button.alt { background: #2a2440; color: #d8d2e4; box-shadow: 0 4px 0 #15121f; }
+#bannerBtns button:disabled { background: #4a4652; color: #e8e2f4; box-shadow: 0 4px 0 #2c2932; }
+#bannerBtns button:active { transform: translateY(2px); }
 #dead[hidden], #banner[hidden], #toast[hidden], #gasText[hidden] { display: none; }
 
 /* 결과 시상대: 1~3등 이름표, 가로 화면에서는 결과표를 오른쪽으로 */

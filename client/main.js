@@ -464,7 +464,8 @@ let winnerText = '';
 let shake = 0; // 화면 흔들림 세기
 let mapT = 0;
 let cricketT = 2;
-let roundEnd = 0; // 라운드 종료 배너 남은 시간
+let roundEnd = 0; // 라운드 종료 배너 남은 시간 (다시하기를 누를 때까지 기다리는 방은 Infinity)
+let holdEnd = false; // 혼자 하기: 결과 화면에서 다시하기를 누르면 다음 판
 let stepT = 0;
 let lastSpot = 0;
 const sim = { x: 0, z: 0, yaw: 0, rollT: 0, rollCd: 0, rollDx: 0, rollDz: 1, speedT: 0, dashT: 0, skill: 'roll' }; // 예측된 내 상태
@@ -599,7 +600,8 @@ function cheatPayload() {
 async function startOffline(name, gameMode, gameRule) {
   $('status').textContent = '불러오는 중…';
   const { Game } = await import('./server/game.js');
-  const game = new Game({ mode: gameMode, rule: gameRule, ...(lobby.map ? { map: lobby.map, FIXED_MAP: true } : {}) });
+  // HOLD_END: 결과 화면에서 다시하기를 누를 때까지 다음 판을 기다린다
+  const game = new Game({ mode: gameMode, rule: gameRule, HOLD_END: true, ...(lobby.map ? { map: lobby.map, FIXED_MAP: true } : {}) });
   game.balanceBots();
   const player = game.addPlayer(name, (msg) => onMessage(JSON.parse(msg)), false, profile.char, profile.skin, { cheat: cheatPayload() }); // 봇 한 자리를 이어받는다
   offline = { game, player };
@@ -988,7 +990,11 @@ function onMessage(m) {
     }
   } else if (m.t === 'e') {
     const won = m.w === myTeam;
-    roundEnd = m.s;
+    holdEnd = !!m.h;
+    roundEnd = holdEnd ? Infinity : m.s;
+    $('againBtn').disabled = false;
+    $('againBtn').textContent = '▶ 다시하기';
+    $('exitBtn').textContent = party?.active && !offline ? '🏠 방으로' : '🏠 나가기';
     $('bannerTitle').textContent = won ? '승리' : m.w ? '패배' : '무승부';
     $('bannerTitle').className = won ? 'win' : 'lose';
     winnerText = m.w ? `승자: ${m.n.join(', ')}` : '시간 초과';
@@ -2623,7 +2629,7 @@ function frame(now) {
     $('dead').hidden = alive || !myId || roundEnd > 0;
     $('deadBy').textContent = killedBy ? `처치자: ${killedBy}` : '';
     $('respawn').textContent = rule === 'survival' ? '다음 라운드까지 대기' : `${Math.ceil(respawnIn)}초 후 부활`;
-    if (roundEnd > 0) $('bannerSub').textContent = `${winnerText} · ${Math.ceil(roundEnd)}초 후 다음 라운드`;
+    if (roundEnd > 0) $('bannerSub').textContent = holdEnd ? winnerText : `${winnerText} · ${Math.ceil(roundEnd)}초 후 다음 판`;
     if (myId) drawScore();
     // 라운드 시작 카운트다운 (공격 금지 시간)
     const count = roundEnd > 0 || !alive ? 0 : Math.max(0, roundLeft - (roundTime - startGrace()));
@@ -2920,6 +2926,16 @@ $('gear').addEventListener('pointerdown', (e) => {
   openSettings();
 });
 $('closeSettings').addEventListener('click', () => ($('settings').hidden = true));
+// 결과 화면: 다시하기 / 나가기
+$('againBtn').addEventListener('click', () => {
+  if (!myId || roundEnd <= 0) return;
+  if (offline) offline.game.again(offline.player);
+  else net.send({ t: 'again' });
+  $('againBtn').disabled = true;
+  $('againBtn').textContent = offline ? '▶ 곧 시작!' : '✓ 준비 완료';
+  sfx.choose();
+});
+$('exitBtn').addEventListener('click', () => exitGame());
 $('leave').addEventListener('click', () => {
   $('settings').hidden = true;
   exitGame();

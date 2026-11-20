@@ -14,6 +14,7 @@ const botSkin = (char) => {
 };
 
 const DT = 1 / CFG.TICK_RATE;
+const MIN_RESULT = 2.5; // 다시하기를 눌러도 결과(시상대)는 이만큼은 보여 준다
 const MAX_QUEUE = 10;
 const q2 = (v) => Math.round(v * 100) / 100;
 
@@ -539,6 +540,7 @@ export class Game {
 
   endRound(team) {
     this.endT = this.cfg.INTERMISSION;
+    this.endShown = 0;
     this.winner = team;
     const names = [];
     for (const p of this.players.values()) {
@@ -547,7 +549,14 @@ export class Game {
       names.push(p.name);
     }
     this.rosterDirty = true;
-    this.events.push({ t: 'e', w: team, s: this.cfg.INTERMISSION, n: names });
+    for (const p of this.players.values()) p.again = false;
+    // h: 혼자 하기처럼 다시하기를 누를 때까지 기다리는 방
+    this.events.push({ t: 'e', w: team, s: this.cfg.INTERMISSION, n: names, h: this.cfg.HOLD_END ? 1 : 0 });
+  }
+
+  // 결과 화면의 '다시하기'
+  again(p) {
+    if (this.endT > 0) p.again = true;
   }
 
   newRound() {
@@ -565,6 +574,7 @@ export class Game {
     for (const p of this.players.values()) {
       p.score = 0;
       p.cap = 0;
+      p.again = false;
       p.flareCd = 0;
       this.resetProgress(p);
       p.queue.length = 0;
@@ -609,8 +619,12 @@ export class Game {
     this.flares = this.flares.filter((f) => f.t > 0);
 
     if (this.endT > 0) {
-      // 라운드 사이 휴식: 입력은 소비하되 움직이지 않는다
-      this.endT -= DT;
+      // 라운드 사이 휴식(결과 화면): 입력은 소비하되 움직이지 않는다.
+      // 사람이 모두 '다시하기'를 누르면 결과를 잠깐 보여 준 뒤 바로 다음 판. 혼자 하기(HOLD_END)는 누를 때까지 기다린다.
+      this.endShown += DT;
+      const humans = [...this.players.values()].filter((p) => !p.isBot);
+      if (humans.length && humans.every((p) => p.again) && this.endShown >= MIN_RESULT) this.endT = 0;
+      else if (!this.cfg.HOLD_END || !humans.length) this.endT -= DT;
       for (const p of this.players.values()) {
         while (p.queue.length) p.ack = p.queue.shift().seq;
       }
