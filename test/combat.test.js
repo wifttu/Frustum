@@ -360,3 +360,40 @@ test('연습 허수아비: 회복하지 않고 기본 손전등 딱 2방에 쓰�
   game.attack(me);
   assert.equal(dummy.alive, false);
 });
+
+test('연습 허수아비: 정해 둔 처치 경험치와 보석을 주고, 다시 나타나지 않는다', () => {
+  const { game, add, place } = setup({ TEAMS: 0, fireflies: false });
+  const me = add('Me');
+  const dummy = game.addPlayer('허수아비', null, true);
+  Object.assign(dummy, { dummy: true, killXp: 10, drops: [6, 6, 18] });
+  game.applyStats(dummy);
+  place(me, 0, 0, 0);
+  place(dummy, 0, 3, 0);
+  dummy.hp = 1;
+  game.attack(me);
+  assert.equal(dummy.alive, false);
+  assert.equal(me.xp, 10);
+  assert.deepEqual(game.fireflies.map((f) => f.v).sort((a, b) => a - b), [6, 6, 18]);
+  for (let i = 0; i < CFG.TICK_RATE * 6; i++) game.step();
+  assert.equal(dummy.alive, false);
+});
+
+test('연습 경비 허수아비: 가까이 보이면 비추고, 체력이 많이 줄면 봐준다', () => {
+  const { game, add, place } = setup({ TEAMS: 0 });
+  const me = add('Me');
+  const t = game.addPlayer('경비', null, true);
+  Object.assign(t, { dummy: true, turret: true });
+  game.applyStats(t);
+  place(me, 0, 0, 0);
+  place(t, 3, 3, 0);
+  me.hp = me.stats.maxHp;
+  for (let i = 0; i < CFG.TICK_RATE * 10; i++) game.step();
+  assert.equal(me.alive, true);
+  assert.ok(me.hp < me.stats.maxHp, '맞았다');
+  assert.ok(me.hp >= me.stats.maxHp * 0.2, '많이 줄면 더는 비추지 않는다');
+  // 멀리 가면 못 비춘다
+  Object.assign(me, { x: 20, z: 20 });
+  const hp = me.hp;
+  for (let i = 0; i < CFG.TICK_RATE * 2; i++) game.step();
+  assert.ok(me.hp >= hp);
+});

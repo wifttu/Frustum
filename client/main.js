@@ -335,6 +335,7 @@ let localCd = 0;
 let localBeam = 0;
 let flareCd = 0;
 let killedBy = '';
+let killXpPending = false; // 방금 내가 잡았다 → 다음 경험치 변화를 +XP 로 보여 준다
 let watchId = 0; // 쓰러진 동안 보고 있는 플레이어 (서버가 정한다)
 const camFocus = { x: 0, z: 0, yaw: 0, init: false }; // 카메라가 따라가는 곳 (관전 대상으로 부드럽게 옮겨 간다)
 let roundStart = { earned: 0, coins: 0 }; // 판이 시작될 때의 경험치·코인 (결과 화면에서 차이를 보여준다)
@@ -689,7 +690,8 @@ tutorRing.frustumCulled = false;
 scene.add(tutorRing);
 let tutor = null; // 진행 중인 연습
 const startGrace = () => (tutor ? 0 : CFG.START_GRACE); // 연습에는 시작 대기 시간이 없다
-let tutorSeen = false; // 허수아비를 한 번이라도 시야에 넣었나
+// 연습 단계 판정용: 내가 한 행동 수 (단계가 시작될 때의 값과 비교한다)
+const tstat = { skill: 0, flare: 0, hurt: 0 };
 async function startTutorial() {
   $('tutorPrompt').hidden = true;
   prefs.tutorSeen = true;
@@ -701,6 +703,8 @@ async function startTutorial() {
   const player = game.addPlayer(name, (msg) => onMessage(JSON.parse(msg)), false, profile.char, profile.skin);
   const dummy = game.addPlayer('허수아비', null, true);
   dummy.dummy = true;
+  dummy.killXp = 10; // 처치하면 경험치 10, 그 자리에 보석 3개(30)를 떨어뜨린다 → 딱 한 번 레벨업
+  dummy.drops = [6, 6, 18];
   dummy.char = 'explorer';
   dummy.skin = 'default';
   const spot = pickSpots(game.map);
@@ -709,7 +713,6 @@ async function startTutorial() {
   Object.assign(dummy, { x: spot.dummy[0], z: spot.dummy[1], yaw: 0, alive: true, hp: dummy.stats.maxHp });
   game.rosterDirty = true;
   offline = { game, player };
-  tutorSeen = false;
   document.body.classList.add('tutorial');
   onMessage({ t: 'w', id: player.id, team: player.team, ...game.info() });
   input.yaw = 0;
@@ -721,17 +724,20 @@ async function startTutorial() {
       return [(projV.x + 1) * 0.5 * innerWidth, (1 - projV.y) * 0.5 * innerHeight, projV.z];
     },
     stickCenter: () => input.fixedCenter(),
-    ring: (x, z, on, t = 0) => {
+    turnTo: (yaw) => (input.yaw += wrapAngle(yaw - input.yaw)),
+    ring: (x, z, on, t = 0, color = 0xffd25a) => {
       tutorRing.visible = on;
       if (!on) return;
+      tutorRing.material.color.setHex(color);
       tutorRing.position.set(x, 0.08, z);
       const k = 1 + 0.18 * Math.sin(t * 6);
       tutorRing.scale.set(k, 1, k);
     },
     state: () => ({
-      x: view.x, z: view.z, yaw: view.yaw, seen: tutorSeen, level: prog.level, xp: prog.xp, next: prog.next,
+      x: view.x, z: view.z, yaw: view.yaw, level: prog.level, xp: prog.xp, next: prog.next, hp: prog.hp, maxHp: prog.stats.maxHp,
       walking: Math.hypot(input.mx, input.mz) > 0.25 && sim.rollT <= 0 && sim.dashT <= 0, // 조이스틱으로 걷는 중 (구르기·질주 제외)
-      ups: Object.values(prog.ups || {}).reduce((a, b) => a + b, 0), skill: sim.rollCd > 0, flare: flareCd > 0,
+      ups: Object.values(prog.ups || {}).reduce((a, b) => a + b, 0),
+      skillUses: tstat.skill, flareUses: tstat.flare, hurt: tstat.hurt, flares, visible: (id) => ents.has(id),
     }),
     onFinish: () => {
       const first = !profile.tutorial;
@@ -817,6 +823,7 @@ function onMessage(m) {
         buzz(200);
       } else if (k === myId) {
         track('kill');
+        killXpPending = true;
         streak++;
         toast(streak > 1 ? `${streak}연속 잡았다!` : '잡았다!', roster.get(v)?.name ?? '');
         sfx.kill();
@@ -914,6 +921,7 @@ function onMessage(m) {
       if (!at) continue;
       popNumber(at.x, at.z, dmg, v === myId ? 'hurt' : k === myId ? 'deal' : 'other');
       if (v === myId) {
+        tstat.hurt++;
         sfx.hurt();
         shake = Math.max(shake, 0.45);
         flash();
@@ -995,7 +1003,11 @@ function onSnapshot(m) {
   flares = m.f || [];
   syncItems(m.it || []);
   if (m.hp !== undefined) prog.hp = m.hp;
-  if (m.xp !== undefined && m.xp > prog.xp) {
+  if (m.xp !== undefined && m.xp !== prog.xp && killXpPending) {
+    // 처치 경험치: 머리 위에 +XP (레벨이 오르면 남은 값이 작아지므로 차이 대신 레벨업도 함께 본다)
+    killXpPending = false;
+    if (m.xp > prog.xp) popNumber(view.x, view.z, `+${m.xp - prog.xp} XP`, 'xp');
+  } else if (m.xp !== undefined && m.xp > prog.xp) {
     const got = m.xp - prog.xp;
     if (got >= ORBS.medium.v) {
       popNumber(view.x, view.z, `+${got} XP`, got >= ORBS.large.v ? 'xpbig' : 'xp');
@@ -1280,7 +1292,10 @@ function syncFireflies(list) {
 // ── 스킬 효과 ──
 // 스킬을 쓴 순간: 캐릭터는 그 스킬 자세를 취하고, 발밑과 주변에 차분한 효과가 난다
 function castFx(id, skill, at) {
-  if (id === myId) track('skill');
+  if (id === myId) {
+    track('skill');
+    tstat.skill++;
+  }
   const mesh = id === myId ? selfMesh : at.mesh;
   if (mesh) chars.cast(mesh, skill);
   const { x, z } = at;
@@ -2056,6 +2071,7 @@ function fixedStep() {
     sfx.flare();
     chars.cast(selfMesh, 'flare'); // 던지는 동작
     track('flare');
+    tstat.flare++;
   } else flare = false;
 
   const inp = { seq: ++seq, mx: input.mx, mz: input.mz, yaw: wrapAngle(input.yaw), atk, roll, flare };
@@ -2075,11 +2091,13 @@ function fixedStep() {
     if (sim.rollT > 0 && !wasRolling) {
       sfx.roll();
       track('skill');
+      tstat.skill++;
     }
     if (sim.dashT > 0 && !wasDashing) {
       sfx.skill('dash');
       dashStartFx(selfMesh, view);
       track('skill');
+      tstat.skill++;
     }
     sim.cast = null; // 그 밖의 스킬 효과는 서버가 적용한다
     // 발소리
@@ -2224,7 +2242,6 @@ function frame(now) {
   drawFireflies(tSec);
   drawEmotes(dt);
   if (tutor) {
-    if (offline && ents.has(tutor.ctx.dummy.id)) tutorSeen = true;
     tutor.update(dt);
   }
 

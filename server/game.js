@@ -288,7 +288,7 @@ export class Game {
       q.hurtT = 0;
       this.hits.push([p.id, q.id, dmg]);
       if (st.leech) p.hp = Math.min(st.maxHp, p.hp + dmg * st.leech);
-      if (!q.dummy) this.gainXp(p, PROGRESS.XP_HIT); // 연습 허수아비는 경험치를 주지 않는다 (레벨업은 보석으로 배운다)
+      if (!q.dummy) this.gainXp(p, PROGRESS.XP_HIT); // 연습 허수아비는 맞혀도 경험치가 없다
       if (q.hp > 0) continue;
       q.hp = 0;
       q.alive = false;
@@ -303,6 +303,15 @@ export class Game {
       if (!q.dummy) {
         this.gainXp(p, (PROGRESS.XP_KILL + q.level * PROGRESS.XP_KILL_PER_LEVEL) * (1 + gap * PROGRESS.BOUNTY_PER_GAP));
         this.dropFireflies(q);
+      } else {
+        // 연습 허수아비: 정해 둔 만큼만 (처치 경험치 + 그 자리에 떨어뜨리는 보석)
+        if (q.killXp) this.gainXp(p, q.killXp);
+        (q.drops || []).forEach((v, i) => {
+          const a = (i / q.drops.length) * Math.PI * 2;
+          const x = q.x + Math.sin(a) * 1.2;
+          const z = q.z + Math.cos(a) * 1.2;
+          this.spawnFirefly(...(isFree(x, z, 0.3, this.solid) ? [x, z] : [q.x, q.z]), v);
+        });
       }
       if (p.isBot && Math.random() < 0.2) this.emote(p, Math.random() < 0.5 ? 1 : 4); // 봇도 가끔 😂 👋
     }
@@ -321,6 +330,7 @@ export class Game {
   applyStats(p) {
     p.stats = statsOf(p.ups, this.cfg, p.char, p.level);
     if (p.dummy) p.stats.maxHp = PROGRESS.BASE_DAMAGE * 2; // 연습용 허수아비: 손전등 딱 2방
+    if (p.turret) p.stats.damage = 25; // 연습용 경비 허수아비: 약하게
     const ch = this.cheatOn(p);
     if (ch?.xp) p.stats.xpMul *= CHEAT.XP_MUL;
     if (ch?.cd) {
@@ -361,6 +371,21 @@ export class Game {
       p.statsDirty = true;
       if (p.isBot) while (p.choices.length) this.choose(p, Math.floor(Math.random() * p.choices[0].length));
     }
+  }
+
+  // 연습용 경비 허수아비: 사거리 안에 보이는 상대를 돌아보고 비춘다. 체력이 많이 줄었으면 봐준다(연습에서 쓰러지지 않게).
+  turretThink(p) {
+    const inp = { mx: 0, mz: 0, yaw: p.yaw, atk: false, roll: false, flare: false };
+    if (p.turretOff) return inp;
+    for (const q of this.players.values()) {
+      if (!q.alive || q.team === p.team || q.dummy) continue;
+      const d = Math.hypot(q.x - p.x, q.z - p.z);
+      if (d > p.stats.range + 0.3 || segmentBlocked(p.x, p.z, q.x, q.z, this.walls)) continue;
+      inp.yaw = Math.atan2(q.x - p.x, q.z - p.z);
+      inp.atk = q.hp > q.stats.maxHp * 0.45 && Math.abs(wrapAngle(inp.yaw - p.yaw)) < 0.3;
+      break;
+    }
+    return inp;
   }
 
   // 감정표현: 번호만 받고, 너무 자주 보내면 무시한다
@@ -624,7 +649,7 @@ export class Game {
       if (!p.alive) {
         // 서바이벌은 다음 라운드까지 대기, 데스매치는 잠시 후 부활
         while (p.queue.length) p.ack = p.queue.shift().seq;
-        if (this.respawns) {
+        if (this.respawns && !p.dummy) { // 연습 허수아비는 다시 나타나지 않는다
           p.respawn -= DT;
           if (p.respawn <= 0) {
             this.spawn(p);
@@ -634,7 +659,9 @@ export class Game {
         continue;
       }
       if (p.isBot) {
-        if (!p.dummy) this.applyInput(p, botThink(p, this, DT)); // dummy: 연습용 허수아비 (가만히 서 있다)
+        // dummy: 연습용 허수아비 (가만히 서 있다). turret 이면 가까이 보이는 상대를 손전등으로 비춘다.
+        if (!p.dummy) this.applyInput(p, botThink(p, this, DT));
+        else if (p.turret) this.applyInput(p, this.turretThink(p));
         continue;
       }
       // 틱당 입력 1개씩만 적립 → 입력을 몰아 보내는 스피드핵 방지
