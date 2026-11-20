@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CFG, EMOTES, FLARE_VIEW, ITEMS, RULES, SCAN_VIEW, ZONE } from './shared/config.js';
-import { MAP_SIZE, MAPS } from './shared/map.js';
+import { MAP_SIZE, MAPS, closedMap } from './shared/map.js';
 import { stepPlayer } from './shared/sim.js';
 import { wrapAngle } from './shared/vision.js';
 import { VisionMask } from './fog.js';
@@ -167,6 +167,18 @@ function showMapIntro(id) {
   el.classList.add('show');
   clearTimeout(introTimer);
   introTimer = setTimeout(() => (el.hidden = true), 2600);
+}
+// 문만 열고 닫을 때: 벽·시야 마스크·미니맵만 새 벽 목록으로 (바닥·물·꾸밈은 그대로)
+function setWallsOnly(next) {
+  curMap = next;
+  for (const p of wallProps) {
+    scene.remove(p.mesh);
+    p.mesh.geometry.dispose();
+  }
+  wallProps = buildWalls(curMap.walls, propMat);
+  for (const p of wallProps) scene.add(p.mesh);
+  mask.setWalls(curMap.walls);
+  minimap.setMap(curMap);
 }
 function setMap(id) {
   const next = MAPS[id];
@@ -723,6 +735,21 @@ async function startTutorial() {
       return [(projV.x + 1) * 0.5 * innerWidth, (1 - projV.y) * 0.5 * innerHeight, projV.z];
     },
     stickCenter: () => input.fixedCenter(),
+    // 시작 마당의 문: 닫으면 벽이 생기고(서버·화면 둘 다), 열면 사라진다
+    setGate: (closed) => {
+      const open = MAPS[TUTOR_LAYOUT.map];
+      const m = closed ? closedMap(open) : open;
+      game.walls = m.walls;
+      setWallsOnly(m);
+      if (!closed) {
+        for (const g of open.gates) {
+          skillFx.smoke(g.cx, g.cz, { n: 14, color: 0xc8b090, spread: 1.4, dur: 0.9 });
+          skillFx.sparks(g.cx, g.cz, { n: 12, color: 0xffd25a, spread: 1.2, rise: 1.4 });
+        }
+        sfx.levelUp();
+        toast('문이 열렸어요!', '이제 마당 밖으로 나갈 수 있어요', 'buff');
+      }
+    },
     turnTo: (yaw) => (input.yaw += wrapAngle(yaw - input.yaw)),
     // 조명탄 바로 다시 쓸 수 있게 (연습에서 엉뚱한 곳에 던졌을 때)
     resetFlare: () => {

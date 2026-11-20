@@ -21,9 +21,9 @@ export const LAYOUT = TUTORIAL_LAYOUT;
 // 단계: text 안내, sub 도움말, info(상태) 진행 표시, hi 반짝일 곳, start 시작할 때, target 표시할 곳, done 통과 조건
 function steps(skill) {
   return [
-    { icon: '🕹️', text: '왼쪽 조이스틱을 끌어서 걸어 보세요', hi: 'stickZone', info: (v) => `걸은 거리 ${Math.min(4, v.moved).toFixed(1)} / 4m`, done: (v) => v.moved >= 4 },
-    { icon: '👆', text: '화면 오른쪽을 좌우로 밀어서 몸을 돌려 보세요', sub: '걷는 방향과 따로 돌릴 수 있어요', info: (v) => `${Math.min(100, Math.round((v.turned / 2.4) * 100))}%`, done: (v) => v.turned >= 2.4 },
-    { icon: '🎯', text: '미션: 허수아비를 찾으세요', sub: '노란 화살표를 따라 걸어가세요 · 내 앞의 밝은 곳(시야)에 들어와야 보여요', target: 'dummy', arrow: true, done: (v) => v.seen('dummy') },
+    { icon: '🕹️', text: '왼쪽 조이스틱을 끌어서 걸어 보세요', sub: '울타리 친 마당 안에서 연습해요', hi: 'stickZone', info: (v) => `걸은 거리 ${Math.min(4, v.moved).toFixed(1)} / 4m`, done: (v) => v.moved >= 4 },
+    { icon: '👆', text: '화면 오른쪽을 좌우로 밀어서 몸을 돌려 보세요', sub: '걷는 방향과 따로 돌릴 수 있어요 · 다 하면 앞쪽 문이 열려요', info: (v) => `${Math.min(100, Math.round((v.turned / 2.4) * 100))}%`, done: (v) => v.turned >= 2.4 },
+    { icon: '🎯', text: '문이 열렸어요! 미션: 허수아비를 찾으세요', sub: '문을 나가 노란 화살표를 따라가세요 · 내 앞의 밝은 곳(시야)에 들어와야 보여요', start: 'gate', target: 'dummy', arrow: true, done: (v) => v.seen('dummy') },
     {
       icon: '🔦', text: '미션: 손전등으로 허수아비를 처치하세요', sub: '가까이 가서 손전등 버튼! 앞쪽 노란 빛이 닿아야 맞아요', hi: 'attack', target: 'dummy', arrow: true,
       info: (v) => `맞힘 ${v.hits} / 2`, done: (v) => !v.dummy.alive,
@@ -35,7 +35,7 @@ function steps(skill) {
     { icon: '🃏', text: '레벨업! 아래 강화 카드 하나를 눌러 고르세요', sub: '레벨이 오를 때마다 카드로 강해져요', hi: 'choices', done: (v) => v.ups > 0 },
     { icon: '✨', text: `"${SKILLS[skill]?.name || '구르기'}" 버튼을 눌러 보세요`, sub: '캐릭터마다 고유 스킬이 달라요', hi: 'roll', done: (v) => v.skillUses > 0 },
     {
-      icon: '⚠️', text: '미션: 경비 허수아비에게 다가갔다가, 빛에 맞으면 숨으세요', sub: '빛(노란 부채꼴)에 맞으면 체력이 줄어요 · 벽 뒤로 숨거나 멀리 피하세요',
+      icon: '⚠️', text: '미션: 경비 허수아비에게 다가갔다가, 빛에 맞으면 숨으세요', sub: '경비는 쓰러뜨릴 수 없어요 · 빛에 맞으면 체력이 줄어요 · 벽 뒤로 숨거나 멀리 피하세요',
       start: 'turret', target: 'turret', arrow: true, color: RED,
       info: (v) => (v.hurt === 0 ? '빨간 표시 쪽으로' : v.safeT > 0 ? `안전 ${Math.min(1.5, v.safeT).toFixed(1)} / 1.5초` : '맞고 있어요! 숨으세요'),
       done: (v) => v.hurt > 0 && v.safeT >= 1.5,
@@ -65,6 +65,7 @@ export class Tutorial {
     this.ents = { dummy: ctx.dummy, pad: { x: LAYOUT.pad[0], z: LAYOUT.pad[1], alive: true } };
     this.i = -1;
     this.bob = 0;
+    ctx.setGate(true); // 걷기·돌기를 배우는 동안은 시작 마당의 문을 닫아 둔다
     this.next();
   }
 
@@ -108,6 +109,7 @@ export class Tutorial {
     $('tutor').style.animation = '';
     if (st.hi) $(st.hi)?.classList.add('tutorHi');
     if (st.hi === 'stickZone') this.placeStickZone();
+    if (st.start === 'gate') this.ctx.setGate(false);
     if (st.start === 'turret') this.spawnTurret();
     if (st.start === 'hidden') this.spawnHidden();
     this.hideTarget();
@@ -145,12 +147,12 @@ export class Tutorial {
   // 경비 허수아비: 정해진 자리에서 다가오는 상대를 비춘다
   spawnTurret() {
     const [gx, gz] = LAYOUT.guard;
-    this.ents.turret = this.addDummy('경비 허수아비', LAYOUT.guard, { turret: true, yaw: Math.atan2(LAYOUT.dummy[0] - gx, LAYOUT.dummy[1] - gz) });
+    this.ents.turret = this.addDummy('경비 허수아비', LAYOUT.guard, { turret: true, invuln: true, yaw: Math.atan2(LAYOUT.dummy[0] - gx, LAYOUT.dummy[1] - gz) });
   }
 
   // 숨은 허수아비: 정해진 자리 (벽 너머 어둠). 발판에 서 있으면 던질 방향으로 몸을 돌려 준다.
   spawnHidden() {
-    this.ents.hidden = this.addDummy('숨은 허수아비', LAYOUT.hidden, { yaw: 2.4 });
+    this.ents.hidden = this.addDummy('숨은 허수아비', LAYOUT.hidden, { yaw: 2.4, invuln: true });
     this.ctx.resetFlare();
   }
 

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { TUTORIAL_LAYOUT as L } from '../shared/tutorial.js';
-import { MAPS, isFree } from '../shared/map.js';
+import { MAPS, closedMap, isFree } from '../shared/map.js';
 import { CFG } from '../shared/config.js';
 import { canSee, segmentBlocked } from '../shared/vision.js';
 import { flareLanding } from '../shared/sim.js';
@@ -34,4 +34,35 @@ test('연습 배치: 게임을 훈련장으로 열면 정말 훈련장이다 (�
   assert.equal(g.map.id, 'training');
   g.newRound();
   assert.equal(g.map.id, 'training');
+});
+
+test('연습 배치: 문을 닫으면 시작 마당 밖으로 못 나가고, 마당 어디에서도 허수아비가 안 보인다', () => {
+  const closed = closedMap(map);
+  assert.equal(findPath(closed.solid, ...L.start, ...L.dummy), null);
+  let n = 0;
+  for (let x = -14; x <= 14; x += 1) {
+    for (let z = -14; z <= -7; z += 1) {
+      if (!isFree(x, z, CFG.PLAYER_RADIUS, closed.solid)) continue;
+      n++;
+      assert.equal(canSee({ x, z, yaw: 0 }, ...L.dummy, CFG.PLAYER_RADIUS, closed.walls, all, CFG.VIS_MARGIN), false, `(${x}, ${z})`);
+    }
+  }
+  assert.ok(n > 50, '마당이 충분히 넓다');
+});
+
+test('연습: 경비·숨은 허수아비는 쓰러뜨릴 수 없다', async () => {
+  const { Game } = await import('../server/game.js');
+  const g = new Game({ mode: 'ffa', rule: 'dm', map: L.map, FIXED_MAP: true, BOT_FILL: 0, START_GRACE: 0 });
+  const me = g.addPlayer('Me', () => {});
+  const t = g.addPlayer('경비', null, true);
+  Object.assign(t, { dummy: true, invuln: true });
+  g.applyStats(t);
+  Object.assign(me, { x: 9, z: -2, yaw: 0, alive: true });
+  Object.assign(t, { x: 9, z: 1, alive: true, hp: t.stats.maxHp });
+  for (let i = 0; i < 5; i++) {
+    me.cd = 0;
+    g.attack(me);
+  }
+  assert.equal(t.alive, true);
+  assert.equal(t.hp, t.stats.maxHp);
 });
