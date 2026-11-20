@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MAX_PRIVATE_ROOMS, Rooms, roomCode } from '../server/rooms.js';
 import { skinFits } from '../shared/shop.js';
+import { RULES } from '../shared/config.js';
+
+const PUBLIC = Object.keys(RULES).length * 2; // 규칙 × (개인전, 2인 팀전)
 
 test('방 코드: 영문/숫자 4~6자만 인정한다', () => {
   assert.equal(roomCode('abcd'), 'ABCD');
@@ -11,7 +14,7 @@ test('방 코드: 영문/숫자 4~6자만 인정한다', () => {
 
 test('공개 방: 규칙 × 모드마다 하나, 잘못된 값은 기본 방으로', () => {
   const rooms = new Rooms();
-  assert.equal([...rooms].length, 6);
+  assert.equal([...rooms].length, PUBLIC);
   const g = rooms.find({ rule: 'dm', mode: 'ffa' });
   assert.equal(g, rooms.find({ rule: 'dm', mode: 'ffa', room: '??' }));
   assert.deepEqual([g.rule, g.mode], ['dm', 'ffa']);
@@ -31,10 +34,10 @@ test('비공개 방: 같은 코드는 같은 방, 만든 사람의 설정을 따
   assert.equal(a.map.id, 'lake');
   const p = a.addPlayer('H', () => {});
   rooms.cleanup(a);
-  assert.equal([...rooms].length, 7, '사람이 있으면 유지');
+  assert.equal([...rooms].length, PUBLIC + 1, '사람이 있으면 유지');
   a.removePlayer(p.id);
   rooms.cleanup(a);
-  assert.equal([...rooms].length, 6);
+  assert.equal([...rooms].length, PUBLIC);
 });
 
 test('비공개 방 수에는 상한이 있다', () => {
@@ -68,6 +71,6 @@ test('방 현황: 공개 방의 접속 인원만 알리고, 봇은 세지 않는
   priv.addPlayer('C', () => {});
   const sum = rooms.summary();
   assert.equal(sum['dm-ffa'], 2);
-  assert.equal(Object.keys(sum).length, 6, '비공개 방은 목록에 없다');
+  assert.equal(Object.keys(sum).length, PUBLIC, '비공개 방은 목록에 없다');
   assert.ok(g.players.size === 8 && [...g.players.values()].filter((p) => p.isBot).every((p) => /^AI-\d+$/.test(p.name)));
 });

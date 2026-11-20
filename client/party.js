@@ -1,7 +1,7 @@
 // 친선 게임 방, 친구(친구 코드·접속 상태·초대), 초대 알림.
 // 서버와는 main.js 의 Net 연결 하나로 주고받는다. 계정이 없어서 친구 목록은 기기에 저장한다.
 import { iconText, mapImg, setIcon } from './icons.js';
-const RULE_NAMES = { dm: '데스매치', score: '점수제', survival: '서바이벌' };
+const RULE_NAMES = { dm: '데스매치', score: '점수제', survival: '서바이벌', hill: '모닥불 점령' };
 const MODE_NAMES = { ffa: '개인전', duo: '2인 팀전' };
 const STATE_TEXT = { online: '접속 중', party: '방에 있음', game: '게임 중', off: '오프라인' };
 const SYS_TEXT = { join: '님이 들어왔어요', leave: '님이 나갔어요', kick: '님이 내보내졌어요' };

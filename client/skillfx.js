@@ -7,6 +7,7 @@ const N_SMOKE = 60;
 const N_STREAK = 48;
 const N_GEM = 96;
 const N_RING = 12;
+const N_BOLT = 42;
 const ease = (t) => 1 - (1 - t) * (1 - t);
 
 // 빛나는 것(가산 혼합)은 색을 검게 줄여 사라지게 한다 → 투명도 없이 인스턴스 하나로 페이드
@@ -27,7 +28,10 @@ export class SkillFx {
     this.gemMesh = pool(N_GEM, new THREE.OctahedronGeometry(0.17, 0).scale(1, 1.45, 1), new THREE.MeshBasicMaterial({ ...add }));
     // 날아가는 보석 둘레의 은은한 빛 (맵 위 반딧불과 같은 느낌)
     this.gemGlow = pool(N_GEM, new THREE.SphereGeometry(0.4, 10, 8), new THREE.MeshBasicMaterial({ ...add }));
-    scene.add(this.sparkMesh, this.smokeMesh, this.streakMesh, this.gemMesh, this.gemGlow);
+    // 벼락: 하늘에서 지그재그로 내리꽂히는 빛 줄기 (조각마다 가는 막대 하나)
+    this.boltMesh = pool(N_BOLT, new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ ...add }));
+    scene.add(this.sparkMesh, this.smokeMesh, this.streakMesh, this.gemMesh, this.gemGlow, this.boltMesh);
+    this.boltsP = [];
     this.sparksP = [];
     this.smokesP = [];
     this.streaksP = [];
@@ -102,6 +106,23 @@ export class SkillFx {
       x0: x, z0: z, y0, to, t: -delay, dur: d, c: color, s, mode, trail,
       r0, a0: Math.atan2(x - to.x, z - to.z), spin: Math.random() * 6, side: Math.random() < 0.5 ? -1 : 1,
     });
+  }
+
+  // 벼락: 하늘에서 (x, z) 로 지그재그로 내리꽂힌다. 굵은 빛 + 가는 심지, 잠깐 깜빡이며 사라진다.
+  bolt(x, z, color = 0xfff6b0) {
+    const N = 7;
+    let px = x + (Math.random() - 0.5) * 1.2;
+    let pz = z + (Math.random() - 0.5) * 1.2;
+    let py = 9;
+    for (let i = 0; i < N; i++) {
+      const ny = 9 - (9 * (i + 1)) / N;
+      const nx = i === N - 1 ? x : x + (Math.random() - 0.5) * 1.3 * (1 - i / N);
+      const nz = i === N - 1 ? z : z + (Math.random() - 0.5) * 1.3 * (1 - i / N);
+      for (const w of [0.34, 0.1]) this.push(this.boltsP, N_BOLT, { a: [px, py, pz], b: [nx, ny, nz], w, t: 0, dur: 0.45, c: w > 0.2 ? color : 0xffffff });
+      px = nx;
+      py = ny;
+      pz = nz;
+    }
   }
 
   push(list, max, p) {
@@ -221,7 +242,22 @@ export class SkillFx {
       if (p.mode === 'spiral') this.sparks(p.to.x, p.to.z, { n: 3, color: p.c, spread: 0.3, y: 0.9, rise: 0.8, out: 1.2, dur: 0.4, size: 0.8 });
       else this.sparks(p.to.x, p.to.z, { n: 2, color: p.c, spread: 0.2, y: 0.95, rise: 0.6, out: 0.8, dur: 0.3, size: 0.6 });
     }
-    for (const m of [this.sparkMesh, this.smokeMesh, this.streakMesh, this.gemMesh, this.gemGlow]) {
+    // 벼락 조각: 처음엔 번쩍, 두어 번 깜빡이다 사라진다
+    this.boltsP = this.boltsP.filter((p) => (p.t += dt) < p.dur);
+    this.boltMesh.count = this.boltsP.length;
+    this.boltsP.forEach((p, i) => {
+      const life = p.t / p.dur;
+      const [ax, ay, az] = p.a;
+      const [bx, by, bz] = p.b;
+      v.set(bx - ax, by - ay, bz - az);
+      const len = v.length();
+      q.setFromUnitVectors(this.up, v.normalize());
+      m4.compose(v.set((ax + bx) / 2, (ay + by) / 2, (az + bz) / 2), q, sc.set(p.w, len, p.w));
+      this.boltMesh.setMatrixAt(i, m4);
+      const flick = life < 0.25 ? 1 : (Math.sin(p.t * 70) > 0 ? 0.9 : 0.25) * (1 - life);
+      this.boltMesh.setColorAt(i, col.set(p.c).multiplyScalar(flick));
+    });
+    for (const m of [this.sparkMesh, this.smokeMesh, this.streakMesh, this.gemMesh, this.gemGlow, this.boltMesh]) {
       m.instanceMatrix.needsUpdate = true;
       if (m.instanceColor) m.instanceColor.needsUpdate = true;
     }

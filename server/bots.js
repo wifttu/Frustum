@@ -1,6 +1,7 @@
 // 간단한 봇. 사람과 동일한 입력 구조를 만들고, 자기 시야에 들어온 적만 인지한다.
 import { canSee, wrapAngle } from '../shared/vision.js';
 import { findPath } from './nav.js';
+import { isFree } from '../shared/map.js';
 
 const REACTION = 0.6; // 적을 본 뒤 반응하기까지의 시간
 
@@ -54,12 +55,14 @@ export function botThink(bot, game, dt) {
     };
   }
 
-  // 가까이 보이는 아이템이 있으면 주우러 간다
-  if (!target && !outside && !ai.item) {
+  // 가까이 보이는 아이템이 있으면 주우러 간다 (모닥불 점령에서는 가까운 것만, 모닥불을 지키는 중이면 줍지 않는다)
+  const hill = game.capGoal ? game.hill : null;
+  const holding = hill && Math.hypot(bot.x - hill.x, bot.z - hill.z) < hill.r;
+  if (!target && !outside && !ai.item && !holding) {
     // 아이템과 큰 구슬부터 (경험치가 클수록 멀리 있어도 간다)
     const pickups = [...game.items, ...[...game.fireflies].sort((a, b) => b.v - a.v)];
     for (const it of pickups) {
-      if (Math.hypot(it.x - bot.x, it.z - bot.z) > (it.v >= 50 ? 14 : 9)) continue;
+      if (Math.hypot(it.x - bot.x, it.z - bot.z) > (it.v >= 50 ? 14 : 9) * (hill ? 0.5 : 1)) continue;
       if (!canSee(bot, it.x, it.z, 0.3, game.walls, cfg)) continue;
       ai.item = it.id;
       setGoal(bot, it.x, it.z, game);
@@ -114,6 +117,18 @@ function setGoal(bot, x, z, game) {
 }
 
 function pickWaypoint(bot, game) {
+  // 모닥불 점령: 대부분 모닥불 둘레 안으로 간다. 이미 안에 있으면 웬만해서는 떠나지 않고 자리만 옮긴다.
+  const h = game.hill;
+  const inHill = game.capGoal && Math.hypot(bot.x - h.x, bot.z - h.z) < h.r + 1;
+  if (game.capGoal && Math.random() < (inHill ? 0.92 : 0.75)) {
+    for (let i = 0; i < 12; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.random() * (h.r - 0.8);
+      const x = h.x + Math.cos(a) * r;
+      const z = h.z + Math.sin(a) * r;
+      if (isFree(x, z, 0.6, game.solid)) return setGoal(bot, x, z, game);
+    }
+  }
   const [x, z] = game.randomFreePoint();
   setGoal(bot, x, z, game);
 }

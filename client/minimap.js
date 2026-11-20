@@ -36,7 +36,7 @@ export class Minimap {
     return [(h - x) * k, (h - z) * k];
   }
 
-  draw({ me, alive, ents, flares, items, zone, fov, range }) {
+  draw({ me, alive, ents, flares, items, zone, fov, range, hill = null }) {
     const { ctx: g, S } = this;
     const k = S / this.mapSize;
     g.clearRect(0, 0, S, S);
@@ -56,6 +56,22 @@ export class Minimap {
       g.strokeRect(zx, zy, zone * 2 * k, zone * 2 * k);
     }
     g.drawImage(this.base, 0, 0);
+
+    if (hill) {
+      // 모닥불 점령: 지킬 자리 (차지한 편의 색)
+      const [x, y] = this.pt(hill.x, hill.z);
+      g.fillStyle = hill.color + '55';
+      g.strokeStyle = hill.color;
+      g.lineWidth = 2.5;
+      g.beginPath();
+      g.arc(x, y, hill.r * k, 0, 7);
+      g.fill();
+      g.stroke();
+      g.fillStyle = '#ffb24a';
+      g.beginPath();
+      g.arc(x, y, 3.5, 0, 7);
+      g.fill();
+    }
 
     for (const f of flares) {
       const [x, y] = this.pt(f[0], f[1]);

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CFG, EMOTES, FLARE_VIEW, ITEMS, RULES, SCAN_VIEW, ZONE } from './shared/config.js';
-import { MAP_SIZE, MAPS, closedMap } from './shared/map.js';
+import { HILL_RADIUS, MAP_SIZE, MAPS, closedMap, hillOf } from './shared/map.js';
 import { stepPlayer } from './shared/sim.js';
 import { wrapAngle } from './shared/vision.js';
 import { VisionMask } from './fog.js';
@@ -19,8 +19,10 @@ import { SkillFx } from './skillfx.js';
 import { LAYOUT as TUTOR_LAYOUT, TUTOR_REWARD, Tutorial } from './tutorial.js';
 import { charImg, iconText, imgEl, itemImg, mapImg, setIcon, skillImg, skinImg, srcText, upImg } from './icons.js';
 import { Minimap } from './minimap.js';
-import { buildDeco, buildFloorTexture, buildItemGeos, buildWalls, buildWater } from './world.js';
+import { buildCampfire, buildDeco, buildFloorTexture, buildItemGeos, buildWalls, buildWater } from './world.js';
 import { Showcase, radarOf } from './showcase.js';
+import { Podium } from './podium.js';
+import { LEGEND } from './legend.js';
 import { Net } from './net.js';
 import { initParty } from './party.js';
 import { DAILY, GACHA, SKINS, TIERS, claimDaily, dayKey, gacha, iconsFor, normalizeProfile, skinFor, skinsOf } from './shared/shop.js';
@@ -152,6 +154,73 @@ function buildScenery() {
 }
 buildScenery();
 
+// ── 모닥불 점령: 지킬 자리. 큰 모닥불 + 바닥 고리 + 멀리서도 보이는 빛기둥 (고리와 빛기둥은 어둠 속에서도 보인다) ──
+const HILL_COLORS = { none: 0xffb24a, mine: 0x4fc46a, enemy: 0xf0503d, fight: 0xffd28a };
+let capGoal = 0; // 모닥불 점령 목표 점수 (0 = 다른 규칙)
+let hillState = null; // [차지한 편(0 없음, 1 우리, 2 상대), 쟁탈 중, 우리 점수, 상대 최고 점수]
+const hillFx = (() => {
+  const group = new THREE.Group();
+  const ringMat = new THREE.MeshBasicMaterial({ color: HILL_COLORS.none, transparent: true, opacity: 0.85, depthWrite: false });
+  const fillMat = new THREE.MeshBasicMaterial({ color: HILL_COLORS.none, transparent: true, opacity: 0.14, depthWrite: false });
+  const beamMat = new THREE.MeshBasicMaterial({ color: HILL_COLORS.none, vertexColors: true, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  const beamGeo = new THREE.CylinderGeometry(0.32, 0.2, 14, 14, 10, true).translate(0, 7, 0);
+  const col = [];
+  const pos = beamGeo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i);
+    const k = Math.min(1, Math.max(0, (y - 1.2) / 2)) * Math.pow(1 - y / 14, 1.6); // 모닥불 위에서 시작해 위로 갈수록 흐려진다
+    col.push(k, k, k);
+  }
+  beamGeo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  const ring = new THREE.Mesh(new THREE.RingGeometry(HILL_RADIUS - 0.16, HILL_RADIUS, 64).rotateX(-Math.PI / 2).translate(0, 0.07, 0), ringMat);
+  const fill = new THREE.Mesh(new THREE.CircleGeometry(HILL_RADIUS, 48).rotateX(-Math.PI / 2).translate(0, 0.06, 0), fillMat);
+  const beam = new THREE.Mesh(beamGeo, beamMat);
+  ring.renderOrder = fill.renderOrder = 2;
+  beam.renderOrder = 3;
+  group.add(buildCampfire(propMat), fill, ring, beam);
+  group.traverse((o) => (o.frustumCulled = false));
+  group.visible = false;
+  scene.add(group);
+  return { group, ringMat, fillMat, beamMat };
+})();
+function placeHill() {
+  hillFx.group.visible = !!capGoal && !!myId;
+  if (!hillFx.group.visible) return;
+  const h = hillOf(curMap);
+  hillFx.group.position.set(h.x, 0, h.z);
+}
+const hillKind = () => (!hillState ? 'none' : hillState[1] ? 'fight' : hillState[0] === 1 ? 'mine' : hillState[0] === 2 ? 'enemy' : 'none');
+const HILL_TEXT = { fight: '⚔️ 모닥불 쟁탈 중!', mine: '🔥 우리가 점령 중', enemy: '🔥 상대가 점령 중', none: '🔥 모닥불을 차지하세요' };
+let hillKey = '';
+let hillWas = 'none';
+function drawHill() {
+  const el = $('hillChip');
+  if (!capGoal || !hillState || !myId) {
+    el.hidden = true;
+    hillKey = '';
+    return;
+  }
+  const kind = hillKind();
+  const key = kind + hillState[2] + ':' + hillState[3];
+  if (key === hillKey) return;
+  hillKey = key;
+  el.hidden = false;
+  el.className = kind;
+  el.textContent = HILL_TEXT[kind];
+  // 차지하거나 빼앗겼을 때 알림
+  if (kind !== hillWas && roundEnd <= 0) {
+    if (kind === 'mine') {
+      toast('모닥불 점령!', '둘레 안에 있으면 1초에 1점', 'buff');
+      sfx.pickup();
+    } else if (kind === 'enemy' && hillWas === 'mine') {
+      toast('모닥불을 빼앗겼어요', '둘레 안으로 들어가 되찾으세요');
+      sfx.allyDown();
+    }
+  }
+  hillWas = kind;
+  drawScore();
+}
+
 // 맵 교체: 소품, 바닥, 물, 시야 마스크, 미니맵을 새 맵으로 다시 만든다
 // 라운드 시작: 맵 미리보기 카드가 잠깐 떴다가 사라진다
 let introTimer = 0;
@@ -197,6 +266,7 @@ function setMap(id) {
   waterMesh = buildWater(curMap, waterMat);
   if (waterMesh) scene.add(waterMesh);
   buildScenery();
+  placeHill();
   floorMat.map.dispose();
   floorMat.map = buildFloorTexture(curMap, MAP_SIZE);
   floorMat.needsUpdate = true;
@@ -242,6 +312,43 @@ function syncItems(list) {
 
 // 캐릭터(모델 + 애니메이션)와 처치 이펙트
 const chars = new Characters(mask);
+// 판이 끝나면 1~3등이 입은 의상 그대로 시상대에 오른다
+const podium = new Podium(chars);
+let podiumTimer = 0;
+function openPodium() {
+  if (!myId || tutor || roundEnd <= 0) return;
+  const top = [...roster.entries()].sort((a, b) => pointsOf(b[1]) - pointsOf(a[1])).slice(0, 3);
+  if (!top.length) return;
+  podium.open(top.map(([, p]) => ({ char: charOf(p.char), skin: skinFor(charOf(p.char), p.skin) })));
+  const tags = $('podiumTags').children;
+  for (let i = 0; i < 3; i++) {
+    const el = tags[i];
+    const row = top[i];
+    el.hidden = !row;
+    if (!row) continue;
+    const [id, p] = row;
+    el.className = `r${i}` + (id === myId ? ' me' : '');
+    el.replaceChildren(document.createTextNode(p.name), Object.assign(document.createElement('small'), { textContent: capGoal ? `🔥${p.cap}초 · ${p.score}킬` : `${p.score}킬 · Lv${p.level}` }));
+    el.style.opacity = '0';
+  }
+  $('podiumTags').hidden = false;
+  document.body.classList.add('podium');
+}
+function closePodium() {
+  clearTimeout(podiumTimer);
+  podium.close();
+  $('podiumTags').hidden = true;
+  document.body.classList.remove('podium');
+}
+function drawPodiumTags() {
+  const tags = $('podiumTags').children;
+  for (let i = 0; i < 3; i++) {
+    const pos = podium.tagPos(i, innerWidth, innerHeight);
+    const live = pos && podium.slots[i].mesh.userData.spawn > 0.8;
+    tags[i].style.opacity = live ? '1' : '0';
+    if (pos) tags[i].style.transform = `translate(${pos[0].toFixed(1)}px, ${pos[1].toFixed(1)}px) translate(-50%, -100%)`;
+  }
+}
 const deathFx = new DeathFx(scene);
 const skillFx = new SkillFx(scene);
 
@@ -456,6 +563,11 @@ function showMenu(msg) {
   prog.choices = null;
   $('choices').hidden = true;
   zoneTarget = 0;
+  capGoal = 0;
+  hillState = null;
+  placeHill();
+  closePodium();
+  drawHill();
   gas = 0;
   pending.length = 0;
   $('banner').hidden = true;
@@ -820,9 +932,13 @@ function onMessage(m) {
     mode = m.m || 'duo';
     rule = m.r || 'survival';
     target = m.g || 0;
+    capGoal = m.cg || 0;
+    hillState = null;
+    hillWas = 'none';
     roundTime = m.rtm || CFG.ROUND_TIME;
     roundStart = { earned: 0, coins: profile.coins };
     if (m.map) setMap(m.map);
+    placeHill();
     if (!document.body.classList.contains('tutorial')) showMapIntro(m.map || curMap.id);
     $('menu').style.display = 'none';
     party?.hideRoom();
@@ -833,22 +949,26 @@ function onMessage(m) {
     $('status').textContent = '방이 가득 찼습니다.';
   } else if (m.t === 'r') {
     roster.clear();
-    for (const [id, name, team, score, al, wins, level, char, skin, fc] of m.p) roster.set(id, { name, team, score, alive: !!al, wins, level: level || 1, char, skin, fc: fc || '' });
+    for (const [id, name, team, score, al, wins, level, char, skin, fc, cap] of m.p) roster.set(id, { name, team, score, alive: !!al, wins, level: level || 1, char, skin, fc: fc || '', cap: cap || 0 });
     for (const [id, e] of ents) setKind(e.mesh, kindOf(id), roster.get(id)?.char, roster.get(id)?.skin);
     drawBoard();
     noteRecent();
     drawScore();
   } else if (m.t === 'k') {
     for (const [k, v] of m.l) {
+      // 전설 의상을 입은 사람이 잡으면 그 의상만의 처치 이펙트
+      const legend = LEGEND[k === myId ? profile.skin : roster.get(k)?.skin];
       // 내가 보고 있던 플레이어가 쓰러지면 그 자리에 이펙트 (위치는 이미 알고 있던 것만 쓴다)
       const seen = ents.get(v);
       if (seen) {
         deathFx.spawn(seen.x, seen.z, kindOf(v));
-        shake = Math.max(shake, 0.3);
+        legend?.kill(skillFx, seen.x, seen.z);
+        shake = Math.max(shake, legend ? 0.45 : 0.3);
       }
       if (v === myId) {
         killedBy = k ? (roster.get(k)?.name ?? '') : '독구름';
         deathFx.spawn(view.x, view.z, 'self');
+        legend?.kill(skillFx, view.x, view.z);
         shake = 0.9;
         flash();
         streak = 0;
@@ -891,6 +1011,8 @@ function onMessage(m) {
     }
     $('banner').hidden = false;
     won ? sfx.win() : sfx.lose();
+    clearTimeout(podiumTimer);
+    podiumTimer = setTimeout(openPodium, 1100); // 마지막 장면을 잠깐 보여 준 뒤 시상대로
   } else if (m.t === 'b') {
     // 반사 조끼가 빛을 막았다
     for (const [k, v] of m.l) {
@@ -908,6 +1030,7 @@ function onMessage(m) {
     }
     roundEnd = 0;
     snapNext = true;
+    closePodium();
     $('banner').hidden = true;
     killedBy = '';
     streak = 0;
@@ -980,6 +1103,8 @@ function onSnapshot(m) {
   respawnIn = resp;
   gas = gasT || 0;
   zoneTarget = m.zh || 0;
+  hillState = m.cp || null;
+  drawHill();
   flareCd = fcd;
   buffs.vest = vestT || 0;
   if (buffs.cloak > 0 && !(cloakT > 0) && alive) skillFx.smoke(view.x, view.z, { n: 8, dur: 0.7 });
@@ -1082,7 +1207,8 @@ function drawScore() {
     info = mode === 'ffa' ? `생존 ${aliveN}명` : `생존 ${teams.size}팀 · ${aliveN}명`;
     if (zoneTarget) info += ` · 구역 ${Math.round(zoneTarget * 2)}m`;
   } else if (target) info = `목표 ${target}킬`;
-  if (mode !== 'ffa' && rule !== 'survival') {
+  else if (capGoal) info = `🔥 우리 ${hillState?.[2] ?? 0} : ${hillState?.[3] ?? 0} 상대 · 목표 ${capGoal}점`;
+  if (mode !== 'ffa' && rule !== 'survival' && !capGoal) {
     const kills = new Map();
     for (const p of roster.values()) kills.set(p.team, (kills.get(p.team) || 0) + p.score);
     let top = 0;
@@ -1094,8 +1220,8 @@ function drawScore() {
   el.hidden = !info;
 }
 
-// 순위표: 점수 = 킬 x 100 + (레벨 - 1) x 20. 위치 정보는 없다.
-const pointsOf = (p) => p.score * 100 + (p.level - 1) * 20;
+// 순위표: 점수 = 킬 x 100 + 모닥불 점령 초 x 10 + (레벨 - 1) x 20. 위치 정보는 없다.
+const pointsOf = (p) => p.score * 100 + (p.cap || 0) * 10 + (p.level - 1) * 20;
 let leaderId = 0; // 1등 (머리 위에 왕관)
 function drawBoard() {
   const rows = [...roster.entries()].sort((a, b) => pointsOf(b[1]) - pointsOf(a[1]));
@@ -1655,7 +1781,7 @@ function drawSkins() {
   const has = (sid) => profile.skins.includes(sid);
   $('shopName').textContent = shown === 'default' ? c.name : `${c.name} · ${sk.name}`;
   if (shown === 'default') iconText($('shopAbility'), c.icon, '캐릭터 본래 모습');
-  else $('shopAbility').textContent = `${TIERS[sk.tier].name} · ${sk.desc}`;
+  else $('shopAbility').textContent = `${TIERS[sk.tier].name} · ${sk.desc}` + (sk.fx ? ` · ✨ ${sk.fx}` : '');
   const count = list.filter((sid) => sid !== 'default' && has(sid)).length;
   $('shopSkill').textContent =
     (!has(shown) ? `${TIERS[sk.tier].name} 의상 · 뽑기에서 얻을 수 있어요` : `입고 있어요 · 의상 ${count}/${list.length - 1}`) +
@@ -1857,7 +1983,7 @@ $('closeShop').addEventListener('click', () => {
 });
 
 // ── 로비 ──
-const RULE_NAMES = { dm: '데스매치', score: '점수제 데스매치', survival: '서바이벌' };
+const RULE_NAMES = { dm: '데스매치', score: '점수제 데스매치', survival: '서바이벌', hill: '모닥불 점령' };
 const MODE_NAMES = { ffa: '개인전', duo: '2인 팀전' };
 function enterLobby() {
   $('menu').style.display = '';
@@ -2097,12 +2223,12 @@ function drawBuffs() {
 
 // 라운드 결과표: 킬 순위
 function drawResults() {
-  const rows = [...roster.entries()].sort((a, b) => b[1].score - a[1].score).slice(0, 8);
+  const rows = [...roster.entries()].sort((a, b) => pointsOf(b[1]) - pointsOf(a[1])).slice(0, 8);
   $('bannerList').replaceChildren(
     ...rows.map(([id, p], i) => {
       const row = document.createElement('div');
       row.className = id === myId ? 'me' : p.team === myTeam ? 'ally' : 'enemy';
-      for (const text of [i + 1, `Lv${p.level} ${p.name}`, `${p.score}킬`]) {
+      for (const text of [i + 1, `Lv${p.level} ${p.name}`, capGoal ? `🔥${p.cap}초 · ${p.score}킬` : `${p.score}킬`]) {
         const cell = document.createElement('span');
         cell.textContent = text;
         row.append(cell);
@@ -2361,6 +2487,16 @@ function frame(now) {
     flareSources.push({ x: f[0], z: f[1], yaw: 0, view: FLARE_VIEW });
   }
 
+  // 모닥불 점령: 차지한 편의 색으로 고리와 빛기둥을 칠한다 (쟁탈 중이면 깜빡인다)
+  if (hillFx.group.visible) {
+    const kind = hillKind();
+    const pulse = kind === 'fight' ? 0.5 + 0.5 * Math.sin(now * 0.012) : 0.5 + 0.5 * Math.sin(now * 0.003);
+    for (const m of [hillFx.ringMat, hillFx.fillMat, hillFx.beamMat]) m.color.setHex(HILL_COLORS[kind]);
+    hillFx.ringMat.opacity = 0.55 + 0.4 * pulse;
+    hillFx.fillMat.opacity = kind === 'none' ? 0.1 : 0.16 + 0.1 * pulse;
+    hillFx.beamMat.opacity = 0.3 + 0.25 * pulse;
+  }
+
   // 독구름: 구역 크기를 부드럽게 따라가고, 안에 들어가 있으면 화면 경고 + 소리
   const inGame = myId && zoneTarget > 0;
   if (inGame) zoneNow = Math.abs(zoneTarget - zoneNow) > 4 ? zoneTarget : lerp(zoneNow, zoneTarget, Math.min(1, dtMs * 0.008));
@@ -2435,7 +2571,10 @@ function frame(now) {
   }
   drawLabels();
 
-  renderer.render(scene, camera);
+  if (podium.active) {
+    podium.render(renderer, dt, tSec, innerWidth, innerHeight);
+    drawPodiumTags();
+  } else renderer.render(scene, camera);
 
   // 풀벌레 소리
   if (myId && (cricketT -= dt) <= 0) {
@@ -2448,7 +2587,7 @@ function frame(now) {
     mapT = now;
     mapEnts.length = 0;
     for (const [id, e] of ents) mapEnts.push({ x: e.x, z: e.z, kind: kindOf(id) });
-    minimap.draw({ me: view, alive, ents: mapEnts, flares, items: itemsSeen.map(([, , x, z]) => ({ x, z })), zone: zoneTarget ? zoneNow : 0, fov: CFG.FOV, range: CFG.VIEW_RANGE });
+    minimap.draw({ me: view, alive, ents: mapEnts, flares, items: itemsSeen.map(([, , x, z]) => ({ x, z })), zone: zoneTarget ? zoneNow : 0, fov: CFG.FOV, range: CFG.VIEW_RANGE, hill: hillFx.group.visible ? { ...hillOf(curMap), color: `#${HILL_COLORS[hillKind()].toString(16).padStart(6, '0')}` } : null });
   }
 
   // 스킬 버튼 쿨다운 (매 프레임)
@@ -2512,7 +2651,7 @@ const stored = (k) => {
   }
 };
 const MODES = { ffa: 'modeFfa', duo: 'modeDuo' };
-const RULE_BTNS = { dm: 'ruleDm', score: 'ruleScore', survival: 'ruleSurvival' };
+const RULE_BTNS = { dm: 'ruleDm', score: 'ruleScore', hill: 'ruleHill', survival: 'ruleSurvival' };
 const pick = (table, ...cands) => cands.find((c) => c && Object.hasOwn(table, c));
 let menuMode = pick(MODES, params.get('mode'), stored('frustum.mode')) || 'duo';
 let menuRule = pick(RULE_BTNS, params.get('rule'), stored('frustum.rule')) || 'dm';
