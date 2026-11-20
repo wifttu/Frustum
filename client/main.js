@@ -802,6 +802,8 @@ $('tutorPlay').addEventListener('click', () => {
   exitGame();
   $('play').click();
 });
+$('openCredits').addEventListener('click', () => ($('creditsPanel').hidden = false));
+$('closeCredits').addEventListener('click', () => ($('creditsPanel').hidden = true));
 $('tutorAgain').addEventListener('click', () => {
   $('settings').hidden = true;
   startTutorial();
@@ -1748,20 +1750,56 @@ addEventListener('keydown', (e) => {
   if (e.code === 'ArrowRight') shopMove(1);
   if (e.code === 'Escape') $('closeShop').click();
 });
-// 좌우로 밀어서 넘기기, 옆 캐릭터를 눌러서 고르기
+// 좌우로 끌어서 넘기기: 손가락을 따라 줄이 움직이고, 세게 튕기면 여러 명을 한 번에 지나간다. 옆 캐릭터를 눌러서 고르기도 된다.
 {
-  let startX = null;
+  let drag = null; // { x0, pos0, lastX, lastT, v, moved, idx }
+  const shopTarget = (e) => e.target === $('shop') || e.target.closest('#shopLocks');
   $('shop').addEventListener('pointerdown', (e) => {
-    if (e.target === $('shop') || e.target.closest('#shopLocks')) startX = e.clientX;
+    if (!shopTarget(e) || shopTab !== 'chars') return;
+    drag = { x0: e.clientX, pos0: showcase.pos, lastX: e.clientX, lastT: performance.now(), v: 0, moved: false, idx: showcase.index };
+    showcase.dragging = true;
+    $('shop').setPointerCapture?.(e.pointerId);
   });
-  $('shop').addEventListener('pointerup', (e) => {
-    if (startX === null) return;
-    const dx = e.clientX - startX;
-    startX = null;
-    if (Math.abs(dx) > 36) shopMove(dx < 0 ? 1 : -1);
-    else if (e.clientX < innerWidth * 0.36) shopMove(-1);
-    else if (e.clientX > innerWidth * 0.64) shopMove(1);
+  $('shop').addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const now = performance.now();
+    const dx = e.clientX - drag.x0;
+    if (Math.abs(dx) > 8) drag.moved = true;
+    // 손가락 속도 (px/s, 부드럽게)
+    const dt = Math.max(1, now - drag.lastT) / 1000;
+    drag.v = drag.v * 0.6 + ((e.clientX - drag.lastX) / dt) * 0.4;
+    drag.lastX = e.clientX;
+    drag.lastT = now;
+    if (!drag.moved) return;
+    showcase.dragTo(drag.pos0 - dx / showcase.pxPerItem(innerWidth, innerHeight));
+    // 한 칸 지날 때마다 '틱' 소리와 함께 정보가 바뀐다
+    if (showcase.index !== drag.idx) {
+      drag.idx = showcase.index;
+      sfx.firefly();
+      drawShop();
+    }
   });
+  const end = (e) => {
+    if (!drag) return;
+    const d = drag;
+    drag = null;
+    showcase.dragging = false;
+    if (!d.moved) {
+      // 눌렀다 뗀 것: 왼쪽/오른쪽 캐릭터 고르기
+      if (e.clientX < innerWidth * 0.36) shopMove(-1);
+      else if (e.clientX > innerWidth * 0.64) shopMove(1);
+      return;
+    }
+    // 튕긴 속도만큼 더 미끄러져 간다 (손을 멈췄다 떼면 그 자리)
+    const recent = performance.now() - d.lastT < 90 ? d.v : 0;
+    const fling = -(recent / showcase.pxPerItem(innerWidth, innerHeight)) * 0.22;
+    const before = showcase.index;
+    showcase.index = Math.max(0, Math.min(CHAR_IDS.length - 1, Math.round(showcase.pos + fling)));
+    if (showcase.index !== before) sfx.firefly();
+    drawShop();
+  };
+  $('shop').addEventListener('pointerup', end);
+  $('shop').addEventListener('pointercancel', end);
 }
 function openShop(tab) {
   // 친선 방에서 열었으면 방 화면을 가린다 (닫으면 다시 방으로 돌아간다)

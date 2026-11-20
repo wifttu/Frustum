@@ -18,5 +18,7 @@ copy('server/game.js', 'server/game.js'); // 오프라인 모드가 서버 로�
 copy('server/bots.js', 'server/bots.js');
 copy('server/nav.js', 'server/nav.js');
 copy('node_modules/three/build/three.module.min.js', 'vendor/three/three.module.min.js');
+copy('node_modules/three/LICENSE', 'vendor/three/LICENSE'); // MIT: 저작권·허가 표시를 함께 배포
+copy('THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.md');
 fs.writeFileSync(path.join(dist, '.nojekyll'), '');
 console.log('built', dist);
