@@ -1,7 +1,7 @@
 // 상점 규칙: 스킨, 뽑기(등급·확률·천장), 출석 보상.
 // 화면과 분리된 순수 로직이라 테스트할 수 있다. 재화는 게임으로 버는 코인뿐이고 실제 결제는 없다.
 import { CHARACTERS } from './progress.js';
-import { normalizeProgress } from './missions.js';
+import { RANK_SKINS, normalizeProgress, rankSkinList } from './missions.js';
 import { normalizeHistory } from './history.js';
 
 // 스킨(의상): 캐릭터마다 따로 있다 (char). 캐릭터의 특징에 맞춘 모자·소품이 붙고, 모자·소품은 모든 플레이어에게 보인다.
@@ -98,9 +98,8 @@ export function normalizeProfile(raw) {
   const legacy = rawSkins.filter((id) => Object.hasOwn(LEGACY_SKINS, id));
   let wear = null; // 입고 있던 예전 의상을 바꾼 새 의상 (그대로 입혀 준다)
   if (legacy.length) {
-    const rank = (k) => (SKINS[k].char === p.char ? 0 : p.owned.includes(SKINS[k].char) ? 1 : 2);
     for (const old of legacy) {
-      const pick = SKIN_KEYS.filter((k) => SKINS[k].tier === LEGACY_SKINS[old] && !p.skins.includes(k)).sort((a, b) => rank(a) - rank(b))[0];
+      const pick = pickSkin(p, LEGACY_SKINS[old]);
       if (pick) {
         p.skins.push(pick);
         if (p.icon === LEGACY_ICONS[old]) p.icon = SKIN_ICONS[pick]; // 예전 의상 아이콘을 쓰고 있었으면 새 의상 아이콘으로
@@ -196,6 +195,25 @@ export function gacha(profile, n, rnd = Math.random) {
   const out = [];
   for (let i = 0; i < n; i++) out.push(rollOnce(profile, rnd));
   return out;
+}
+
+// 아직 없는 그 등급의 의상 하나: 지금 캐릭터 → 가진 캐릭터 → 아무나 순 (없으면 null)
+export function pickSkin(p, tier) {
+  const rank = (k) => (SKINS[k].char === p.char ? 0 : p.owned.includes(SKINS[k].char) ? 1 : 2);
+  return SKIN_KEYS.filter((k) => SKINS[k].tier === tier && !p.skins.includes(k)).sort((a, b) => rank(a) - rank(b))[0] || null;
+}
+// 시즌 랭크 의상 보상 받기 → { skin } 또는 (다 가졌으면) { coins }. 받을 수 없으면 null
+export function claimRankSkin(p, i) {
+  const r = rankSkinList(p).find((x) => x.i === i);
+  if (!r || !r.claimable) return null;
+  p.rank.got.push(i);
+  const skin = pickSkin(p, RANK_SKINS[i]);
+  if (skin) {
+    p.skins.push(skin);
+    return { skin };
+  }
+  p.coins += GACHA.DUP[RANK_SKINS[i]];
+  return { coins: GACHA.DUP[RANK_SKINS[i]] };
 }
 
 export const dayKey = (d = new Date()) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;

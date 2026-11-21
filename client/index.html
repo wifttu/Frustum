@@ -42,7 +42,6 @@
       <div id="gas"></div>
       <div id="gasText" hidden></div>
       <div id="buffs"></div>
-      <div id="toast" hidden><b id="toastTitle"></b><span id="toastSub"></span></div>
       <div id="dead" hidden><em>잡혔다!</em><span id="deadBy"></span><b id="respawn"></b></div>
       <div id="watchBar" hidden><span>👁 관전 중</span><b id="watchName"></b><button id="watchNext">다음 ▶</button></div>
       <div id="stickZone"><span>누르고 끌기</span></div>
@@ -314,6 +313,9 @@
         <button id="leave" class="alt" hidden>게임 나가기</button>
       </div>
     </div>
+
+    <!-- 알림: 게임 중에도, 로비에서도(보상·새 의상) 보이게 화면 맨 위에 -->
+    <div id="toast" hidden><b id="toastTitle"></b><span id="toastSub"></span></div>
 
     <script type="module" src="main.js"></script>
   </body>
