@@ -493,3 +493,23 @@ test('결과 화면: 온라인은 시간이 되면 넘어가고, 사람이 모�
   game.again(a);
   assert.ok(!a.again);
 });
+
+test('결과 화면: 다시하기를 누른 사람 수를 모두에게 알린다', () => {
+  const { game, add, sent } = setup({});
+  const a = add('A');
+  const b = add('B');
+  game.addPlayer('AI', null, true); // 봇은 세지 않는다
+  game.endRound(a.team);
+  game.broadcast();
+  const ev = sent.get(b.id).find((m) => m.t === 'e');
+  assert.equal(ev.hn, 2);
+  game.again(a);
+  game.again(a); // 두 번 눌러도 한 번
+  game.broadcast();
+  const ag = sent.get(b.id).filter((m) => m.t === 'ag');
+  assert.deepEqual(ag.map((m) => [m.n, m.of]), [[1, 2]]);
+  // 결과 화면 중에 한 명이 나가면 인원이 바뀐다
+  game.removePlayer(b.id);
+  game.broadcast();
+  assert.deepEqual(sent.get(a.id).filter((m) => m.t === 'ag').map((m) => [m.n, m.of]), [[1, 2], [1, 1]]);
+});

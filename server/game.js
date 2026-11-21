@@ -135,6 +135,7 @@ export class Game {
     this.players.set(id, p);
     this.rosterDirty = true;
     if (!isBot) this.refreshCheats();
+    if (!isBot && this.endT > 0) this.events.push(this.readyInfo());
     return p;
   }
 
@@ -142,6 +143,7 @@ export class Game {
     const gone = this.players.get(id);
     if (!this.players.delete(id)) return;
     if (gone && !gone.isBot) this.refreshCheats();
+    if (gone && !gone.isBot && this.endT > 0) this.events.push(this.readyInfo()); // 결과 화면 중에 나가면 다시하기 인원이 바뀐다
     this.rosterDirty = true;
     this.checkRoundEnd();
   }
@@ -550,13 +552,25 @@ export class Game {
     }
     this.rosterDirty = true;
     for (const p of this.players.values()) p.again = false;
-    // h: 혼자 하기처럼 다시하기를 누를 때까지 기다리는 방
-    this.events.push({ t: 'e', w: team, s: this.cfg.INTERMISSION, n: names, h: this.cfg.HOLD_END ? 1 : 0 });
+    // h: 혼자 하기처럼 다시하기를 누를 때까지 기다리는 방, hn: 방에 있는 사람 수 (다시하기 0/hn)
+    this.events.push({ t: 'e', w: team, s: this.cfg.INTERMISSION, n: names, h: this.cfg.HOLD_END ? 1 : 0, hn: this.humanCount });
   }
 
-  // 결과 화면의 '다시하기'
+  // 결과 화면의 '다시하기': 누른 사람 수를 모두에게 알린다 (모두 누르면 바로 다음 판)
   again(p) {
-    if (this.endT > 0) p.again = true;
+    if (!(this.endT > 0) || p.again) return;
+    p.again = true;
+    this.events.push(this.readyInfo());
+  }
+  readyInfo() {
+    let n = 0;
+    let of = 0;
+    for (const p of this.players.values()) {
+      if (p.isBot) continue;
+      of++;
+      if (p.again) n++;
+    }
+    return { t: 'ag', n, of };
   }
 
   newRound() {

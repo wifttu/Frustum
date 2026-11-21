@@ -248,6 +248,9 @@ body.lefty #buffs { right: auto; left: calc(20px + env(safe-area-inset-left)); a
 #bannerList span:last-child { font-weight: 700; }
 #bannerList .ally { color: var(--ally); } #bannerList .enemy { color: var(--enemy); }
 #bannerList .me { color: #fff; background: rgba(255, 210, 90, .2); }
+#againInfo { margin-top: 10px; font-size: 12px; font-weight: 700; color: #ffe27a; }
+#againInfo[hidden] { display: none; }
+#againInfo + #bannerBtns { margin-top: 6px; }
 #bannerBtns { display: flex; gap: 8px; justify-content: center; margin-top: 12px; pointer-events: auto; }
 #bannerBtns button {
   flex: 1; max-width: 170px; padding: 10px 14px; border: 0; border-radius: 12px; font-weight: 900; font-size: 15px; white-space: nowrap;
@@ -269,7 +272,7 @@ body.lefty #buffs { right: auto; left: calc(20px + env(safe-area-inset-left)); a
 #podiumTags div small { display: block; font-size: 10.5px; font-weight: 700; color: #ffe27a; }
 #podiumTags div.me { border-color: #ffd25a; background: rgba(96, 72, 18, .85); }
 #podiumTags div.r0::before { content: '👑'; position: absolute; left: 50%; top: -20px; transform: translateX(-50%); font-size: 18px; }
-body.podium #hud > :not(#banner, #toast, #podiumTags, #gear) { visibility: hidden; }
+body.podium #hud > :not(#banner, #toast, #podiumTags) { visibility: hidden; }
 @media (orientation: landscape) {
   body.podium #banner {
     left: auto; right: calc(12px + env(safe-area-inset-right)); top: 50%; transform: translateY(-50%);
@@ -1064,6 +1067,26 @@ body.tutorial #timeChip, body.tutorial #board, body.tutorial #score { display: n
 .mrow button.can { background: linear-gradient(180deg, #ffc94d, #f08a2c); color: #3a2208; box-shadow: 0 3px 0 #a85a14; animation: pulse 1.4s ease-in-out infinite; }
 .mrow button.ok { background: #1f3a2a; color: #8affb0; }
 .mrow.done { opacity: .7; }
+/* 최근 전적 */
+.hempty { padding: 28px 10px; text-align: center; color: #9f98b4; font-size: 13px; }
+.hsum { display: flex; gap: 6px; }
+.hsum div { flex: 1; padding: 6px 4px; border-radius: 10px; text-align: center; background: #2a2440; border: 1px solid #3a3258; }
+.hsum b { display: block; font-size: 15px; color: #ffe27a; white-space: nowrap; }
+.hsum small { font-size: 10px; color: #9f98b4; }
+.hrow { display: flex; align-items: center; gap: 9px; padding: 6px 10px 6px 6px; border-radius: 12px; background: #221d36; border: 1px solid #332c4a; }
+.hres { flex: none; width: 54px; padding: 4px 0; border-radius: 9px; text-align: center; }
+.hres b { display: block; font-size: 13px; font-weight: 900; }
+.hres small { font-size: 10.5px; opacity: .85; }
+.hrow.win .hres { background: rgba(90, 210, 120, .18); color: #8ef0a0; }
+.hrow.lose .hres { background: rgba(255, 110, 90, .16); color: #ffa094; }
+.hrow.draw .hres { background: rgba(200, 200, 220, .12); color: #d8d2e4; }
+.hchar { flex: none; width: 36px; height: 36px; border-radius: 50%; overflow: hidden; display: flex; align-items: flex-end; justify-content: center; background: radial-gradient(circle at 50% 35%, #8a7ab8, #3a3058); }
+.hchar .portrait { width: 118%; height: 118%; object-fit: cover; margin-bottom: -12%; }
+.htext { flex: 1; min-width: 0; }
+.htext b { display: block; font-size: 13px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.htext small, .hstat small { display: block; font-size: 10.5px; color: #9f98b4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hstat { flex: none; text-align: right; }
+.hstat b { display: block; font-size: 13px; color: #ffe27a; white-space: nowrap; }
 .rankBig { display: flex; align-items: center; gap: 14px; padding: 12px; border-radius: 14px; background: radial-gradient(circle at 20% 30%, color-mix(in srgb, var(--rc) 30%, #221d36), #171425); border: 2px solid var(--rc); }
 .rankBig .medal {
   width: 64px; height: 64px; flex: none; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 30px;
