@@ -2,7 +2,7 @@
 // main.js 가 ctx 로 지금 상태를 알려 준다 (게임 판정은 오프라인 Game 그대로).
 // 단계마다 "그 단계가 시작된 뒤에 한 것"만 센다 (앞 단계에서 한 행동으로 다음 단계가 저절로 넘어가지 않게).
 import { CFG } from './shared/config.js';
-import { SKILLS } from './shared/progress.js';
+import { SKILLS, xpToNext } from './shared/progress.js';
 import { TUTORIAL_LAYOUT } from './shared/tutorial.js';
 import { segmentBlocked, wrapAngle } from './shared/vision.js';
 
@@ -18,21 +18,22 @@ const GREEN = 0x8affb0;
 // 고정 배치 (shared/tutorial.js). 처음 자리에서는 허수아비가 벽에 가려 안 보이고, 걸어가야 찾을 수 있다.
 export const LAYOUT = TUTORIAL_LAYOUT;
 
-// 단계: text 안내, sub 도움말, info(상태) 진행 표시, hi 반짝일 곳, start 시작할 때, target 표시할 곳, done 통과 조건
+// 단계: text 안내, sub 도움말, info(상태) 진행 표시, hi 반짝일 곳, start 시작할 때, target 표시할 곳, done 통과 조건,
+// skip 건너뛸 때 다음 단계에 필요한 결과를 대신 만들어 준다 (kill 처치, level 레벨업, card 카드 고르기, pad 발판으로)
 function steps(skill) {
   return [
     { icon: '🕹️', text: '왼쪽 조이스틱을 끌어서 걸어 보세요', sub: '울타리 친 마당 안에서 연습해요', hi: 'stickZone', info: (v) => `걸은 거리 ${Math.min(4, v.moved).toFixed(1)} / 4m`, done: (v) => v.moved >= 4 },
     { icon: '👆', text: '화면 오른쪽을 좌우로 밀어서 몸을 돌려 보세요', sub: '걷는 방향과 따로 돌릴 수 있어요 · 다 하면 앞쪽 문이 열려요', info: (v) => `${Math.min(100, Math.round((v.turned / 2.4) * 100))}%`, done: (v) => v.turned >= 2.4 },
     { icon: '🎯', text: '문이 열렸어요! 미션: 허수아비를 찾으세요', sub: '문을 나가 노란 화살표를 따라가세요 · 내 앞의 밝은 곳(시야)에 들어와야 보여요', start: 'gate', target: 'dummy', arrow: true, done: (v) => v.seen('dummy') },
     {
-      icon: '🔦', text: '미션: 손전등으로 허수아비를 처치하세요', sub: '가까이 가서 손전등 버튼! 앞쪽 노란 빛이 닿아야 맞아요', hi: 'attack', target: 'dummy', arrow: true,
+      icon: '🔦', text: '미션: 손전등으로 허수아비를 처치하세요', sub: '가까이 가서 손전등 버튼! 앞쪽 노란 빛이 닿아야 맞아요', hi: 'attack', target: 'dummy', arrow: true, skip: 'kill',
       info: (v) => `맞힘 ${v.hits} / 2`, done: (v) => !v.dummy.alive,
     },
     {
-      icon: '💎', text: '미션: 떨어진 경험치 보석을 주워 레벨업 하세요', sub: '처치해도, 보석을 먹어도 경험치가 쌓여요 · 바가 가득 차면 레벨업!', hi: 'xpBar',
+      icon: '💎', text: '미션: 떨어진 경험치 보석을 주워 레벨업 하세요', sub: '처치해도, 보석을 먹어도 경험치가 쌓여요 · 바가 가득 차면 레벨업!', hi: 'xpBar', target: 'gems', arrow: true, skip: 'level',
       info: (v) => (v.level >= 2 ? '레벨업!' : `경험치 ${v.xp} / ${v.next}`), done: (v) => v.level >= 2,
     },
-    { icon: '🃏', text: '레벨업! 아래 강화 카드 하나를 눌러 고르세요', sub: '레벨이 오를 때마다 카드로 강해져요', hi: 'choices', done: (v) => v.ups > 0 },
+    { icon: '🃏', text: '레벨업! 아래 강화 카드 하나를 눌러 고르세요', sub: '레벨이 오를 때마다 카드로 강해져요', hi: 'choices', skip: 'card', done: (v) => v.ups > 0 },
     { icon: '✨', text: `"${SKILLS[skill]?.name || '구르기'}" 버튼을 눌러 보세요`, sub: '캐릭터마다 고유 스킬이 달라요', hi: 'roll', done: (v) => v.skillUses > 0 },
     {
       icon: '⚠️', text: '미션: 경비 허수아비에게 다가갔다가, 빛에 맞으면 숨으세요', sub: '경비는 쓰러뜨릴 수 없어요 · 빛에 맞으면 체력이 줄어요 · 벽 뒤로 숨거나 멀리 피하세요',
@@ -46,7 +47,7 @@ function steps(skill) {
       done: (v) => v.healed >= HEAL_GOAL || v.hp >= v.maxHp,
     },
     {
-      icon: '🟡', text: '미션: 노란 발판으로 가세요', sub: '조명탄을 던질 자리예요', target: 'pad', arrow: true, color: GREEN,
+      icon: '🟡', text: '미션: 노란 발판으로 가세요', sub: '조명탄을 던질 자리예요', target: 'pad', arrow: true, color: GREEN, skip: 'pad',
       done: (v) => v.padDist < 1.3,
     },
     {
@@ -114,6 +115,29 @@ export class Tutorial {
     if (st.start === 'hidden') this.spawnHidden();
     this.hideTarget();
     this.ctx.sfx?.choose?.();
+  }
+
+  // 건너뛰기: 지금 단계만 넘긴다. 다음 단계에 필요한 결과(처치, 레벨업, 카드, 발판 위치)는 대신 만들어 준다.
+  skip() {
+    if (this.i >= this.list.length || this.doneT > 0) return;
+    const { game, player } = this.ctx;
+    const { dummy } = this.ents;
+    switch (this.list[this.i].skip) {
+      case 'kill':
+        if (dummy.alive) game.defeat(player, dummy);
+        break;
+      case 'level':
+        if (player.level < 2) game.gainXp(player, Math.ceil((xpToNext(player.level) - player.xp) / (player.stats.xpMul || 1)) + 1);
+        break;
+      case 'card':
+        if (player.choices.length) this.ctx.pickChoice(0);
+        break;
+      case 'pad':
+        player.x = LAYOUT.pad[0];
+        player.z = LAYOUT.pad[1];
+        break;
+    }
+    this.next();
   }
 
   // 노란 원을 실제 조이스틱 자리에
@@ -253,7 +277,12 @@ export class Tutorial {
       wait: Math.max(0, s.regenDelay - this.calmT), healed: s.hp - this.lowHp,
       skillUses: s.skillUses - this.base.skill, flareUses: s.flareUses - this.base.flare, hurt: s.hurt - this.base.hurt,
     };
-    if (st.target === 'hiddenFound') {
+    if (st.target === 'gems') {
+      // 가장 가까운 경험치 보석 쪽을 가리킨다 (보석이 없으면 표시 없음)
+      let best = null;
+      for (const f of this.ctx.game.fireflies) if (!best || Math.hypot(f.x - s.x, f.z - s.z) < Math.hypot(best.x - s.x, best.z - s.z)) best = f;
+      this.drawTarget(s, dt, best && { x: best.x, z: best.z, alive: true, label: '보석' }, { arrow: true, color: YELLOW });
+    } else if (st.target === 'hiddenFound') {
       if (lit || this.doneT > 0) this.drawTarget(s, dt, hidden, { arrow: false, color: YELLOW });
       else this.drawTarget(s, dt, { ...pad, label: '발판' }, { arrow: padDist > 1.6, color: GREEN }); // 발판 위치는 계속 보여 준다
     } else if (st.target) {
