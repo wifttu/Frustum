@@ -50,15 +50,17 @@ export function ensureDaily(p, now = new Date()) {
 }
 
 // ── 업적: 단계마다 보상 (누적 기록) ──
+// skins: 그 단계를 받으면 함께 주는 의상 (2단계 희귀, 4단계 영웅 — 업적마다 캐릭터 하나). 이미 가졌으면 대신 코인.
 export const ACHIEVEMENTS = Object.freeze({
-  kills: { name: '사냥꾼', icon: '🔦', stat: 'kills', tiers: [10, 50, 200, 1000], coins: [100, 250, 600, 1500], text: (g) => `상대 ${g}명 잡기` },
-  rounds: { name: '단골 캠퍼', icon: '🏕️', stat: 'rounds', tiers: [5, 25, 100, 400], coins: [80, 200, 500, 1200], text: (g) => `${g}판 끝까지 하기` },
-  wins: { name: '승리의 빛', icon: '🏆', stat: 'wins', tiers: [3, 20, 80, 300], coins: [100, 250, 600, 1500], text: (g) => `${g}번 이기기` },
-  tops: { name: '왕관 수집가', icon: '👑', stat: 'tops', tiers: [1, 10, 50, 200], coins: [100, 300, 800, 2000], text: (g) => `1등 ${g}번 하기` },
-  big: { name: '보석 사냥꾼', icon: '💎', stat: 'big', tiers: [10, 50, 200, 800], coins: [80, 200, 500, 1200], text: (g) => `큰 보석 ${g}개 먹기` },
-  level: { name: '왕귀', icon: '⭐', stat: 'maxLevel', tiers: [8, 12, 16, 20], coins: [100, 200, 400, 800], text: (g) => `한 판 최고 레벨 ${g}` },
-  skills: { name: '스킬 장인', icon: '✨', stat: 'skills', tiers: [20, 100, 400, 1500], coins: [80, 200, 500, 1200], text: (g) => `고유 스킬 ${g}번 쓰기` },
+  kills: { name: '사냥꾼', icon: '🔦', stat: 'kills', tiers: [10, 50, 200, 1000], coins: [100, 250, 600, 1500], skins: { 2: 'ninja_fox', 4: 'ninja_samurai' }, text: (g) => `상대 ${g}명 잡기` },
+  rounds: { name: '단골 캠퍼', icon: '🏕️', stat: 'rounds', tiers: [5, 25, 100, 400], coins: [80, 200, 500, 1200], skins: { 2: 'explorer_safari', 4: 'explorer_pirate' }, text: (g) => `${g}판 끝까지 하기` },
+  wins: { name: '승리의 빛', icon: '🏆', stat: 'wins', tiers: [3, 20, 80, 300], coins: [100, 250, 600, 1500], skins: { 2: 'bear_panda', 4: 'bear_polar' }, text: (g) => `${g}번 이기기` },
+  tops: { name: '왕관 수집가', icon: '👑', stat: 'tops', tiers: [1, 10, 50, 200], coins: [100, 300, 800, 2000], skins: { 2: 'runner_sprinter', 4: 'runner_racer' }, text: (g) => `1등 ${g}번 하기` },
+  big: { name: '보석 사냥꾼', icon: '💎', stat: 'big', tiers: [10, 50, 200, 800], coins: [80, 200, 500, 1200], skins: { 2: 'collector_bee', 4: 'collector_fairy' }, text: (g) => `큰 보석 ${g}개 먹기` },
+  level: { name: '왕귀', icon: '⭐', stat: 'maxLevel', tiers: [8, 12, 16, 20], coins: [100, 200, 400, 800], skins: { 2: 'owl_snow', 4: 'owl_detective' }, text: (g) => `한 판 최고 레벨 ${g}` },
+  skills: { name: '스킬 장인', icon: '✨', stat: 'skills', tiers: [20, 100, 400, 1500], coins: [80, 200, 500, 1200], skins: { 2: 'healer_mushroom', 4: 'healer_flower' }, text: (g) => `고유 스킬 ${g}번 쓰기` },
 });
+export const ACH_SKIN_COINS = 200; // 보상 의상을 이미 가졌으면 대신 주는 코인
 const STAT_OF = { kill: 'kills', round: 'rounds', win: 'wins', top: 'tops', orbBig: 'big', orb: 'orbs', skill: 'skills', flare: 'flares', xp: 'xp' };
 export const STAT_KEYS = ['kills', 'rounds', 'wins', 'tops', 'big', 'orbs', 'skills', 'flares', 'xp', 'maxLevel'];
 
@@ -92,19 +94,26 @@ export function achState(p, key) {
   const got = p.ach[key] || 0;
   const reached = a.tiers.filter((g) => v >= g).length;
   const next = Math.min(got, a.tiers.length - 1);
-  return { a, v, got, reached, goal: a.tiers[next], coins: a.coins[next], claimable: reached > got, maxed: got >= a.tiers.length };
+  return { a, v, got, reached, goal: a.tiers[next], coins: a.coins[next], skin: a.skins?.[next + 1] || null, claimable: reached > got, maxed: got >= a.tiers.length };
 }
+// 받은 코인 수를 돌려준다. 그 단계에 의상이 있으면 의상도 준다 (이미 가졌으면 대신 코인)
 export function claimAch(p, key) {
   const s = achState(p, key);
   if (!s.claimable) return 0;
   p.ach[key] = s.got + 1;
-  p.coins += s.coins;
-  return s.coins;
+  let coins = s.coins;
+  if (s.skin && Array.isArray(p.skins)) {
+    if (p.skins.includes(s.skin)) coins += ACH_SKIN_COINS;
+    else p.skins.push(s.skin);
+  }
+  p.coins += coins;
+  return coins;
 }
 // 받을 것이 있나 (로비 빨간 점)
 export function hasClaimable(p, now = new Date()) {
   const m = ensureDaily(p, now);
   if (m.list.some((it) => !it.got && it.n >= (DAILY_POOL[it.id]?.goal ?? Infinity))) return true;
+  if (rankSkinList(p).some((r) => r.claimable)) return true;
   return Object.keys(ACHIEVEMENTS).some((k) => achState(p, k).claimable);
 }
 
@@ -118,6 +127,17 @@ export const RANKS = Object.freeze([
   { name: '마스터', min: 2000, color: '#ff8af0', reward: 1200 },
 ]);
 export const seasonOf = (d = new Date()) => `${d.getFullYear()}-${d.getMonth() + 1}`;
+// 시즌 의상 보상: 이번 시즌 최고 점수로 골드·플래티넘·다이아에 처음 닿으면 희귀·영웅·전설 의상 하나씩 (시즌마다 다시)
+// 어떤 의상을 줄지는 shared/shop.js 의 claimRankSkin 이 고른다 (지금 캐릭터 → 가진 캐릭터 → 아무나)
+export const RANK_SKINS = Object.freeze({ 2: 'rare', 3: 'epic', 4: 'legend' });
+export function rankSkinList(p) {
+  return Object.entries(RANK_SKINS).map(([i, tier]) => {
+    const r = RANKS[i];
+    const reached = p.rank.best >= r.min;
+    const got = p.rank.got.includes(+i);
+    return { i: +i, tier, rank: r, reached, got, claimable: reached && !got };
+  });
+}
 export function rankOf(rp) {
   let i = 0;
   while (i + 1 < RANKS.length && rp >= RANKS[i + 1].min) i++;
@@ -138,7 +158,7 @@ export function seasonRollover(p, now = new Date()) {
   if (p.rank.season === cur) return null;
   const first = !p.rank.season;
   const r = rankOf(p.rank.rp);
-  p.rank = { season: cur, rp: Math.floor(p.rank.rp / 2), best: 0 };
+  p.rank = { season: cur, rp: Math.floor(p.rank.rp / 2), best: 0, got: [] };
   if (first) return null;
   p.coins += r.reward;
   return { coins: r.reward, rank: r.name };
@@ -164,7 +184,12 @@ export function normalizeProgress(p) {
   const ach = p.ach && typeof p.ach === 'object' ? p.ach : {};
   p.ach = Object.fromEntries(Object.entries(ACHIEVEMENTS).map(([k, a]) => [k, Math.max(0, Math.min(a.tiers.length, Math.floor(ach[k] || 0)))]));
   const r = p.rank && typeof p.rank === 'object' ? p.rank : {};
-  p.rank = { season: typeof r.season === 'string' ? r.season : '', rp: Number.isFinite(r.rp) ? Math.max(0, Math.floor(r.rp)) : 0, best: Number.isFinite(r.best) ? Math.max(0, Math.floor(r.best)) : 0 };
+  p.rank = {
+    season: typeof r.season === 'string' ? r.season : '',
+    rp: Number.isFinite(r.rp) ? Math.max(0, Math.floor(r.rp)) : 0,
+    best: Number.isFinite(r.best) ? Math.max(0, Math.floor(r.best)) : 0,
+    got: Array.isArray(r.got) ? [...new Set(r.got.filter((i) => Object.hasOwn(RANK_SKINS, i)).map(Number))] : [], // 이번 시즌에 받은 의상 보상
+  };
   const m = p.missions;
   if (!m || typeof m.day !== 'string' || !Array.isArray(m.list)) p.missions = null;
   else p.missions = { day: m.day, list: m.list.filter((it) => it && Object.hasOwn(DAILY_POOL, it.id)).slice(0, DAILY_COUNT).map((it) => ({ id: it.id, n: Math.max(0, Math.floor(it.n) || 0), got: !!it.got })) };

@@ -12,7 +12,7 @@ import { decodeBackup, encodeBackup } from './shared/backup.js';
 import { addHistory, agoText, historySummary } from './shared/history.js';
 import {
   ACHIEVEMENTS, DAILY_POOL, RANKS, achState, applyRank, claimAch, claimDaily as claimMission, ensureDaily, hasClaimable, rankDelta, rankOf as tierOf, record,
-  seasonDaysLeft, seasonRollover,
+  seasonDaysLeft, seasonRollover, rankSkinList, ACH_SKIN_COINS,
 } from './shared/missions.js';
 import { CHARACTERS, ORBS, PROGRESS, SKILLS, UPGRADES, charOf, orbTier, statsOf, xpToNext } from './shared/progress.js';
 import { Characters, DeathFx, growOf, merge } from './character.js';
@@ -26,7 +26,7 @@ import { Podium } from './podium.js';
 import { LEGEND } from './legend.js';
 import { Net } from './net.js';
 import { initParty } from './party.js';
-import { DAILY, GACHA, SKINS, TIERS, claimDaily, dayKey, gacha, iconsFor, normalizeProfile, skinFor, skinsOf } from './shared/shop.js';
+import { DAILY, GACHA, SKINS, TIERS, claimDaily, claimRankSkin, dayKey, gacha, iconsFor, normalizeProfile, skinFor, skinsOf } from './shared/shop.js';
 
 const DT = 1 / CFG.TICK_RATE;
 const INTERP_MS = 110; // 원격 플레이어 보간 지연
@@ -792,13 +792,21 @@ function missionRow(icon, title, sub, n, goal, btn) {
   if (btn.cls === 'can') b.addEventListener('click', btn.on);
   return row;
 }
-function claimed(coins) {
-  if (!coins) return;
+const skinLabel = (id) => `${CHARACTERS[SKINS[id].char].name} · ${SKINS[id].name}`;
+// 보상을 받았다: 코인, 그리고 새 의상이면 그 의상 그림과 함께 알린다
+function claimed(coins, skin = null) {
+  if (!coins && !skin) return;
   saveProfile();
   drawProfile();
   sfx.levelUp();
-  toast(`🪙 +${coins}`, '보상을 받았어요', 'buff');
+  if (skin) toast('새 의상! 👘', skinLabel(skin) + (coins ? ` · 🪙 +${coins}` : ''), 'buff', skinImg(skin), 2600);
+  else toast(`🪙 +${coins}`, '보상을 받았어요', 'buff');
   drawMissions();
+}
+function claimAchievement(key) {
+  const s = achState(profile, key);
+  const fresh = s.skin && !profile.skins.includes(s.skin);
+  claimed(claimAch(profile, key), fresh ? s.skin : null);
 }
 function drawMissions() {
   for (const b of $('missionTabs').children) b.classList.toggle('on', b.dataset.tab === missionTab);
@@ -820,9 +828,12 @@ function drawMissions() {
       const s = achState(profile, key);
       const stars = '★'.repeat(s.got) + '☆'.repeat(s.a.tiers.length - s.got);
       const title = `${s.a.name}<em>${stars}</em>`;
+      const gift = s.skin ? ' + 👘' : '';
+      const giftText = s.skin ? ` · 👘 ${skinLabel(s.skin)}${profile.skins.includes(s.skin) ? ' (가짐 → 🪙' + ACH_SKIN_COINS + ')' : ''}` : '';
       if (s.maxed) body.append(missionRow(s.a.icon, title, `모두 달성 (${s.v})`, 1, 1, { text: '완료 ✓', cls: 'ok' }));
-      else body.append(missionRow(s.a.icon, title, `${s.a.text(s.goal)} · ${Math.min(s.v, s.goal)} / ${s.goal}`, s.v, s.goal, s.claimable ? { text: `🪙 ${s.coins} 받기`, cls: 'can', on: () => claimed(claimAch(profile, key)) } : { text: `🪙 ${s.coins}` }));
+      else body.append(missionRow(s.a.icon, title, `${s.a.text(s.goal)} · ${Math.min(s.v, s.goal)} / ${s.goal}${giftText}`, s.v, s.goal, s.claimable ? { text: `🪙 ${s.coins}${gift} 받기`, cls: 'can', on: () => claimAchievement(key) } : { text: `🪙 ${s.coins}${gift}` }));
     }
+    note.push('업적 2단계를 받으면 희귀 의상, 4단계를 받으면 영웅 의상도 함께 줘요. 이미 가진 의상이면 대신 코인을 더 줘요.');
   } else if (missionTab === 'hist') {
     body.append(...historyRows());
     note.push('끝까지 한 판이 최근 10판까지 이 기기에 남아요. 순위는 판이 끝났을 때 순위표 기준이에요.');
@@ -848,7 +859,20 @@ function drawMissions() {
       d.querySelector('span').textContent = `${t.min}점~ · 시즌 보상 🪙${t.reward}`;
       list.append(d);
     });
-    body.append(big, list);
+    // 이번 시즌 의상 보상: 골드·플래티넘·다이아에 처음 닿으면
+    const head = document.createElement('h3');
+    head.textContent = '🎁 이번 시즌 의상 보상';
+    const rows = rankSkinList(profile).map((r) => {
+      const tier = TIERS[r.tier].name;
+      const sub = r.got ? '이번 시즌에 받았어요' : r.reached ? '지금 캐릭터의 의상부터 줘요' : `이번 시즌 최고 ${profile.rank.best} / ${r.rank.min}점`;
+      const btn = r.got ? { text: '받음 ✓', cls: 'ok' } : r.reached ? { text: '👘 받기', cls: 'can', on: () => {
+        const res = claimRankSkin(profile, r.i);
+        if (res) claimed(res.coins || 0, res.skin || null);
+      } } : { text: `👘 ${tier}` };
+      return missionRow('👘', `${r.rank.name} 달성 · ${tier} 의상`, sub, Math.min(profile.rank.best, r.rank.min), r.rank.min, btn);
+    });
+    body.append(big, head, ...rows, list);
+    note.push('시즌마다 골드·플래티넘·다이아에 처음 닿으면 희귀·영웅·전설 의상을 하나씩 받아요 (지금 캐릭터 → 가진 캐릭터 순, 다 있으면 코인). ');
     note.push('판이 끝날 때 순위로 점수가 오르내려요 (1등 +30 … 꼴등 -9, 잡은 수마다 +2). 혼자 하기(봇전)는 절반. 시즌은 한 달이고, 끝나면 등급 보상을 주고 점수가 절반이 돼요.');
   }
   if (prefs.cheat) note.unshift('🧪 치트 모드가 켜져 있으면 미션·업적·랭크가 오르지 않아요.');
@@ -1845,6 +1869,14 @@ const shownSkin = (id) => (skinPeek && skinPeek.char === id ? skinPeek.skin : wo
 const dressShowcase = () => showcase.setSkins(shownSkin);
 const hexCss = (n) => `#${n.toString(16).padStart(6, '0')}`;
 
+// 그 의상을 얻는 곳: 업적 단계, 시즌 랭크, 뽑기
+const RANK_FOR_TIER = { rare: '골드', epic: '플래티넘', legend: '다이아' };
+function skinHow(id) {
+  const out = [];
+  for (const a of Object.values(ACHIEVEMENTS)) for (const [t, sid] of Object.entries(a.skins || {})) if (sid === id) out.push(`업적 「${a.name}」 ${t}단계`);
+  out.push(`시즌 ${RANK_FOR_TIER[SKINS[id].tier]}`, '뽑기');
+  return out.join(' · ');
+}
 // 스킨 탭: 가운데 캐릭터의 의상들 (기본 + 그 캐릭터만의 의상 3벌)
 function drawSkins() {
   const id = showcase.current;
@@ -1858,7 +1890,7 @@ function drawSkins() {
   else $('shopAbility').textContent = `${TIERS[sk.tier].name} · ${sk.desc}` + (sk.fx ? ` · ✨ ${sk.fx}` : '');
   const count = list.filter((sid) => sid !== 'default' && has(sid)).length;
   $('shopSkill').textContent =
-    (!has(shown) ? `${TIERS[sk.tier].name} 의상 · 뽑기에서 얻을 수 있어요` : `입고 있어요 · 의상 ${count}/${list.length - 1}`) +
+    (!has(shown) ? `${TIERS[sk.tier].name} 의상 · 얻는 곳: ${skinHow(shown)}` : `입고 있어요 · 의상 ${count}/${list.length - 1}`) +
     (profile.owned.includes(id) ? '' : ' · 캐릭터 잠김');
   $('skinRow').replaceChildren(
     ...list.map((sid) => {
@@ -2333,6 +2365,7 @@ function toast(title, sub = '', cls = '', img = '', ms = 1300) {
   el.style.animation = 'none';
   void el.offsetWidth;
   el.style.animation = '';
+  el.style.animationDuration = `${ms}ms`; // 오래 보여 줄 알림은 애니메이션도 그만큼 길게
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => (el.hidden = true), ms);
 }

@@ -153,3 +153,46 @@ test('전설 의상: 모두 전용 효과(빛 색, 처치 이펙트)와 설명�
   }
   assert.deepEqual(Object.keys(LEGEND).sort(), legends.sort(), '전설이 아닌 의상에는 효과가 없다');
 });
+
+test('의상 얻는 길: 업적 2단계는 희귀, 4단계는 영웅 의상 (이미 있으면 코인)', async () => {
+  const { ACHIEVEMENTS, ACH_SKIN_COINS, achState, claimAch } = await import('../shared/missions.js');
+  // 업적마다 다른 캐릭터의 희귀·영웅 의상 → 14벌 모두 얻을 수 있다
+  const all = Object.values(ACHIEVEMENTS).flatMap((a) => [a.skins[2], a.skins[4]]);
+  assert.equal(new Set(all).size, 14);
+  for (const a of Object.values(ACHIEVEMENTS)) {
+    assert.equal(SKINS[a.skins[2]].tier, 'rare');
+    assert.equal(SKINS[a.skins[4]].tier, 'epic');
+    assert.equal(SKINS[a.skins[2]].char, SKINS[a.skins[4]].char);
+  }
+  const p = normalizeProfile({ stats: { kills: 60 }, coins: 0 });
+  assert.equal(achState(p, 'kills').skin, null, '1단계는 코인만');
+  assert.equal(claimAch(p, 'kills'), 100);
+  assert.equal(achState(p, 'kills').skin, 'ninja_fox');
+  assert.equal(claimAch(p, 'kills'), 250);
+  assert.ok(p.skins.includes('ninja_fox'));
+  // 이미 가진 의상이면 대신 코인
+  const q = normalizeProfile({ stats: { kills: 60 }, ach: { kills: 1 }, skins: ['default', 'ninja_fox'], coins: 0 });
+  assert.equal(claimAch(q, 'kills'), 250 + ACH_SKIN_COINS);
+});
+
+test('의상 얻는 길: 시즌에 골드·플래티넘·다이아에 닿으면 희귀·영웅·전설 의상 (지금 캐릭터 먼저, 시즌마다 다시)', async () => {
+  const { claimRankSkin } = await import('../shared/shop.js');
+  const { rankSkinList, seasonRollover, hasClaimable } = await import('../shared/missions.js');
+  const now = new Date(2026, 10, 20);
+  const p = normalizeProfile({ owned: ['explorer', 'owl'], char: 'owl', rank: { season: '2026-11', rp: 950, best: 950 }, coins: 0 });
+  const list = rankSkinList(p);
+  assert.deepEqual(list.map((r) => [r.i, r.tier, r.claimable]), [[2, 'rare', true], [3, 'epic', true], [4, 'legend', false]]);
+  assert.ok(hasClaimable(p, now));
+  assert.deepEqual(claimRankSkin(p, 2), { skin: 'owl_snow' });
+  assert.deepEqual(claimRankSkin(p, 3), { skin: 'owl_detective' });
+  assert.equal(claimRankSkin(p, 3), null, '한 시즌에 한 번');
+  assert.equal(claimRankSkin(p, 4), null, '다이아에 닿아야');
+  // 저장했다 불러와도 받은 기록은 남는다
+  assert.deepEqual(normalizeProfile(JSON.parse(JSON.stringify(p))).rank.got, [2, 3]);
+  // 새 시즌이면 다시 받을 수 있다
+  seasonRollover(p, new Date(2026, 11, 2));
+  assert.deepEqual(p.rank.got, []);
+  // 가질 의상이 없으면 코인
+  const full = normalizeProfile({ skins: Object.keys(SKINS), rank: { season: '2026-11', rp: 600, best: 600 }, coins: 0 });
+  assert.deepEqual(claimRankSkin(full, 2), { coins: GACHA.DUP.rare });
+});
