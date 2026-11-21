@@ -471,6 +471,7 @@ let mapT = 0;
 let cricketT = 2;
 let roundEnd = 0; // 라운드 종료 배너 남은 시간 (다시하기를 누를 때까지 기다리는 방은 Infinity)
 let holdEnd = false; // 혼자 하기: 결과 화면에서 다시하기를 누르면 다음 판
+let startCount = 0; // 시작 카운트다운 (3, 2, 1). 이 동안은 돌아보기만 된다 (서버도 이동·줍기를 막는다)
 let againState = { n: 0, of: 1, mine: false }; // 다시하기를 누른 사람 수 / 방의 사람 수, 나도 눌렀나
 // 결과 화면의 다시하기 버튼과 인원 (사람이 둘 이상인 방만 인원을 보여 준다)
 function drawAgain() {
@@ -904,7 +905,6 @@ tutorRing.renderOrder = 4;
 tutorRing.frustumCulled = false;
 scene.add(tutorRing);
 let tutor = null; // 진행 중인 연습
-const startGrace = () => (tutor ? 0 : CFG.START_GRACE); // 연습에는 시작 대기 시간이 없다
 // 연습 단계 판정용: 내가 한 행동 수 (단계가 시작될 때의 값과 비교한다)
 const tstat = { skill: 0, flare: 0, hurt: 0 };
 async function startTutorial() {
@@ -1031,7 +1031,11 @@ function onMessage(m) {
     roundStart = { earned: 0, coins: profile.coins };
     if (m.map) setMap(m.map);
     placeHill();
-    if (!document.body.classList.contains('tutorial')) showMapIntro(m.map || curMap.id);
+    if (!document.body.classList.contains('tutorial')) {
+      showMapIntro(m.map || curMap.id);
+      // 이미 진행 중인 판에 들어왔으면 알려 준다 (레벨·경험치는 1레벨부터)
+      if (m.inp) setTimeout(() => myId && toast('진행 중인 판에 참가했어요', `남은 시간 ${Math.floor(roundLeft / 60)}:${String(roundLeft % 60).padStart(2, '0')} · 1레벨부터 시작`, 'buff', '', 2600), 2700);
+    }
     $('menu').style.display = 'none';
     party?.hideRoom();
     $('invite').hidden = true;
@@ -1202,6 +1206,7 @@ function onSnapshot(m) {
   const wasAlive = alive;
   alive = !!al;
   roundLeft = m.rt ?? 0;
+  startCount = m.cd || 0;
   respawnIn = resp;
   gas = gasT || 0;
   zoneTarget = m.zh || 0;
@@ -2396,12 +2401,12 @@ function fixedStep() {
   flareCd = Math.max(0, flareCd - DT);
   if (!myId || (!offline && !net.ready)) return;
   const canAct = alive && roundEnd <= 0;
+  // 시작 카운트다운: 돌아보기만 된다 (이동·공격·스킬·조명탄은 서버와 똑같이 막는다)
+  const frozen = startCount > 0;
   let atk = input.consume('atk');
-  const roll = input.consume('roll') && canAct;
-  let flare = input.consume('flare') && canAct;
-  // 라운드 시작 직후에는 공격할 수 없다 (서버와 같은 규칙)
-  const grace = roundLeft > roundTime - startGrace();
-  if (!canAct || sim.rollT > 0 || grace) atk = false;
+  const roll = input.consume('roll') && canAct && !frozen;
+  let flare = input.consume('flare') && canAct && !frozen;
+  if (!canAct || sim.rollT > 0 || frozen) atk = false;
   if (atk && localCd <= 0) {
     localCd = prog.stats.cooldown;
     localBeam = CFG.BEAM_TIME; // 즉시 피드백 (판정은 서버)
@@ -2416,7 +2421,7 @@ function fixedStep() {
     tstat.flare++;
   } else flare = false;
 
-  const inp = { seq: ++seq, mx: input.mx, mz: input.mz, yaw: wrapAngle(input.yaw), atk, roll, flare };
+  const inp = { seq: ++seq, mx: frozen ? 0 : input.mx, mz: frozen ? 0 : input.mz, yaw: wrapAngle(input.yaw), atk, roll, flare };
   const d = [inp.seq, +inp.mx.toFixed(3), +inp.mz.toFixed(3), +inp.yaw.toFixed(4), atk ? 1 : 0, roll ? 1 : 0, flare ? 1 : 0];
   if (offline) offline.game.queueInput(offline.player.id, d);
   else net.send({ t: 'i', d });
@@ -2738,13 +2743,13 @@ function frame(now) {
     $('respawn').textContent = rule === 'survival' ? '다음 라운드까지 대기' : `${Math.ceil(respawnIn)}초 후 부활`;
     if (roundEnd > 0) $('bannerSub').textContent = holdEnd ? winnerText : `${winnerText} · ${Math.ceil(roundEnd)}초 후 다음 판`;
     if (myId) drawScore();
-    // 라운드 시작 카운트다운 (공격 금지 시간)
-    const count = roundEnd > 0 || !alive ? 0 : Math.max(0, roundLeft - (roundTime - startGrace()));
-    if (count !== lastCount) {
-      if (count > 0) toast(String(count), curMap.name, 'count');
-      else if (lastCount > 0) toast('시작!', '', 'count');
-      lastCount = count;
-    }
+  }
+  // 라운드 시작 카운트다운 3, 2, 1 → 시작! (서버가 보낸 숫자가 바뀌는 순간 바로)
+  const count = roundEnd > 0 || !alive ? 0 : startCount;
+  if (count !== lastCount) {
+    if (count > 0) toast(String(count), curMap.name, 'count');
+    else if (lastCount > 0) toast('시작!', '', 'count');
+    lastCount = count;
   }
 }
 requestAnimationFrame(frame);

@@ -146,7 +146,7 @@ test('생존전: 마지막 한 팀이 남으면 라운드가 끝나고, 휴식 �
 });
 
 test('생존전: 시간이 다 되면 생존자가 많은 팀이 이긴다', () => {
-  const { game, add, place } = setup({ TEAMS: 2, ROUND_TIME: 1 });
+  const { game, add, place } = setup({ TEAMS: 2, ROUND_TIME: 1, START_GRACE: 0 });
   const a = add('A'); // 팀 1
   const b = add('B'); // 팀 2
   const c = add('C'); // 팀 1
@@ -184,7 +184,7 @@ test('사람은 살아있는 봇의 자리를 이어받는다', () => {
 });
 
 test('데스매치: 처치당하면 잠시 후 부활하고, 시간 종료 시 킬이 많은 쪽이 이긴다', () => {
-  const { game, add, place } = setup({ rule: 'dm', TEAMS: 0, ROUND_TIME: 6 });
+  const { game, add, place } = setup({ rule: 'dm', TEAMS: 0, ROUND_TIME: 6, START_GRACE: 0 });
   const a = add('A');
   const b = add('B');
   place(a, 0, 0, 0);
@@ -512,4 +512,54 @@ test('결과 화면: 다시하기를 누른 사람 수를 모두에게 알린다
   game.removePlayer(b.id);
   game.broadcast();
   assert.deepEqual(sent.get(a.id).filter((m) => m.t === 'ag').map((m) => [m.n, m.of]), [[1, 2], [1, 1]]);
+});
+
+test('시작 카운트다운: 끝날 때까지 아무도 움직이거나 줍지 못하고, 라운드 시간도 흐르지 않는다', () => {
+  const game = new Game({ rule: 'dm', mode: 'ffa' });
+  game.balanceBots();
+  const sent = [];
+  const me = game.addPlayer('Me', (m) => sent.push(JSON.parse(m)));
+  const bots = [...game.players.values()].filter((p) => p.isBot);
+  const start = new Map([...game.players.values()].map((p) => [p.id, [p.x, p.z]]));
+  // 내 발밑과 봇 발밑에 보석을 둔다
+  game.spawnFirefly(me.x, me.z, 50);
+  game.spawnFirefly(bots[0].x, bots[0].z, 50);
+  const ffBefore = game.fireflies.length;
+  // 앞으로 걷고 공격하는 입력을 계속 보낸다
+  let seq = 0;
+  for (let i = 0; i < CFG.TICK_RATE * (CFG.START_GRACE - 0.2); i++) {
+    game.queueInput(me.id, [++seq, 0, 1, 0.7, 1, 0, 0]);
+    game.step();
+  }
+  assert.ok(game.starting);
+  for (const p of game.players.values()) assert.deepEqual([p.x, p.z], start.get(p.id), `${p.name} 는 그대로`);
+  assert.ok(Math.abs(me.yaw - 0.7) < 1e-6, '돌아보기는 된다');
+  assert.equal(game.fireflies.length, ffBefore, '아무도 보석을 줍지 않았다');
+  assert.equal(me.xp + me.level - 1, 0);
+  game.broadcast();
+  const snap = sent.filter((m) => m.t === 's').at(-1);
+  assert.equal(snap.rt, game.cfg.ROUND_TIME, '카운트다운 동안 남은 시간은 그대로');
+  assert.equal(snap.cd, 1);
+  // 카운트다운이 끝나면 움직인다
+  for (let i = 0; i < CFG.TICK_RATE; i++) {
+    game.queueInput(me.id, [++seq, 0, 1, 0.7, 0, 0, 0]);
+    game.step();
+  }
+  assert.ok(!game.starting);
+  assert.notDeepEqual([me.x, me.z], start.get(me.id));
+});
+
+test('중간 입장: 봇 자리를 이어받아도 레벨·경험치·강화는 1레벨부터', () => {
+  const game = new Game({ rule: 'dm', mode: 'duo' });
+  game.balanceBots();
+  for (const p of game.players.values()) Object.assign(p, { level: 7, xp: 40, ups: { power: 2 }, score: 3 });
+  game.roundT = 60;
+  const me = game.addPlayer('Me', () => {});
+  assert.equal(me.level, 1);
+  assert.equal(me.xp, 0);
+  assert.deepEqual(me.ups, {});
+  assert.equal(me.hp, me.stats.maxHp);
+  assert.equal(me.score, 3, '팀 점수에 들어가는 잡은 수는 그대로');
+  assert.equal(game.info().inp, 1, '진행 중인 판');
+  assert.equal(new Game({ rule: 'dm' }).info().inp, 0, '막 시작한 판');
 });
