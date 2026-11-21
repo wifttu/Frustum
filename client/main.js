@@ -2993,6 +2993,12 @@ $('gear').addEventListener('pointerdown', (e) => {
   openSettings();
 });
 $('closeSettings').addEventListener('click', () => ($('settings').hidden = true));
+// 창 바깥(어두운 곳)을 누르면 그 창의 ✕ 를 누른 것과 같다
+for (const el of document.querySelectorAll('.sheet, #settings, #restorePanel')) {
+  el.addEventListener('click', (e) => {
+    if (e.target === el) el.querySelector('.panel > button.x')?.click();
+  });
+}
 // 결과 화면: 다시하기 / 나가기
 $('againBtn').addEventListener('click', () => {
   if (!myId || roundEnd <= 0) return;

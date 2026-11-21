@@ -1051,7 +1051,7 @@ body.tutorial #timeChip, body.tutorial #board, body.tutorial #score { display: n
   background: rgba(0, 0, 0, .3); font-size: 11px; font-weight: 800; color: var(--rc, #c0875a); font-family: inherit;
 }
 #missionTabs { margin: 4px 0 8px; }
-#missionBody { display: flex; flex-direction: column; gap: 6px; max-height: max(150px, min(58vh, calc(100vh - 200px))); overflow-y: auto; }
+#missionBody { display: flex; flex-direction: column; gap: 6px; max-height: max(160px, min(64vh, calc(100vh - 150px))); overflow-y: auto; }
 .mrow { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; background: #221d36; border: 1px solid #332c4a; }
 .mrow > i { font-style: normal; font-size: 22px; flex: none; width: 28px; text-align: center; }
 .mrow .mtext { flex: 1; min-width: 0; }
@@ -1135,7 +1135,6 @@ body.tutorial #timeChip, body.tutorial #board, body.tutorial #score { display: n
 #settings button { background: linear-gradient(180deg, #ffd27a, #e8a548); color: #3a2208; font-weight: 800; box-shadow: 0 3px 0 #8a5a20; }
 #settings button.soft { background: rgba(255, 214, 160, .14); color: #fff0d6; box-shadow: none; }
 #settings button.alt { background: rgba(120, 30, 20, .6); color: #ffb0a4; box-shadow: none; }
-#settings #closeSettings { background: #f4f1ea; color: #3a2a20; box-shadow: 0 3px 0 #b9b2a4; }
 #settings .seg button { background: rgba(38, 22, 10, .58); color: #e2cba6; border-color: rgba(255, 214, 160, .2); box-shadow: none; }
 #settings .seg button.on { background: linear-gradient(180deg, #ffd27a, #e8a548); color: #3a2208; border-color: #fff0c0; }
 #settings .backupRow .btns button, #settings .installRow button, #settings .serverRow button { box-shadow: none; }
@@ -1144,6 +1143,16 @@ body.tutorial #timeChip, body.tutorial #board, body.tutorial #score { display: n
 #restorePanel .btns button { background: linear-gradient(180deg, #ffd27a, #e8a548); color: #3a2208; border: 0; border-radius: 10px; font-weight: 800; }
 #restorePanel .btns button.alt, #restorePanel .fileBtn { background: rgba(255, 214, 160, .14); color: #fff0d6; }
 .sheet .credits details { color: #d2ba96; }
+/* 닫기: 창 오른쪽 위의 둥근 나무 단추 ✕ (손가락으로 누르기 좋게 40px) */
+:is(.sheet, #settings, #restorePanel) .panel > button.x {
+  position: absolute; top: 9px; right: 9px; z-index: 2; width: 40px; height: 40px; margin: 0; padding: 0 0 2px;
+  display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 2px solid #2c1a0e;
+  background: radial-gradient(circle at 35% 30%, #a8784a, #6a4224 70%); color: #fff0d6; font-size: 19px; font-weight: 900; line-height: 1;
+  box-shadow: 0 3px 0 #2c1a0e, inset 0 1px 0 rgba(255, 230, 190, .35);
+}
+:is(.sheet, #settings, #restorePanel) .panel > button.x:active { transform: translateY(2px); box-shadow: 0 1px 0 #2c1a0e; }
+/* 제목 명패가 ✕ 와 겹치지 않게 */
+:is(.sheet, #settings, #restorePanel) .panel > h2 { max-width: calc(100% - 100px); }
 @media (prefers-reduced-motion: reduce) { :is(.sheet, #settings, #restorePanel) .panel::after { animation: none; } }
 
 /* 최근 전적 */
