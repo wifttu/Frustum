@@ -1067,9 +1067,11 @@ body.tutorial #timeChip, body.tutorial #board, body.tutorial #score { display: n
 .mrow button.can { background: linear-gradient(180deg, #ffc94d, #f08a2c); color: #3a2208; box-shadow: 0 3px 0 #a85a14; animation: pulse 1.4s ease-in-out infinite; }
 .mrow button.ok { background: #1f3a2a; color: #8affb0; }
 .mrow.done { opacity: .7; }
-/* 미션 창: 캠핑장 나무 게시판 — 통나무 판자, 아래에서 비치는 모닥불빛, 네 귀퉁이 못, 떠다니는 반딧불 */
-#missionPanel .panel {
-  position: relative; overflow: hidden;
+/* ───────── 창 테마: 캠핑장 나무 게시판 ─────────
+   로비에서 여는 모든 창(미션, 모드·맵, 친구, 아이콘, 크레딧, 설정, 백업 복구)이 같은 모습:
+   통나무 판자, 아래에서 비치는 모닥불빛, 네 귀퉁이 못, 떠다니는 반딧불, 양피지 명패 제목 */
+:is(.sheet, #settings, #restorePanel) .panel {
+  position: relative; overflow: hidden; isolation: isolate; color: #fff4e2;
   background:
     radial-gradient(110% 55% at 50% 118%, rgba(255, 140, 50, .42), transparent 62%),
     repeating-linear-gradient(180deg, rgba(20, 10, 4, .4) 0 2px, rgba(255, 220, 170, .06) 2px 3px, transparent 3px 44px),
@@ -1078,33 +1080,71 @@ body.tutorial #timeChip, body.tutorial #board, body.tutorial #score { display: n
   border: 3px solid #2c1a0e;
   box-shadow: inset 0 0 0 2px rgba(255, 214, 160, .14), inset 0 0 50px rgba(0, 0, 0, .5), 0 14px 40px rgba(0, 0, 0, .65);
 }
-#missionPanel .panel > * { position: relative; z-index: 1; }
-#missionPanel .panel::before {
-  content: ''; position: absolute; inset: 7px; pointer-events: none;
+:is(.sheet, #settings, #restorePanel) .panel::before {
+  content: ''; position: absolute; inset: 7px; z-index: -1; pointer-events: none;
   --nail: radial-gradient(circle, #e2cfa4 0 2.4px, #4a3420 2.9px 3.8px, transparent 4.3px);
   background: var(--nail) 0 0 / 10px 10px no-repeat, var(--nail) 100% 0 / 10px 10px no-repeat,
     var(--nail) 0 100% / 10px 10px no-repeat, var(--nail) 100% 100% / 10px 10px no-repeat;
 }
-#missionPanel .panel::after {
-  content: ''; position: absolute; left: 0; top: 0; width: 3px; height: 3px; border-radius: 50%; pointer-events: none;
+:is(.sheet, #settings, #restorePanel) .panel::after {
+  content: ''; position: absolute; left: 0; top: 0; z-index: -1; width: 3px; height: 3px; border-radius: 50%; pointer-events: none;
   box-shadow: 34px 70px 4px 1px rgba(255, 228, 110, .85), 470px 96px 4px 1px rgba(214, 255, 120, .7), 300px 310px 5px 1px rgba(255, 214, 100, .75),
-    110px 250px 4px 1px rgba(255, 240, 140, .6), 495px 240px 4px 1px rgba(255, 228, 110, .7), 220px 40px 3px 1px rgba(214, 255, 140, .55);
+    110px 250px 4px 1px rgba(255, 240, 140, .6), 495px 240px 4px 1px rgba(255, 228, 110, .7), 220px 40px 3px 1px rgba(214, 255, 140, .55),
+    330px 520px 4px 1px rgba(255, 228, 110, .6), 60px 640px 4px 1px rgba(214, 255, 120, .55);
   animation: fireflies 3.4s ease-in-out infinite alternate;
 }
 @keyframes fireflies { from { opacity: .3; transform: translate(0, 0); } to { opacity: 1; transform: translate(7px, -9px); } }
-#missionPanel h2 {
+:is(.sheet, #settings, #restorePanel) h2 {
   display: table; margin: 0 auto 6px; padding: 4px 16px 5px; border-radius: 8px; font-size: 16px; letter-spacing: 1px; color: #3a2410;
   background: linear-gradient(180deg, #f2deb0, #d3ae6c); box-shadow: 0 3px 0 #7a552a, inset 0 1px 0 rgba(255, 255, 255, .55);
 }
-#missionTabs button { background: rgba(38, 22, 10, .58); color: #e2cba6; border-color: rgba(255, 214, 160, .2); }
-#missionTabs button.on { background: linear-gradient(180deg, #ffd27a, #e8a548); color: #3a2208; border-color: #fff0c0; }
-#missionPanel :is(.mrow, .hrow, .hsum div, .rankList div) { background: rgba(34, 20, 10, .64); border-color: rgba(255, 214, 160, .17); }
-#missionPanel :is(.mrow small, .htext small, .hstat small, .hsum small, .rankList div, .hempty) { color: #d2ba96; }
-#missionPanel .mrow .mbar { background: rgba(0, 0, 0, .45); }
-#missionPanel .mrow button:not(.can):not(.ok) { background: rgba(255, 214, 160, .1); color: #e2cba6; }
-#missionPanel .note { color: #e6cfa6; }
-#missionPanel .rankBig { background: radial-gradient(circle at 20% 30%, color-mix(in srgb, var(--rc) 30%, #3a2414), rgba(30, 18, 8, .72)); }
-@media (prefers-reduced-motion: reduce) { #missionPanel .panel::after { animation: none; } }
+#settings h2, #restorePanel h2 { align-self: center; }
+:is(.sheet, #settings, #restorePanel) h3 { color: #f0d9b0; }
+:is(.sheet, #settings, #restorePanel) :is(.note, .hint) { color: #e6cfa6; }
+/* 고르는 버튼(규칙, 인원, 맵, 탭, 빈자리): 나무 꼬리표 → 고르면 금빛 */
+.sheet .pick button { background: rgba(38, 22, 10, .58); color: #e2cba6; border-color: rgba(255, 214, 160, .2); }
+.sheet .pick button.on { background: linear-gradient(180deg, #ffd27a, #e8a548); color: #3a2208; border-color: #fff0c0; }
+.sheet .pick button.on small { opacity: .8; }
+.sheet .pick button[data-n]:not([data-n=''])::after { color: #b8f0a0; }
+.sheet .pick button.on[data-n]:not([data-n=''])::after { color: #2f6a20; }
+/* 줄·카드(미션, 전적, 랭크, 친구, 아이콘, 내 코드) */
+.sheet :is(.mrow, .hrow, .hsum div, .rankList div, .person, .myCode, #iconGrid button) { background: rgba(34, 20, 10, .64); border-color: rgba(255, 214, 160, .17); }
+.sheet #iconGrid button.on { border-color: #ffd25a; background: rgba(120, 80, 20, .7); }
+.sheet :is(.mrow small, .htext small, .hstat small, .hsum small, .rankList div, .hempty, .person span, .people em, .myCode) { color: #d2ba96; }
+.sheet .mrow .mbar { background: rgba(0, 0, 0, .45); }
+.sheet .mrow button:not(.can):not(.ok) { background: rgba(255, 214, 160, .1); color: #e2cba6; }
+.sheet .rankBig { background: radial-gradient(circle at 20% 30%, color-mix(in srgb, var(--rc) 30%, #3a2414), rgba(30, 18, 8, .72)); }
+.sheet .myCode button, .sheet .person button { background: rgba(255, 214, 160, .16); color: #fff4e2; }
+.sheet .person button.inv { background: #2f9a64; }
+.sheet .person button.add { background: #c87a2a; }
+.sheet .person button.del { background: transparent; color: #d2ba96; }
+.sheet .person button:disabled { background: rgba(0, 0, 0, .3); color: #9a8668; }
+.sheet .onlineBox { background: rgba(30, 60, 30, .55); border-color: rgba(150, 230, 140, .35); }
+/* 입력칸: 판자에 파인 홈 */
+:is(.sheet, #settings, #restorePanel) :is(input:not([type]), input[type='text'], textarea) {
+  background: rgba(24, 13, 5, .75); border-color: rgba(255, 214, 160, .25); color: #fff4e2;
+}
+:is(.sheet, #settings, #restorePanel) :is(input, textarea)::placeholder { color: #a8906c; }
+:is(.sheet, #settings, #restorePanel) :is(input, textarea):focus { border-color: #ffd27a; }
+.sheet .roomRow button { background: linear-gradient(180deg, #ffd27a, #e8a548); color: #3a2208; }
+/* 설정 창 */
+#settings label, #settings .installRow, #settings .serverRow { border-bottom-color: rgba(255, 214, 160, .14); }
+#settings label small, #settings .installRow small { color: #d2ba96; }
+#settings label b { color: #ffd27a; }
+#settings input[type='checkbox'], #settings input[type='range'] { accent-color: #e8a548; }
+#settings button { background: linear-gradient(180deg, #ffd27a, #e8a548); color: #3a2208; font-weight: 800; box-shadow: 0 3px 0 #8a5a20; }
+#settings button.soft { background: rgba(255, 214, 160, .14); color: #fff0d6; box-shadow: none; }
+#settings button.alt { background: rgba(120, 30, 20, .6); color: #ffb0a4; box-shadow: none; }
+#settings #closeSettings { background: #f4f1ea; color: #3a2a20; box-shadow: 0 3px 0 #b9b2a4; }
+#settings .seg button { background: rgba(38, 22, 10, .58); color: #e2cba6; border-color: rgba(255, 214, 160, .2); box-shadow: none; }
+#settings .seg button.on { background: linear-gradient(180deg, #ffd27a, #e8a548); color: #3a2208; border-color: #fff0c0; }
+#settings .backupRow .btns button, #settings .installRow button, #settings .serverRow button { box-shadow: none; }
+#settings .serverRow small { color: #b8f0a0; }
+/* 백업 복구 창 */
+#restorePanel .btns button { background: linear-gradient(180deg, #ffd27a, #e8a548); color: #3a2208; border: 0; border-radius: 10px; font-weight: 800; }
+#restorePanel .btns button.alt, #restorePanel .fileBtn { background: rgba(255, 214, 160, .14); color: #fff0d6; }
+.sheet .credits details { color: #d2ba96; }
+@media (prefers-reduced-motion: reduce) { :is(.sheet, #settings, #restorePanel) .panel::after { animation: none; } }
 
 /* 최근 전적 */
 .hempty { padding: 28px 10px; text-align: center; color: #9f98b4; font-size: 13px; }
