@@ -904,6 +904,7 @@ async function startTutorial() {
   input.yaw = 0;
   tutor = new Tutorial({
     $, sfx, game, player, dummy, skill: player.skill,
+    pickChoice: (i) => pickChoice(i), // 카드 단계를 건너뛸 때 첫 카드를 고른다
     // 월드 → 화면 좌표 [x, y, 깊이(1 이상이면 카메라 뒤)] (표시를 원근에 맞게 그리려고)
     project: (x, y, z) => {
       projV.set(x, y, z).project(camera);
@@ -971,7 +972,7 @@ $('tutorNo').addEventListener('click', () => {
   savePrefs();
   $('tutorPrompt').hidden = true;
 });
-$('tutorSkip').addEventListener('click', () => exitGame());
+$('tutorSkip').addEventListener('click', () => tutor?.skip()); // 지금 단계만 건너뛴다 (연습 전체를 그만두려면 설정 → 게임 나가기)
 $('tutorLobby').addEventListener('click', () => exitGame());
 $('tutorPlay').addEventListener('click', () => {
   exitGame();

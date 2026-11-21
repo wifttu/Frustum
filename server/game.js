@@ -308,32 +308,37 @@ export class Game {
       if (st.leech) p.hp = Math.min(st.maxHp, p.hp + dmg * st.leech);
       if (!q.dummy) this.gainXp(p, PROGRESS.XP_HIT); // 연습 허수아비는 맞혀도 경험치가 없다
       if (q.hp > 0) continue;
-      q.hp = 0;
-      q.alive = false;
-      q.respawn = cfg.RESPAWN_TIME;
-      q.watch = p.id; // 관전: 부활할 때까지 나를 잡은 상대를 본다 (서바이벌은 살아 있는 팀원이 먼저)
-      q.queue.length = 0;
-      p.score++;
-      this.kills.push([p.id, q.id]);
-      this.rosterDirty = true;
-      // 처치 보상: 상대 레벨이 높을수록 크고, 나보다 높은 레벨을 잡으면 현상금이 붙는다
-      const gap = Math.max(0, q.level - p.level);
-      if (!q.dummy) {
-        this.gainXp(p, (PROGRESS.XP_KILL + q.level * PROGRESS.XP_KILL_PER_LEVEL) * (1 + gap * PROGRESS.BOUNTY_PER_GAP));
-        this.dropFireflies(q);
-      } else {
-        // 연습 허수아비: 정해 둔 만큼만 (처치 경험치 + 그 자리에 떨어뜨리는 보석)
-        if (q.killXp) this.gainXp(p, q.killXp);
-        (q.drops || []).forEach((v, i) => {
-          const a = (i / q.drops.length) * Math.PI * 2;
-          const x = q.x + Math.sin(a) * 1.2;
-          const z = q.z + Math.cos(a) * 1.2;
-          this.spawnFirefly(...(isFree(x, z, 0.3, this.solid) ? [x, z] : [q.x, q.z]), v);
-        });
-      }
-      if (p.isBot && Math.random() < 0.2) this.emote(p, Math.random() < 0.5 ? 1 : 4); // 봇도 가끔 😂 👋
+      this.defeat(p, q);
     }
     this.checkRoundEnd();
+  }
+
+  // p 가 q 를 쓰러뜨렸다: 기록, 처치 보상, 떨어지는 보석 (연습에서 단계를 건너뛸 때도 쓴다)
+  defeat(p, q) {
+    q.hp = 0;
+    q.alive = false;
+    q.respawn = this.cfg.RESPAWN_TIME;
+    q.watch = p.id; // 관전: 부활할 때까지 나를 잡은 상대를 본다 (서바이벌은 살아 있는 팀원이 먼저)
+    q.queue.length = 0;
+    p.score++;
+    this.kills.push([p.id, q.id]);
+    this.rosterDirty = true;
+    // 처치 보상: 상대 레벨이 높을수록 크고, 나보다 높은 레벨을 잡으면 현상금이 붙는다
+    const gap = Math.max(0, q.level - p.level);
+    if (!q.dummy) {
+      this.gainXp(p, (PROGRESS.XP_KILL + q.level * PROGRESS.XP_KILL_PER_LEVEL) * (1 + gap * PROGRESS.BOUNTY_PER_GAP));
+      this.dropFireflies(q);
+    } else {
+      // 연습 허수아비: 정해 둔 만큼만 (처치 경험치 + 그 자리에 떨어뜨리는 보석)
+      if (q.killXp) this.gainXp(p, q.killXp);
+      (q.drops || []).forEach((v, i) => {
+        const a = (i / q.drops.length) * Math.PI * 2;
+        const x = q.x + Math.sin(a) * 1.2;
+        const z = q.z + Math.cos(a) * 1.2;
+        this.spawnFirefly(...(isFree(x, z, 0.3, this.solid) ? [x, z] : [q.x, q.z]), v);
+      });
+    }
+    if (p.isBot && Math.random() < 0.2) this.emote(p, Math.random() < 0.5 ? 1 : 4); // 봇도 가끔 😂 👋
   }
 
   // ── 치트 ── 사람이 나 혼자일 때(AI 상대)만 켜진다
