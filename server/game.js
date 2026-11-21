@@ -117,7 +117,8 @@ export class Game {
     const seat = bots.find((q) => q.alive) || bots[0];
     if (seat) {
       this.players.delete(seat.id);
-      Object.assign(p, { team: seat.team, x: seat.x, z: seat.z, yaw: seat.yaw, alive: seat.alive, respawn: seat.respawn, score: seat.score, cap: seat.cap, hp: seat.hp, xp: seat.xp, level: seat.level, ups: { ...seat.ups } });
+      // 자리(팀, 위치, 팀 점수에 들어가는 잡은 수·점령 시간)만 이어받는다. 레벨·경험치·강화는 1레벨부터 (내가 모은 게 아니니까)
+      Object.assign(p, { team: seat.team, x: seat.x, z: seat.z, yaw: seat.yaw, alive: seat.alive, respawn: seat.respawn, score: seat.score, cap: seat.cap });
     } else if (forced) {
       p.team = opts.team;
       if (this.endT <= 0 && (this.respawns || this.roundT < this.cfg.JOIN_GRACE)) this.spawn(p);
@@ -131,7 +132,7 @@ export class Game {
       if (this.endT <= 0 && (this.respawns || this.roundT < this.cfg.JOIN_GRACE)) this.spawn(p);
     }
     this.applyStats(p);
-    p.hp = seat ? Math.min(p.hp, p.stats.maxHp) : p.stats.maxHp;
+    p.hp = p.stats.maxHp;
     this.players.set(id, p);
     this.rosterDirty = true;
     if (!isBot) this.refreshCheats();
@@ -161,7 +162,12 @@ export class Game {
 
   // 현재 안전 구역의 절반 길이 (독구름이 없는 규칙은 Infinity)
   zoneHalf() {
-    return this.zoned ? zoneHalf(this.roundT) : Infinity;
+    return this.zoned ? zoneHalf(Math.max(0, this.roundT - this.cfg.START_GRACE)) : Infinity; // 카운트다운이 끝난 뒤부터 잰다
+  }
+
+  // 시작 카운트다운 중인가: 이 동안은 아무도 움직이거나 줍지 못하고(돌아보기만), 라운드 시간도 흐르지 않는다
+  get starting() {
+    return this.endT <= 0 && this.roundT < this.cfg.START_GRACE;
   }
 
   // 안전 구역 안의 빈 지점
@@ -652,10 +658,12 @@ export class Game {
     }
 
     this.roundT += DT;
-    if (this.roundT >= this.cfg.ROUND_TIME) {
+    // 라운드 시간은 카운트다운이 끝난 뒤부터 ROUND_TIME 만큼
+    if (this.roundT >= this.cfg.START_GRACE + this.cfg.ROUND_TIME) {
       this.timeUp();
       return;
     }
+    const starting = this.roundT < this.cfg.START_GRACE;
 
     // 독구름: 안전 구역 밖에 GAS_TIME 이상 머물면 탈락 (킬 피드의 처치자 0 = 독구름)
     if (this.zoned) {
@@ -680,8 +688,8 @@ export class Game {
       if (this.endT > 0) return;
     }
 
-    // 아이템: 일정 간격으로 생기고, 살아있는 플레이어가 밟으면 줍는다
-    if (this.useItems) {
+    // 아이템: 일정 간격으로 생기고, 살아있는 플레이어가 밟으면 줍는다 (카운트다운 중에는 멈춤)
+    if (this.useItems && !starting) {
       this.itemT += DT;
       if (this.itemT >= ITEM_RULES.EVERY) {
         this.itemT = 0;
@@ -699,13 +707,13 @@ export class Game {
       });
     }
 
-    // 반딧불: 생겨나고, 가까이 오면 줍는다 (자석 강화면 더 멀리서)
-    this.ffT += DT;
+    // 반딧불: 생겨나고, 가까이 오면 줍는다 (자석 강화면 더 멀리서). 카운트다운 중에는 멈춤
+    if (!starting) this.ffT += DT;
     if (this.useFireflies && this.ffT >= PROGRESS.FIREFLY_EVERY && this.fireflies.length < PROGRESS.FIREFLY_MAX) {
       this.ffT = 0;
       this.spawnFirefly();
     }
-    if (this.fireflies.length) {
+    if (this.fireflies.length && !starting) {
       const half = this.zoneHalf();
       const before = this.fireflies.length;
       this.fireflies = this.fireflies.filter((f) => {
@@ -744,6 +752,7 @@ export class Game {
         continue;
       }
       if (p.isBot) {
+        if (starting) continue; // 카운트다운 중에는 봇도 가만히
         // dummy: 연습용 허수아비 (가만히 서 있다). turret 이면 가까이 보이는 상대를 손전등으로 비춘다.
         if (!p.dummy) this.applyInput(p, botThink(p, this, DT));
         else if (p.turret) this.applyInput(p, this.turretThink(p));
@@ -753,7 +762,8 @@ export class Game {
       p.budget = Math.min(p.budget + 1, 4);
       while (p.alive && p.queue.length && p.budget >= 1) {
         const inp = p.queue.shift();
-        this.applyInput(p, inp);
+        // 카운트다운 중: 돌아보기만 (이동·공격·스킬·조명탄은 막는다)
+        this.applyInput(p, starting ? { ...inp, mx: 0, mz: 0, atk: false, roll: false, flare: false } : inp);
         p.ack = inp.seq;
         p.budget--;
       }
@@ -874,7 +884,8 @@ export class Game {
       k: this.tick,
       a: p.ack,
       zh: this.zoned ? q2(this.zoneHalf()) : 0, // 안전 구역 절반 길이 (0 = 독구름 없음)
-      rt: Math.ceil(Math.max(0, this.cfg.ROUND_TIME - this.roundT)), // 남은 라운드 시간
+      rt: Math.ceil(Math.max(0, Math.min(this.cfg.ROUND_TIME, this.cfg.START_GRACE + this.cfg.ROUND_TIME - this.roundT))), // 남은 라운드 시간 (카운트다운 동안은 그대로)
+      cd: this.starting ? Math.ceil(this.cfg.START_GRACE - this.roundT) : 0, // 시작 카운트다운 3, 2, 1
       // 예측 보정에 필요한 값은 반올림하지 않는다
       me: [p.x, p.z, p.yaw, p.alive ? 1 : 0, this.respawns ? q2(Math.max(0, p.respawn)) : 0, q2(p.cd), p.rollT, p.rollCd, p.rollDx, p.rollDz, q2(p.flareCd), q2(p.gas), p.speedT, q2(p.vest), q2(p.cloakT), p.dashT, q2(p.shieldT), q2(p.scanT)],
       e,
@@ -891,7 +902,8 @@ export class Game {
 
   // 접속 시 알려주는 방 정보
   info() {
-    return { m: this.mode, r: this.rule, g: this.target, cg: this.capGoal, rtm: this.cfg.ROUND_TIME, map: this.map.id };
+    // inp: 이미 진행 중인 판에 들어왔다 (카운트다운이 끝났고 결과 화면도 아님)
+    return { m: this.mode, r: this.rule, g: this.target, cg: this.capGoal, rtm: this.cfg.ROUND_TIME, map: this.map.id, inp: this.endT <= 0 && !this.starting ? 1 : 0 };
   }
 
   // p: [id, 이름, 팀, 이번 라운드 킬, 생존 여부, 누적 승, 레벨, 캐릭터, 의상, 친구 코드, 모닥불 점령 초]  (위치 정보 없음)

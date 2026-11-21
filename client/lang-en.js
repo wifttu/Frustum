@@ -96,6 +96,8 @@ export const EN = {
   '이제 마당 밖으로 나갈 수 있어요': 'You can now leave the yard',
   '방이 가득 찼습니다.': 'The room is full.',
   '의상이 새로워졌어요': 'Outfits updated',
+  '진행 중인 판에 참가했어요': 'Joined a round in progress',
+  '1레벨부터 시작': 'starting at level 1',
 
   // ── 연습(튜토리얼) ──
   '왼쪽 조이스틱을 끌어서 걸어 보세요': 'Drag the left joystick to walk',
@@ -640,5 +642,6 @@ export const EN_PATTERNS = [
   ['{} (가짐 → 🪙{})', '{0} (owned → 🪙{1})'],
   ['시작 실패: {}', 'Failed to start: {0}'],
   ['🎮 {}', '🎮 {0}'],
+  ['남은 시간 {}', '{0} left'],
   ['{}: {}', '{0}: {1}'], // 방 채팅 "이름: 말"
 ];
