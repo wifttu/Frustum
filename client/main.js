@@ -9,6 +9,7 @@ import { Music, Sfx } from './audio.js';
 import { DEFAULT_SERVER, normalizeServer } from './settings.js';
 import { prefs, savePrefs } from './prefs.js';
 import { decodeBackup, encodeBackup } from './shared/backup.js';
+import { addHistory, agoText, historySummary } from './shared/history.js';
 import {
   ACHIEVEMENTS, DAILY_POOL, RANKS, achState, applyRank, claimAch, claimDaily as claimMission, ensureDaily, hasClaimable, rankDelta, rankOf as tierOf, record,
   seasonDaysLeft, seasonRollover,
@@ -466,6 +467,16 @@ let mapT = 0;
 let cricketT = 2;
 let roundEnd = 0; // 라운드 종료 배너 남은 시간 (다시하기를 누를 때까지 기다리는 방은 Infinity)
 let holdEnd = false; // 혼자 하기: 결과 화면에서 다시하기를 누르면 다음 판
+let againState = { n: 0, of: 1, mine: false }; // 다시하기를 누른 사람 수 / 방의 사람 수, 나도 눌렀나
+// 결과 화면의 다시하기 버튼과 인원 (사람이 둘 이상인 방만 인원을 보여 준다)
+function drawAgain() {
+  const { n, of, mine } = againState;
+  const many = of > 1;
+  $('againInfo').hidden = !many;
+  if (many) $('againInfo').textContent = `🙋 다시하기 ${n}/${of}명 · 모두 누르면 바로 시작`;
+  $('againBtn').disabled = mine;
+  $('againBtn').textContent = mine ? (offline ? '▶ 곧 시작!' : many ? `✓ 준비 ${n}/${of}` : '✓ 준비 완료') : many ? `▶ 다시하기 ${n}/${of}` : '▶ 다시하기';
+}
 let stepT = 0;
 let lastSpot = 0;
 const sim = { x: 0, z: 0, yaw: 0, rollT: 0, rollCd: 0, rollDx: 0, rollDz: 1, speedT: 0, dashT: 0, skill: 'roll' }; // 예측된 내 상태
@@ -703,13 +714,60 @@ function roundRank(won, me) {
   if (!tracking() || !me) return null;
   track('round');
   if (won) track('win');
-  const rows = [...roster.entries()].sort((a, b) => pointsOf(b[1]) - pointsOf(a[1]));
-  const place = rows.findIndex(([id]) => id === myId) + 1;
+  const place = placeOf(me);
   if (place === 1) track('top');
-  const r = applyRank(profile, rankDelta(place, rows.length, me.score || 0, !offline));
+  const r = applyRank(profile, rankDelta(place, roster.size, me.score || 0, !offline));
   saveProfile();
   if (r.up) setTimeout(() => toast('승급! 🏅', `${r.after.name} 등급이 됐어요`, 'buff'), 900);
   return r;
+}
+// 이번 판 순위 (점수가 같으면 같은 순위: 나보다 점수가 높은 사람 수 + 1)
+const placeOf = (me) => 1 + [...roster.values()].filter((q) => pointsOf(q) > pointsOf(me)).length;
+// 최근 전적: 끝까지 한 판을 기기에 남긴다 (최근 10판)
+function saveMatch(w, me, xp, coins, rk) {
+  addHistory(profile, {
+    t: Date.now(), r: rule, m: mode, map: curMap.id, w, pl: placeOf(me), n: roster.size,
+    k: me.score, c: me.cap, lv: prog.level, ch: profile.char, sk: profile.skin, rp: rk ? rk.delta : null,
+    x: xp, co: Math.max(0, coins), on: offline ? 0 : 1, ct: prefs.cheat ? 1 : 0,
+  });
+  saveProfile();
+}
+const RESULT_TEXT = { 1: ['승리', 'win'], 0: ['패배', 'lose'], '-1': ['무승부', 'draw'] };
+function historyRows() {
+  const list = profile.history;
+  const out = [];
+  if (!list.length) {
+    const empty = document.createElement('div');
+    empty.className = 'hempty';
+    empty.textContent = '아직 기록이 없어요. 한 판을 끝까지 하면 여기에 남아요.';
+    return [empty];
+  }
+  const s = historySummary(list);
+  const sum = document.createElement('div');
+  sum.className = 'hsum';
+  for (const [v, label] of [[`${s.wins}승 ${s.n - s.wins}패`, `최근 ${s.n}판`], [`${s.rate}%`, '승률'], [`${s.avgPlace}등`, '평균 순위'], [`${s.best}등`, '최고 순위'], [s.kills, '잡은 수']]) {
+    const d = document.createElement('div');
+    d.innerHTML = '<b></b><small></small>';
+    d.querySelector('b').textContent = v;
+    d.querySelector('small').textContent = label;
+    sum.append(d);
+  }
+  out.push(sum);
+  for (const e of list) {
+    const [res, cls] = RESULT_TEXT[e.w];
+    const row = document.createElement('div');
+    row.className = `hrow ${cls}`;
+    row.innerHTML = '<div class="hres"><b></b><small></small></div><i class="hchar"></i><div class="htext"><b></b><small></small></div><div class="hstat"><b></b><small></small></div>';
+    row.querySelector('.hres b').textContent = res;
+    row.querySelector('.hres small').textContent = `${e.pl}등/${e.n}`;
+    row.querySelector('.hchar').append(imgEl(e.sk && e.sk !== 'default' && SKINS[e.sk] ? skinImg(e.sk) : charImg(e.ch), 'portrait'));
+    row.querySelector('.htext b').textContent = `${RULE_NAMES[e.r] || e.r} · ${MODE_NAMES[e.m]}`;
+    row.querySelector('.htext small').textContent = [MAPS[e.map]?.name, e.on ? '온라인' : '혼자', agoText(e.t), e.ct ? '🧪 치트' : ''].filter(Boolean).join(' · ');
+    row.querySelector('.hstat b').textContent = e.r === 'hill' ? `🔥${e.c}초 · ${e.k}킬` : `${e.k}킬`;
+    row.querySelector('.hstat small').textContent = [`Lv${e.lv}`, e.rp !== null ? `랭크 ${e.rp >= 0 ? '+' : ''}${e.rp}` : '', e.co ? `🪙${e.co}` : ''].filter(Boolean).join(' · ');
+    out.push(row);
+  }
+  return out;
 }
 let missionTab = 'daily';
 function drawRankBadge() {
@@ -765,6 +823,9 @@ function drawMissions() {
       if (s.maxed) body.append(missionRow(s.a.icon, title, `모두 달성 (${s.v})`, 1, 1, { text: '완료 ✓', cls: 'ok' }));
       else body.append(missionRow(s.a.icon, title, `${s.a.text(s.goal)} · ${Math.min(s.v, s.goal)} / ${s.goal}`, s.v, s.goal, s.claimable ? { text: `🪙 ${s.coins} 받기`, cls: 'can', on: () => claimed(claimAch(profile, key)) } : { text: `🪙 ${s.coins}` }));
     }
+  } else if (missionTab === 'hist') {
+    body.append(...historyRows());
+    note.push('끝까지 한 판이 최근 10판까지 이 기기에 남아요. 순위는 판이 끝났을 때 순위표 기준이에요.');
   } else {
     seasonRollover(profile);
     const r = tierOf(profile.rank.rp);
@@ -992,8 +1053,8 @@ function onMessage(m) {
     const won = m.w === myTeam;
     holdEnd = !!m.h;
     roundEnd = holdEnd ? Infinity : m.s;
-    $('againBtn').disabled = false;
-    $('againBtn').textContent = '▶ 다시하기';
+    againState = { n: 0, of: m.hn || 1, mine: false };
+    drawAgain();
     $('exitBtn').textContent = party?.active && !offline ? '🏠 방으로' : '🏠 나가기';
     $('bannerTitle').textContent = won ? '승리' : m.w ? '패배' : '무승부';
     $('bannerTitle').className = won ? 'win' : 'lose';
@@ -1004,6 +1065,7 @@ function onMessage(m) {
     const xpGot = prog.earned - roundStart.earned;
     const coinGot = Math.floor(profile.coins) - Math.floor(roundStart.coins);
     const rk = roundRank(won, me);
+    if (!tutor && me) saveMatch(won ? 1 : m.w ? 0 : -1, me, xpGot, coinGot, rk);
     $('bannerReward').innerHTML = '';
     const chips = [['⭐', '레벨', `Lv ${prog.level}`], ['🔦', '잡은 수', `${me?.score ?? 0}`], ['✨', '경험치', `+${xpGot}`], ['🪙', '코인', `+${coinGot}`]];
     if (rk) chips.push(['🏅', rk.after.name, `${rk.delta >= 0 ? '+' : ''}${rk.delta}`]);
@@ -1019,6 +1081,11 @@ function onMessage(m) {
     won ? sfx.win() : sfx.lose();
     clearTimeout(podiumTimer);
     podiumTimer = setTimeout(openPodium, 1100); // 마지막 장면을 잠깐 보여 준 뒤 시상대로
+  } else if (m.t === 'ag') {
+    // 다시하기를 누른 사람 수
+    againState.n = m.n;
+    againState.of = m.of;
+    drawAgain();
   } else if (m.t === 'b') {
     // 반사 조끼가 빛을 막았다
     for (const [k, v] of m.l) {
@@ -2931,8 +2998,8 @@ $('againBtn').addEventListener('click', () => {
   if (!myId || roundEnd <= 0) return;
   if (offline) offline.game.again(offline.player);
   else net.send({ t: 'again' });
-  $('againBtn').disabled = true;
-  $('againBtn').textContent = offline ? '▶ 곧 시작!' : '✓ 준비 완료';
+  againState.mine = true;
+  drawAgain();
   sfx.choose();
 });
 $('exitBtn').addEventListener('click', () => exitGame());
