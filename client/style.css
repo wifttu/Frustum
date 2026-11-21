@@ -1137,6 +1137,8 @@ body.tutorial #timeChip, body.tutorial #board, body.tutorial #score { display: n
 #settings button.alt { background: rgba(120, 30, 20, .6); color: #ffb0a4; box-shadow: none; }
 #settings .seg button { background: rgba(38, 22, 10, .58); color: #e2cba6; border-color: rgba(255, 214, 160, .2); box-shadow: none; }
 #settings .seg button.on { background: linear-gradient(180deg, #ffd27a, #e8a548); color: #3a2208; border-color: #fff0c0; }
+#settings .langRow { flex-wrap: wrap; row-gap: 6px; }
+#settings .langRow > span { white-space: nowrap; }
 #settings .backupRow .btns button, #settings .installRow button, #settings .serverRow button { box-shadow: none; }
 #settings .serverRow small { color: #b8f0a0; }
 /* 백업 복구 창 */

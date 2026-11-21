@@ -6,6 +6,9 @@ const MODE_NAMES = { ffa: '개인전', duo: '2인 팀전' };
 const STATE_TEXT = { online: '접속 중', party: '방에 있음', game: '게임 중', off: '오프라인' };
 const SYS_TEXT = { join: '님이 들어왔어요', leave: '님이 나갔어요', kick: '님이 내보내졌어요' };
 const cleanCode = (v, n) => String(v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, n);
+import { tr } from './i18n.js';
+// 플레이어가 지은 이름: 번역하지 않는다
+const noTr = (e) => ((e.translate = false), e);
 const el = (tag, cls, text) => Object.assign(document.createElement(tag), cls ? { className: cls } : {}, text !== undefined ? { textContent: text } : {});
 
 export function initParty(ctx) {
@@ -52,7 +55,7 @@ export function initParty(ctx) {
     setIcon(face, m.icon || c.icon);
     const who = el('span', '', '');
     iconText(who, c.icon, c.name);
-    card.append(face, el('b', '', m.name), who);
+    card.append(face, noTr(el('b', '', m.name)), who);
     const tag = m.sid === st.host ? '👑 방장' : m.inGame ? '🎮 게임 중' : m.ready ? '✅ 준비 완료' : '대기 중';
     card.append(el('em', m.ready || m.sid === st.host ? 'ok' : '', tag));
     const bubble = bubbles.get(m.sid);
@@ -62,7 +65,7 @@ export function initParty(ctx) {
       kick.title = '내보내기';
       kick.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (confirm(`${m.name}님을 내보낼까요?`)) net.send({ t: 'pkick', sid: m.sid });
+        if (confirm(tr(`${m.name}님을 내보낼까요?`))) net.send({ t: 'pkick', sid: m.sid });
       });
       card.append(kick);
     }
@@ -160,7 +163,7 @@ export function initParty(ctx) {
     u.search = '';
     u.searchParams.set('party', st.code);
     if (ctx.remote()) u.searchParams.set('server', ctx.remote());
-    const text = `Frustum 친선 게임 같이 하자! 방 코드 ${st.code}`;
+    const text = tr(`Frustum 친선 게임 같이 하자! 방 코드 ${st.code}`);
     try {
       if (navigator.share) await navigator.share({ title: 'Frustum', text, url: u.href });
       else {
@@ -230,7 +233,7 @@ export function initParty(ctx) {
   function personRow(p, buttons) {
     const row = el('div', 'person');
     const s = p.fc ? statuses[p.fc]?.s || 'off' : 'none';
-    row.append(el('i', `dot ${s}`), el('b', '', p.name), el('span', '', p.fc ? STATE_TEXT[s] || '' : '친구 코드 없음'));
+    row.append(el('i', `dot ${s}`), noTr(el('b', '', p.name)), el('span', '', p.fc ? STATE_TEXT[s] || '' : '친구 코드 없음'));
     for (const [label, cls, onTap, disabled] of buttons) {
       const b = el('button', cls, label);
       b.disabled = !!disabled;
@@ -246,7 +249,7 @@ export function initParty(ctx) {
       personRow(f, [
         ...(inParty ? [['초대', 'inv', () => net.send({ t: 'inv', to: f.fc }), !f.fc || (statuses[f.fc]?.s || 'off') === 'off']] : []),
         ['✕', 'del', () => {
-          if (!confirm(`${f.name}님을 친구에서 뺄까요?`)) return;
+          if (!confirm(tr(`${f.name}님을 친구에서 뺄까요?`))) return;
           profile.friends = profile.friends.filter((x) => x !== f);
           saveProfile();
           drawFriends();

@@ -8,6 +8,7 @@ import { Input } from './input.js';
 import { Music, Sfx } from './audio.js';
 import { DEFAULT_SERVER, normalizeServer } from './settings.js';
 import { prefs, savePrefs } from './prefs.js';
+import { initLang, locale, tr } from './i18n.js';
 import { decodeBackup, encodeBackup } from './shared/backup.js';
 import { addHistory, agoText, historySummary } from './shared/history.js';
 import {
@@ -24,6 +25,9 @@ import { buildCampfire, buildDeco, buildFloorTexture, buildItemGeos, buildWalls,
 import { Showcase, radarOf } from './showcase.js';
 import { Podium } from './podium.js';
 import { LEGEND } from './legend.js';
+
+// 언어: 영어면 이 뒤로 화면에 들어가는 한국어를 영어로 바꿔 보여 준다 (client/i18n.js)
+initLang(prefs.lang);
 import { Net } from './net.js';
 import { initParty } from './party.js';
 import { DAILY, GACHA, SKINS, TIERS, claimDaily, claimRankSkin, dayKey, gacha, iconsFor, normalizeProfile, skinFor, skinsOf } from './shared/shop.js';
@@ -329,7 +333,7 @@ function openPodium() {
     if (!row) continue;
     const [id, p] = row;
     el.className = `r${i}` + (id === myId ? ' me' : '');
-    el.replaceChildren(document.createTextNode(p.name), Object.assign(document.createElement('small'), { textContent: capGoal ? `🔥${p.cap}초 · ${p.score}킬` : `${p.score}킬 · Lv${p.level}` }));
+    el.replaceChildren(Object.assign(document.createElement('span'), { textContent: p.name, translate: false }), Object.assign(document.createElement('small'), { textContent: capGoal ? `🔥${p.cap}초 · ${p.score}킬` : `${p.score}킬 · Lv${p.level}` }));
     el.style.opacity = '0';
   }
   $('podiumTags').hidden = false;
@@ -876,7 +880,7 @@ function drawMissions() {
     note.push('판이 끝날 때 순위로 점수가 오르내려요 (1등 +30 … 꼴등 -9, 잡은 수마다 +2). 혼자 하기(봇전)는 절반. 시즌은 한 달이고, 끝나면 등급 보상을 주고 점수가 절반이 돼요.');
   }
   if (prefs.cheat) note.unshift('🧪 치트 모드가 켜져 있으면 미션·업적·랭크가 오르지 않아요.');
-  $('missionNote').textContent = note.join(' ');
+  $('missionNote').textContent = note.map((x) => tr(x.trim())).join(' '); // 문장마다 번역
   drawRankBadge();
 }
 function openMissions(tab = missionTab) {
@@ -1346,6 +1350,7 @@ function addFeed(k, v) {
     const s = document.createElement('span');
     s.className = roster.get(id)?.team === myTeam ? 'ally' : 'enemy';
     s.textContent = id ? (roster.get(id)?.name ?? '?') : '독구름';
+    s.translate = !id; // 플레이어 이름은 번역하지 않는다 (독구름만)
     row.append(s, sep);
   }
   $('feed').prepend(row);
@@ -2334,11 +2339,12 @@ function drawResults() {
     ...rows.map(([id, p], i) => {
       const row = document.createElement('div');
       row.className = id === myId ? 'me' : p.team === myTeam ? 'ally' : 'enemy';
-      for (const text of [i + 1, `Lv${p.level} ${p.name}`, capGoal ? `🔥${p.cap}초 · ${p.score}킬` : `${p.score}킬`]) {
+      [i + 1, `Lv${p.level} ${p.name}`, capGoal ? `🔥${p.cap}초 · ${p.score}킬` : `${p.score}킬`].forEach((text, k) => {
         const cell = document.createElement('span');
         cell.textContent = text;
+        if (k === 1) cell.translate = false; // 플레이어 이름
         row.append(cell);
-      }
+      });
       return row;
     }),
   );
@@ -2931,6 +2937,16 @@ function applyQuality() {
   $('qualityNote').textContent = QUALITY_NOTE[prefs.quality] || QUALITY_NOTE.auto;
   resize();
 }
+// 언어: 바꾸면 처음부터 다시 그린다 (새로 고침)
+for (const b of $('langPick').children) {
+  b.classList.toggle('on', b.dataset.l === (prefs.lang || 'auto'));
+  b.addEventListener('click', () => {
+    if (prefs.lang === b.dataset.l) return;
+    prefs.lang = b.dataset.l;
+    savePrefs();
+    location.reload();
+  });
+}
 for (const b of $('qualityPick').children) {
   b.addEventListener('click', () => {
     prefs.quality = b.dataset.q;
@@ -2948,7 +2964,7 @@ function backupCode() {
 }
 const needBackup = () => !prefs.backupAt && (profile.owned.length > 1 || profile.skins.length > 1 || profile.xp > 1500);
 function drawBackup(msg = '') {
-  const when = prefs.backupAt ? new Date(prefs.backupAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+  const when = prefs.backupAt ? new Date(prefs.backupAt).toLocaleString(locale(), { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
   $('backupNote').textContent = msg || (when ? `마지막 백업: ${when} · 새로 모은 것은 다시 백업하세요` : '코인·캐릭터·스킨은 이 기기에만 저장돼요. 백업 코드를 꼭 보관하세요');
   $('openSettings').classList.toggle('hasNew', needBackup());
 }
@@ -2999,9 +3015,9 @@ $('restoreGo').addEventListener('click', () => {
     msg.className = 'hint err';
     return;
   }
-  const when = r.savedAt ? new Date(r.savedAt).toLocaleString('ko-KR') : '';
+  const when = r.savedAt ? new Date(r.savedAt).toLocaleString(locale()) : '';
   const sum = `코인 ${Math.floor(r.profile.coins)} · 캐릭터 ${r.profile.owned.length}개 · 의상 ${r.profile.skins.length}개`;
-  if (!confirm(`${when ? when + ' 백업\n' : ''}${sum}\n\n이 기기의 지금 데이터를 이 백업으로 바꿀까요?`)) return;
+  if (!confirm(tr(`${when ? when + ' 백업\n' : ''}${sum}\n\n이 기기의 지금 데이터를 이 백업으로 바꿀까요?`))) return;
   if (cheatCoinsOn()) prefs.realCoins = r.profile.coins; // 치트 중이면 진짜 코인 자리에
   prefs.backupAt = r.savedAt || Date.now();
   savePrefs();
