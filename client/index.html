@@ -11,6 +11,18 @@
     <link rel="apple-touch-icon" href="icon-192.png" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Frustum</title>
+    <script>
+      // 영어로 보일 때는 번역이 끝날 때까지 잠깐 가린다 (한국어가 번쩍 보이지 않게). 늦어도 4초 뒤에는 보인다.
+      try {
+        var l = JSON.parse(localStorage.getItem('frustum.prefs') || '{}').lang || 'auto';
+        var langs = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || 'ko'];
+        if (l === 'en' || (l === 'auto' && !langs.some(function (x) { return /^ko/i.test(x); }))) {
+          document.documentElement.classList.add('i18n-wait');
+          setTimeout(function () { document.documentElement.classList.remove('i18n-wait'); }, 4000);
+        }
+      } catch (e) {}
+    </script>
+    <style>html.i18n-wait body { visibility: hidden; }</style>
     <link rel="stylesheet" href="style.css" />
     <script type="importmap">
       { "imports": { "three": "./vendor/three/three.module.min.js" } }
@@ -20,13 +32,13 @@
     <canvas id="game"></canvas>
 
     <div id="hud" hidden>
-      <div id="labels"></div>
+      <div id="labels" translate="no"></div>
       <div id="nums"></div>
       <div id="mePanel">
         <div class="row"><b id="lvBadge">LV 1</b><div class="bar xp" id="xpBar"><div id="xpFill"></div><span id="xpText"></span></div></div>
         <div class="row"><div class="bar hp"><div id="hpFill"></div><span id="hpText"></span></div><span id="timeChip"></span></div>
       </div>
-      <div id="board"></div>
+      <div id="board" translate="no"></div>
       <div id="choices" hidden><div id="choiceTitle">강화 선택</div><div id="choiceCards"></div></div>
       <div id="score"></div>
       <div id="hillChip" hidden></div>
@@ -280,6 +292,10 @@
             <label><span>⚡ 쿨타임 1/4<small>손전등·스킬·조명탄</small></span><input type="checkbox" id="setCheatCd" /></label>
             <label><span>👟 이동 +30%</span><input type="checkbox" id="setCheatSpeed" /></label>
           </div>
+        </div>
+        <div class="installRow langRow">
+          <span translate="no">🌐 언어 · Language</span>
+          <div class="seg" id="langPick"><button data-l="auto">자동</button><button data-l="ko" translate="no">한국어</button><button data-l="en" translate="no">English</button></div>
         </div>
         <div class="installRow qualityRow">
           <span>그래픽 품질<small id="qualityNote">자동: 폰 성능에 맞춰 해상도를 조절해요</small></span>
