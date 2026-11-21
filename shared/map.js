@@ -254,24 +254,31 @@ export function isFree(x, z, clearance, walls = WALLS) {
   return true;
 }
 
-// 모닥불 점령: 지킬 모닥불 자리. 맵 가운데에서 가장 가까운, 둘레가 트인 곳 (서버와 화면이 같은 계산을 한다)
+// 모닥불 점령: 모닥불 A(왼쪽)·B(가운데)·C(오른쪽). 기준점에서 가장 가까운, 둘레가 트인 곳 (서버와 화면이 같은 계산)
 export const HILL_RADIUS = 3.5;
+const HILL_ANCHORS = [['A', -16, 0], ['B', 0, 0], ['C', 16, 0]];
 const hills = new Map();
-export function hillOf(map) {
+export function hillsOf(map) {
   if (hills.has(map.id)) return hills.get(map.id);
   const solid = [...map.walls, ...map.water];
-  let spot = [0, 0];
-  search: for (let r = 0; r < 14; r += 0.5) {
-    for (let a = 0; a < 16; a++) {
-      const x = Math.round(Math.cos((a / 16) * Math.PI * 2) * r * 2) / 2;
-      const z = Math.round(Math.sin((a / 16) * Math.PI * 2) * r * 2) / 2;
-      if (isFree(x, z, 2.6, solid)) {
-        spot = [x, z];
-        break search;
+  const out = [];
+  for (const [id, ax, az] of HILL_ANCHORS) {
+    let spot = [ax, az];
+    // 위·아래(z) 방향부터 찾는다: 가운데 B 가 두 팀(왼쪽·오른쪽)에서 같은 거리에 있도록
+    const angles = [4, 12, 0, 8, 2, 6, 10, 14, 1, 3, 5, 7, 9, 11, 13, 15].map((k) => (k / 16) * Math.PI * 2);
+    search: for (let r = 0; r < 16; r += 0.5) {
+      for (const ang of angles) {
+        const x = Math.round((ax + Math.cos(ang) * r) * 2) / 2;
+        const z = Math.round((az + Math.sin(ang) * r) * 2) / 2;
+        // 다른 모닥불과 10m 이상 떨어지게
+        if (isFree(x, z, 2.6, solid) && out.every((h) => Math.hypot(h.x - x, h.z - z) >= 10)) {
+          spot = [x, z];
+          break search;
+        }
       }
     }
+    out.push({ id, x: spot[0], z: spot[1], r: HILL_RADIUS });
   }
-  const hill = { x: spot[0], z: spot[1], r: HILL_RADIUS };
-  hills.set(map.id, hill);
-  return hill;
+  hills.set(map.id, out);
+  return out;
 }

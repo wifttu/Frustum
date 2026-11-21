@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MAX_PRIVATE_ROOMS, Rooms, roomCode } from '../server/rooms.js';
+import { MAX_PRIVATE_ROOMS, PUBLIC_ROOMS, Rooms, roomCode } from '../server/rooms.js';
 import { skinFits } from '../shared/shop.js';
 import { RULES } from '../shared/config.js';
 
-const PUBLIC = Object.keys(RULES).length * 2; // 규칙 × (개인전, 2인 팀전)
+const PUBLIC = PUBLIC_ROOMS.length; // 규칙 × 인원 구성 (모닥불 점령은 3 대 3 하나)
 
 test('방 코드: 영문/숫자 4~6자만 인정한다', () => {
   assert.equal(roomCode('abcd'), 'ABCD');

@@ -37,10 +37,14 @@ button { font-family: inherit; }
   font-weight: 800; font-size: 12px; color: #ffd28a; white-space: nowrap;
 }
 #hillChip[hidden] { display: none; }
-#hillChip.mine { color: #8ef0a0; border-color: rgba(120, 230, 140, .7); background: rgba(40, 110, 60, .55); }
-#hillChip.enemy { color: #ffb0a4; border-color: rgba(255, 110, 90, .7); background: rgba(120, 30, 24, .55); }
-#hillChip.fight { color: #fff; border-color: #ffd28a; animation: hillPulse .5s ease-in-out infinite alternate; }
-@keyframes hillPulse { from { background: rgba(255, 140, 60, .25); } to { background: rgba(255, 140, 60, .65); } }
+/* A B C: 주인 색 */
+#hillChip { display: flex; align-items: center; gap: 5px; padding: 3px 6px; }
+#hillChip b { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 900; color: #fff; background: rgba(255, 178, 74, .75); }
+#hillChip b.mine { background: #3fae5c; }
+#hillChip b.enemy { background: #e0483a; }
+#hillChip b.fight { background: #ffb24a; animation: hillPulse .5s ease-in-out infinite alternate; }
+#hillChip span { margin: 0 4px 0 2px; color: #fff; }
+@keyframes hillPulse { from { background: #c86a2a; } to { background: #ffd28a; } }
 
 /* 킬 피드 */
 #feed {
@@ -463,6 +467,7 @@ body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
   font-weight: 800; font-size: 15px; box-shadow: 0 3px 0 #b9b2a4;
 }
 .pick { display: flex; gap: 6px; }
+.pick[hidden] { display: none; }
 .pick button {
   flex: 1; padding: 7px 2px; border-radius: 12px; font-size: 14px; font-weight: 800;
   background: #221d36; color: #9f98b4; border: 2px solid #332c4a;

@@ -398,43 +398,70 @@ test('연습 경비 허수아비: 가까이 보이면 비추고, 체력이 많�
   assert.ok(me.hp >= hp);
 });
 
-test('모닥불 점령: 둘레 안에 우리 편만 있으면 1초에 1점, 상대도 있으면 쟁탈 중이라 0점', () => {
-  const { game, add, place } = setup({ rule: 'hill', mode: 'ffa', TEAMS: 0 });
-  const a = add('A');
-  const b = add('B');
-  const h = game.hill;
-  game.roundT = CFG.START_GRACE; // 시작 직후 대기 시간은 지났다
-  place(a, h.x, h.z, 0);
-  place(b, h.x + 20, h.z, 0);
-  for (let i = 0; i < CFG.TICK_RATE * 2; i++) game.step();
-  assert.equal(game.hillOwner, a.team);
-  assert.equal(Math.round(game.capPts.get(a.team)), 2);
-  assert.equal(Math.round(a.cap), 2);
-  // 상대가 들어오면 쟁탈 중: 아무도 점수를 얻지 못한다
-  place(b, h.x + 1, h.z, Math.PI);
-  for (let i = 0; i < CFG.TICK_RATE; i++) game.step();
-  assert.equal(game.hillFight, true);
-  assert.equal(game.hillOwner, 0);
-  assert.equal(Math.round(game.capPts.get(a.team)), 2);
-  assert.equal(game.capPts.get(b.team) || 0, 0);
-  // 스냅샷: 우리 편 기준 [차지한 편, 쟁탈, 우리 점수, 상대 최고 점수]
-  const snap = game.snapshotFor(a, game.computeVisibility());
-  assert.deepEqual(snap.cp, [0, 1, 2, 0]);
-  assert.equal(game.roster().p.find((r) => r[0] === a.id)[10], 2);
+test('모닥불 점령: 3 대 3 (2팀 × 3명), 모닥불 A·B·C', () => {
+  const game = new Game({ rule: 'hill', mode: 'ffa' }); // 고른 인원 구성과 상관없이 3 대 3
+  assert.equal(game.mode, 'squad');
+  assert.equal(game.cfg.TEAMS, 2);
+  assert.equal(game.cfg.MAX_PLAYERS, 6);
+  game.balanceBots();
+  const teams = [...game.players.values()].map((p) => p.team).sort();
+  assert.deepEqual(teams, [1, 1, 1, 2, 2, 2]);
+  assert.deepEqual(game.hills.map((h) => h.id), ['A', 'B', 'C']);
+  // 팀 1 은 왼쪽(A 쪽), 팀 2 는 오른쪽(C 쪽)에서 태어난다
+  for (const p of game.players.values()) assert.ok(p.team === 1 ? p.x < 0 : p.x > 0, `${p.team} ${p.x}`);
 });
 
-test('모닥불 점령: 목표 점수를 먼저 채우면 이기고, 시간이 끝나면 점수가 높은 편이 이긴다', () => {
-  const { game, add, place } = setup({ rule: 'hill', mode: 'ffa', TEAMS: 0, CAP_GOAL: 3 });
+test('모닥불 점령: 혼자 4초면 차지하고, 비워 둬도 우리 것 · 상대는 빼앗아야(0을 지나야) 차지한다', () => {
+  const { game, add, place } = setup({ rule: 'hill' });
+  const a = add('A');
+  const b = add('B');
+  assert.notEqual(a.team, b.team);
+  const [A, B] = game.hills;
+  game.roundT = CFG.START_GRACE;
+  const run = (sec) => { for (let i = 0; i < CFG.TICK_RATE * sec; i++) game.step(); };
+  place(a, A.x, A.z, 0);
+  place(b, B.x + 30, B.z, 0);
+  run(4.1);
+  assert.equal(A.owner, a.team, '혼자 4초 → 차지');
+  // 떠나도 우리 것, 가진 모닥불 하나마다 1초에 1점
+  place(a, A.x + 8, A.z + 8, 0);
+  const before = game.capPts.get(a.team);
+  run(2);
+  assert.equal(A.owner, a.team);
+  assert.equal(Math.round(game.capPts.get(a.team) - before), 2);
+  // 상대가 와서 같이 있으면 쟁탈 중: 진행이 멈춘다
+  place(a, A.x, A.z, 0);
+  place(b, A.x + 1, A.z, Math.PI);
+  const prog = A.prog;
+  run(1);
+  assert.ok(A.fight);
+  assert.equal(A.prog, prog);
+  // 상대 혼자: 먼저 빼앗고(주인 없음), 계속 있으면 상대 것
+  place(a, A.x + 20, A.z, 0);
+  run(4.1);
+  assert.equal(A.owner, 0, '4초 동안 빼앗아 0을 지나면 주인 없음');
+  run(4.1);
+  assert.equal(A.owner, b.team, '다시 4초면 상대 것');
+  // 스냅샷: [우리 점수, 상대 점수, 모닥불마다 (주인 0/1 우리/2 상대, 우리 쪽 진행도, 쟁탈)]
+  const snap = game.snapshotFor(a, game.computeVisibility());
+  assert.equal(snap.cp.length, 2 + 3 * 3);
+  assert.equal(snap.cp[2], 2, 'A 는 상대 것');
+  assert.ok(snap.cp[3] < 0, '우리 쪽에서 보면 진행도가 음수');
+});
+
+test('모닥불 점령: 목표 점수를 먼저 채우면 이기고, 시간이 끝나면 점수가 높은 팀이 이긴다', () => {
+  const { game, add, place } = setup({ rule: 'hill', CAP_GOAL: 6 });
   const a = add('A');
   const b = add('B');
   game.roundT = CFG.START_GRACE;
-  place(a, game.hill.x, game.hill.z, 0);
-  place(b, game.hill.x + 20, game.hill.z, 0);
-  for (let i = 0; i < CFG.TICK_RATE * 4 && !game.endT; i++) game.step();
-  assert.ok(game.endT > 0);
+  for (const h of game.hills.slice(0, 2)) Object.assign(h, { owner: a.team, prog: a.team === 1 ? 1 : -1 });
+  place(a, -50, -50, 0);
+  place(b, 50, 50, 0);
+  for (let i = 0; i < CFG.TICK_RATE * 3.2 && !game.endT; i++) game.step();
+  assert.ok(game.endT > 0, '모닥불 2개 × 3초 = 6점');
   assert.equal(game.winner, a.team);
 
-  const t = setup({ rule: 'hill', mode: 'ffa', TEAMS: 0 });
+  const t = setup({ rule: 'hill' });
   const c = t.add('C');
   const d = t.add('D');
   t.game.capPts.set(c.team, 4);
@@ -444,21 +471,19 @@ test('모닥불 점령: 목표 점수를 먼저 채우면 이기고, 시간이 �
   assert.equal(t.game.winner, d.team);
 });
 
-test('모닥불 점령: 새 라운드에는 점수가 0부터, 봇은 모닥불로 모인다', () => {
-  const game = new Game({ rule: 'hill', mode: 'duo' });
+test('모닥불 점령: 새 라운드에는 점수와 모닥불 주인이 처음부터, 봇은 모닥불을 차지하러 간다', () => {
+  const game = new Game({ rule: 'hill' });
   game.balanceBots();
   game.capPts.set(1, 10);
+  game.hills[0].owner = 1;
   for (const p of game.players.values()) p.cap = 5;
   game.newRound();
   assert.equal(game.capPts.size, 0);
+  for (const h of game.hills) assert.deepEqual([h.owner, h.prog], [0, 0]);
   for (const p of game.players.values()) assert.equal(p.cap, 0);
-  // 1분 동안: 여러 봇이 모닥불 둘레에 들어온다
-  const visited = new Set();
-  for (let i = 0; i < CFG.TICK_RATE * 60; i++) {
-    game.step();
-    for (const p of game.players.values()) if (p.alive && Math.hypot(p.x - game.hill.x, p.z - game.hill.z) < game.hill.r) visited.add(p.id);
-  }
-  assert.ok(visited.size >= 3, `visited ${visited.size}`);
+  // 1분 뒤: 봇들이 모닥불을 하나 이상 차지했다
+  for (let i = 0; i < CFG.TICK_RATE * 60; i++) game.step();
+  assert.ok(game.hills.some((h) => h.owner), JSON.stringify(game.hills.map((h) => [h.id, h.owner, h.prog])));
 });
 
 test('결과 화면: 혼자 하기는 다시하기를 누를 때까지 기다리고, 누르면 결과를 잠깐 보여 준 뒤 다음 판', () => {
@@ -562,4 +587,23 @@ test('중간 입장: 봇 자리를 이어받아도 레벨·경험치·강화는 
   assert.equal(me.score, 3, '팀 점수에 들어가는 잡은 수는 그대로');
   assert.equal(game.info().inp, 1, '진행 중인 판');
   assert.equal(new Game({ rule: 'dm' }).info().inp, 0, '막 시작한 판');
+});
+
+test('반사 조끼: 시간이 지나도 남아 있고, 빛을 한 번 막으면 사라진다', () => {
+  const { game, add, place } = setup({ START_GRACE: 0 });
+  const a = add('A');
+  const b = add('B');
+  place(a, 0, 0, 0);
+  place(b, 0, 5, 0);
+  game.pickItem(b, { type: 'vest' });
+  for (let i = 0; i < CFG.TICK_RATE * 40; i++) game.step();
+  assert.ok(b.vest > 0, '40초가 지나도 그대로');
+  place(a, 0, 0, 0);
+  place(b, 0, 5, 0);
+  game.attack(a);
+  assert.equal(b.alive, true, '한 번은 막는다');
+  assert.equal(b.vest, 0, '막고 나면 사라진다');
+  a.cd = 0;
+  game.attack(a);
+  assert.equal(b.alive, false, '다음 빛은 맞는다');
 });
