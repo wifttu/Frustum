@@ -50,7 +50,7 @@ export const ITEMS = Object.freeze({
   heart: { name: '하트', desc: '체력 +40', heal: 40 },
   battery: { name: '배터리', desc: '손전등·조명탄 즉시 충전' },
   sneakers: { name: '운동화', desc: '6초 동안 빨라짐', time: 6, speed: 1.4 },
-  vest: { name: '반사 조끼', desc: '빛을 한 번 막아 줌', time: 20 },
+  vest: { name: '반사 조끼', desc: '빛을 한 번 막고 사라짐' }, // 시간 제한 없음 (쓰러지면 잃는다)
   cloak: { name: '그림자 망토', desc: '6초 동안 상대에게 안 보임', time: 6 },
 });
 export const ITEM_TYPES = Object.keys(ITEMS);
@@ -88,10 +88,21 @@ export const RULES = Object.freeze({
   dm: { respawn: true, time: 180 },
   // 점수제 데스매치: 부활 있음. 목표 킬을 먼저 채우면 승리. 시간 초과 시 킬 수.
   score: { respawn: true, time: 300, target: { ffa: 10, duo: 15 } },
-  // 모닥불 점령: 부활 있음. 맵 가운데 모닥불 둘레에 우리 편만 있으면 1초에 1점(다른 편도 있으면 쟁탈 중이라 0점).
-  // 목표 점수를 먼저 채우면 승리. 시간 초과 시 점수 → 킬 수.
-  hill: { respawn: true, time: 180, hill: { ffa: 25, duo: 35 } },
+  // 모닥불 점령: 3 대 3 팀전, 부활 있음. 모닥불 A·B·C 를 차지하면(우리 팀만 둘레 안에 몇 초) 비워 둬도 우리 것.
+  // 가진 모닥불 하나마다 1초에 1점. 목표 점수를 먼저 채우면 승리. 시간 초과 시 점수 → 킬 수.
+  hill: { respawn: true, time: 180, hill: 150, squad: true },
 });
+
+// 인원 구성: 개인전(8명 각자), 2인 팀전(2명 × 4팀), 3 대 3(3명 × 2팀, 모닥불 점령 전용)
+export const MODE_INFO = Object.freeze({
+  ffa: { teams: 0, size: 1, players: 8 },
+  duo: { teams: 4, size: 2, players: 8 },
+  squad: { teams: 2, size: 3, players: 6 },
+});
+// 규칙에 맞는 인원 구성: 모닥불 점령은 늘 3 대 3, 나머지는 개인전/2인 팀전 중 고른 것
+export const modeFor = (rule, mode) => (RULES[rule]?.squad ? 'squad' : mode === 'ffa' ? 'ffa' : 'duo');
+// 모닥불 점령: 차지하는 데 걸리는 시간(혼자, 초). 둘이면 1.5배, 셋이면 2배 빠르다. 아무도 없으면 주인 쪽으로 천천히 돌아간다.
+export const CAPTURE = Object.freeze({ TIME: 4, DECAY: 0.25 });
 
 // 조명탄을 시야원으로 쓸 때의 설정: 360도, 반경 FLARE_RADIUS
 export const FLARE_VIEW = Object.freeze({

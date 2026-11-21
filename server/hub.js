@@ -1,7 +1,7 @@
 // 접속(세션) 관리: 빠른 매칭, 친선 게임 방(파티), 친구 접속 상태와 초대.
 // 네트워크와 분리되어 있어 가짜 세션으로 테스트할 수 있다.
 //   세션: { id, send(obj), raw(string) } — 나머지 필드(prof, fc, party, game, player...)는 여기서 채운다.
-import { CFG, RULES } from '../shared/config.js';
+import { MODE_INFO, RULES, modeFor } from '../shared/config.js';
 import { MAPS } from '../shared/map.js';
 import { CHARACTERS, charOf, cheatOf } from '../shared/progress.js';
 import { FREE_ICONS, SKIN_ICONS, skinFor } from '../shared/shop.js';
@@ -22,8 +22,10 @@ export function friendCode(v) {
   const s = typeof v === 'string' ? v.toUpperCase() : '';
   return /^[A-Z0-9]{6}$/.test(s) ? s : '';
 }
-// 친선 방에서 같은 팀이 되는 자리: 2인 팀전은 두 칸씩 한 팀, 개인전은 칸마다 다른 팀
-export const teamOfSlot = (mode, slot) => (mode === 'duo' ? 1 + Math.floor(slot / 2) : 2000 + slot);
+// 친선 방에서 같은 팀이 되는 자리: 2인 팀전은 두 칸씩, 3 대 3 은 세 칸씩 한 팀, 개인전은 칸마다 다른 팀
+export const teamOfSlot = (mode, slot) => (mode === 'duo' ? 1 + Math.floor(slot / 2) : mode === 'squad' ? 1 + Math.floor(slot / 3) : 2000 + slot);
+// 그 설정에서 쓸 수 있는 자리 수 (3 대 3 은 6자리)
+export const slotsOf = (set) => MODE_INFO[modeFor(set.rule, set.mode)].players;
 
 function cleanSettings(set, base) {
   const s = { ...base };
@@ -47,8 +49,25 @@ class Party {
 
   freeSlot() {
     const used = new Set([...this.members.values()].map((s) => s.slot));
-    for (let i = 0; i < PARTY_SLOTS; i++) if (!used.has(i)) return i;
+    const n = slotsOf(this.set);
+    for (let i = 0; i < PARTY_SLOTS; i++) if (!used.has(i) && (i < n || used.size >= n)) return i;
     return -1;
+  }
+
+  // 3 대 3 처럼 자리가 줄면 뒷자리에 있던 사람을 빈 앞자리로 옮긴다
+  packSlots() {
+    const n = slotsOf(this.set);
+    const used = new Set([...this.members.values()].map((s) => s.slot));
+    for (const s of this.members.values()) {
+      if (s.slot < n) continue;
+      for (let i = 0; i < n; i++) {
+        if (used.has(i)) continue;
+        used.delete(s.slot);
+        s.slot = i;
+        used.add(i);
+        break;
+      }
+    }
   }
 
   state() {
@@ -285,6 +304,7 @@ export class Hub {
     const next = cleanSettings(m.set, p.set);
     if (JSON.stringify(next) === JSON.stringify(p.set)) return;
     p.set = next;
+    p.packSlots();
     for (const x of p.members.values()) x.ready = false; // 설정이 바뀌면 다시 준비
     p.sync();
   }
@@ -292,7 +312,7 @@ export class Hub {
   moveSlot(s, m) {
     const p = s.party;
     const slot = m.slot;
-    if (!p || !Number.isInteger(slot) || slot < 0 || slot >= PARTY_SLOTS) return;
+    if (!p || !Number.isInteger(slot) || slot < 0 || slot >= slotsOf(p.set)) return;
     if ([...p.members.values()].some((x) => x.slot === slot)) return;
     s.slot = slot;
     p.sync();
@@ -323,6 +343,7 @@ export class Hub {
     const others = [...p.members.values()].filter((x) => x.id !== p.host);
     if (others.some((x) => !x.ready)) return '모두 준비해야 시작할 수 있어요';
     if (!p.set.ai && p.members.size < 2) return '혼자서는 AI를 켜야 해요';
+    if (p.members.size > slotsOf(p.set)) return '3 대 3 은 6명까지예요';
     return '';
   }
 
@@ -332,11 +353,11 @@ export class Hub {
     const why = this.startBlock(p);
     if (why) return this.err(s, why);
     const { rule, mode, map, ai } = p.set;
-    const g = new Game({ rule, mode, BOT_FILL: ai ? CFG.BOT_FILL : 0, ...(map ? { map, FIXED_MAP: true } : {}) });
+    const g = new Game({ rule, mode, ...(ai ? {} : { BOT_FILL: 0 }), ...(map ? { map, FIXED_MAP: true } : {}) });
     g.party = p.code;
     p.game = g;
     const members = [...p.members.values()];
-    for (const x of members) this.addToGame(x, g, teamOfSlot(mode, x.slot));
+    for (const x of members) this.addToGame(x, g, teamOfSlot(g.mode, x.slot));
     g.balanceBots();
     g.newRound();
     for (const x of members) {
@@ -350,7 +371,7 @@ export class Hub {
   joinPartyGame(s) {
     const p = s.party;
     if (!p?.game || s.player) return;
-    if (p.game.humanCount >= CFG.MAX_PLAYERS) return this.err(s, '게임 자리가 가득 찼어요');
+    if (p.game.humanCount >= p.game.cfg.MAX_PLAYERS) return this.err(s, '게임 자리가 가득 찼어요');
     this.addToGame(s, p.game, teamOfSlot(p.game.mode, s.slot));
     p.game.balanceBots();
     this.welcome(s);
@@ -373,7 +394,7 @@ export class Hub {
     if (s.party) this.leaveParty(s, true);
     else this.leaveGame(s, true);
     const g = this.rooms.find({ rule: m.r, mode: m.m, room: m.room, map: m.map });
-    if (!g || g.humanCount >= CFG.MAX_PLAYERS) return s.send({ t: 'full' });
+    if (!g || g.humanCount >= g.cfg.MAX_PLAYERS) return s.send({ t: 'full' });
     const wasEmpty = g.humanCount === 0;
     this.addToGame(s, g);
     g.balanceBots();

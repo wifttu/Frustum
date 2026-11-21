@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { CFG, EMOTES, FLARE_VIEW, ITEMS, RULES, SCAN_VIEW, ZONE } from './shared/config.js';
-import { HILL_RADIUS, MAP_SIZE, MAPS, closedMap, hillOf } from './shared/map.js';
+import { CFG, EMOTES, FLARE_VIEW, ITEMS, RULES, SCAN_VIEW, ZONE, modeFor } from './shared/config.js';
+import { HILL_RADIUS, MAP_SIZE, MAPS, closedMap, hillsOf } from './shared/map.js';
 import { stepPlayer } from './shared/sim.js';
 import { wrapAngle } from './shared/vision.js';
 import { VisionMask } from './fog.js';
@@ -159,45 +159,73 @@ function buildScenery() {
 }
 buildScenery();
 
-// ── 모닥불 점령: 지킬 자리. 큰 모닥불 + 바닥 고리 + 멀리서도 보이는 빛기둥 (고리와 빛기둥은 어둠 속에서도 보인다) ──
+// ── 모닥불 점령(3 대 3): 모닥불 A·B·C. 큰 모닥불 + 바닥 고리 + 차지 진행도(가운데서 차오름) + 빛기둥 + 글자.
+// 고리·빛기둥·글자는 어둠 속에서도 보인다. 색: 우리 것 초록, 상대 것 빨강, 주인 없음 주황, 쟁탈 중 깜빡임.
 const HILL_COLORS = { none: 0xffb24a, mine: 0x4fc46a, enemy: 0xf0503d, fight: 0xffd28a };
+const HILL_IDS = ['A', 'B', 'C'];
 let capGoal = 0; // 모닥불 점령 목표 점수 (0 = 다른 규칙)
-let hillState = null; // [차지한 편(0 없음, 1 우리, 2 상대), 쟁탈 중, 우리 점수, 상대 최고 점수]
-const hillFx = (() => {
-  const group = new THREE.Group();
-  const ringMat = new THREE.MeshBasicMaterial({ color: HILL_COLORS.none, transparent: true, opacity: 0.85, depthWrite: false });
-  const fillMat = new THREE.MeshBasicMaterial({ color: HILL_COLORS.none, transparent: true, opacity: 0.14, depthWrite: false });
-  const beamMat = new THREE.MeshBasicMaterial({ color: HILL_COLORS.none, vertexColors: true, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
-  const beamGeo = new THREE.CylinderGeometry(0.32, 0.2, 14, 14, 10, true).translate(0, 7, 0);
+let hillState = null; // { mine 우리 점수, other 상대 점수, hills: [{ own 0 없음·1 우리·2 상대, prog 우리 쪽 진행도 -1..1, fight }] }
+const hillKind = (h) => (h.fight ? 'fight' : h.own === 1 ? 'mine' : h.own === 2 ? 'enemy' : 'none');
+function letterTexture(ch) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.font = '900 96px system-ui, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.lineWidth = 14;
+  g.strokeStyle = 'rgba(0,0,0,.75)';
+  g.strokeText(ch, 64, 70);
+  g.fillStyle = '#fff';
+  g.fillText(ch, 64, 70);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const beamGeo = (() => {
+  const g = new THREE.CylinderGeometry(0.32, 0.2, 14, 14, 10, true).translate(0, 7, 0);
   const col = [];
-  const pos = beamGeo.attributes.position;
+  const pos = g.attributes.position;
   for (let i = 0; i < pos.count; i++) {
     const y = pos.getY(i);
     const k = Math.min(1, Math.max(0, (y - 1.2) / 2)) * Math.pow(1 - y / 14, 1.6); // 모닥불 위에서 시작해 위로 갈수록 흐려진다
     col.push(k, k, k);
   }
-  beamGeo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  const ring = new THREE.Mesh(new THREE.RingGeometry(HILL_RADIUS - 0.16, HILL_RADIUS, 64).rotateX(-Math.PI / 2).translate(0, 0.07, 0), ringMat);
-  const fill = new THREE.Mesh(new THREE.CircleGeometry(HILL_RADIUS, 48).rotateX(-Math.PI / 2).translate(0, 0.06, 0), fillMat);
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  return g;
+})();
+const hillRingGeo = new THREE.RingGeometry(HILL_RADIUS - 0.16, HILL_RADIUS, 64).rotateX(-Math.PI / 2).translate(0, 0.07, 0);
+const hillFillGeo = new THREE.CircleGeometry(HILL_RADIUS, 48).rotateX(-Math.PI / 2).translate(0, 0.06, 0);
+const hillFx = HILL_IDS.map((id) => {
+  const group = new THREE.Group();
+  const ringMat = new THREE.MeshBasicMaterial({ color: HILL_COLORS.none, transparent: true, opacity: 0.85, depthWrite: false });
+  const fillMat = new THREE.MeshBasicMaterial({ color: HILL_COLORS.none, transparent: true, opacity: 0.14, depthWrite: false });
+  const beamMat = new THREE.MeshBasicMaterial({ color: HILL_COLORS.none, vertexColors: true, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  const ring = new THREE.Mesh(hillRingGeo, ringMat);
+  const fill = new THREE.Mesh(hillFillGeo, fillMat);
   const beam = new THREE.Mesh(beamGeo, beamMat);
+  const letter = new THREE.Sprite(new THREE.SpriteMaterial({ map: letterTexture(id), color: HILL_COLORS.none, depthTest: false, transparent: true }));
+  letter.position.y = 4.4;
+  letter.scale.setScalar(1.7);
   ring.renderOrder = fill.renderOrder = 2;
   beam.renderOrder = 3;
-  group.add(buildCampfire(propMat), fill, ring, beam);
+  letter.renderOrder = 6;
+  group.add(buildCampfire(propMat), fill, ring, beam, letter);
   group.traverse((o) => (o.frustumCulled = false));
   group.visible = false;
   scene.add(group);
-  return { group, ringMat, fillMat, beamMat };
-})();
+  return { id, group, ringMat, fillMat, beamMat, fill, letter };
+});
 function placeHill() {
-  hillFx.group.visible = !!capGoal && !!myId;
-  if (!hillFx.group.visible) return;
-  const h = hillOf(curMap);
-  hillFx.group.position.set(h.x, 0, h.z);
+  const on = !!capGoal && !!myId;
+  hillsOf(curMap).forEach((h, i) => {
+    hillFx[i].group.visible = on;
+    hillFx[i].group.position.set(h.x, 0, h.z);
+  });
 }
-const hillKind = () => (!hillState ? 'none' : hillState[1] ? 'fight' : hillState[0] === 1 ? 'mine' : hillState[0] === 2 ? 'enemy' : 'none');
-const HILL_TEXT = { fight: '⚔️ 모닥불 쟁탈 중!', mine: '🔥 우리가 점령 중', enemy: '🔥 상대가 점령 중', none: '🔥 모닥불을 차지하세요' };
+// 위쪽 상태 칩: A B C 를 주인 색으로, 내가 모닥불 안에 있으면 그 모닥불의 진행 상황
 let hillKey = '';
-let hillWas = 'none';
+let hillWas = [0, 0, 0];
 function drawHill() {
   const el = $('hillChip');
   if (!capGoal || !hillState || !myId) {
@@ -205,25 +233,36 @@ function drawHill() {
     hillKey = '';
     return;
   }
-  const kind = hillKind();
-  const key = kind + hillState[2] + ':' + hillState[3];
-  if (key === hillKey) return;
-  hillKey = key;
-  el.hidden = false;
-  el.className = kind;
-  el.textContent = HILL_TEXT[kind];
-  // 차지하거나 빼앗겼을 때 알림
-  if (kind !== hillWas && roundEnd <= 0) {
-    if (kind === 'mine') {
-      toast('모닥불 점령!', '둘레 안에 있으면 1초에 1점', 'buff');
-      sfx.pickup();
-    } else if (kind === 'enemy' && hillWas === 'mine') {
-      toast('모닥불을 빼앗겼어요', '둘레 안으로 들어가 되찾으세요');
-      sfx.allyDown();
-    }
+  const hs = hillsOf(curMap);
+  const i = alive ? hs.findIndex((h) => Math.hypot(view.x - h.x, view.z - h.z) < h.r) : -1;
+  const here = i >= 0 ? hillState.hills[i] : null;
+  let note = '';
+  if (here) {
+    const pct = Math.round(Math.abs(here.prog) * 100);
+    note = here.fight ? `${HILL_IDS[i]} 쟁탈 중!` : here.own === 1 && here.prog >= 0.99 ? `${HILL_IDS[i]} 지키는 중` : here.prog >= 0 ? `${HILL_IDS[i]} 차지하는 중 ${pct}%` : `${HILL_IDS[i]} 빼앗는 중 ${100 - pct}%`;
   }
-  hillWas = kind;
-  drawScore();
+  const key = hillState.hills.map(hillKind).join() + note;
+  if (key !== hillKey) {
+    hillKey = key;
+    el.hidden = false;
+    el.replaceChildren(
+      ...hillState.hills.map((h, k) => Object.assign(document.createElement('b'), { className: hillKind(h), textContent: HILL_IDS[k] })),
+      ...(note ? [Object.assign(document.createElement('span'), { textContent: note })] : []),
+    );
+  }
+  // 모닥불을 차지하거나 빼앗겼을 때 알림
+  hillState.hills.forEach((h, k) => {
+    if (h.own !== hillWas[k] && roundEnd <= 0) {
+      if (h.own === 1) {
+        toast(`${HILL_IDS[k]} 모닥불 점령!`, '가진 모닥불마다 1초에 1점', 'buff');
+        sfx.pickup();
+      } else if (h.own === 2 || hillWas[k] === 1) {
+        toast(`${HILL_IDS[k]} 모닥불을 빼앗겼어요`, '다시 가서 되찾으세요');
+        sfx.allyDown();
+      }
+    }
+    hillWas[k] = h.own;
+  });
 }
 
 // 맵 교체: 소품, 바닥, 물, 시야 마스크, 미니맵을 새 맵으로 다시 만든다
@@ -1026,7 +1065,7 @@ function onMessage(m) {
     target = m.g || 0;
     capGoal = m.cg || 0;
     hillState = null;
-    hillWas = 'none';
+    hillWas = [0, 0, 0];
     roundTime = m.rtm || CFG.ROUND_TIME;
     roundStart = { earned: 0, coins: profile.coins };
     if (m.map) setMap(m.map);
@@ -1210,7 +1249,9 @@ function onSnapshot(m) {
   respawnIn = resp;
   gas = gasT || 0;
   zoneTarget = m.zh || 0;
-  hillState = m.cp || null;
+  const cp = m.cp;
+  hillState = cp ? { mine: cp[0], other: cp[1], hills: HILL_IDS.map((_, i) => ({ own: cp[2 + i * 3], prog: cp[3 + i * 3], fight: !!cp[4 + i * 3] })) } : null;
+  if (hillState) drawScore();
   drawHill();
   flareCd = fcd;
   buffs.vest = vestT || 0;
@@ -1314,7 +1355,7 @@ function drawScore() {
     info = mode === 'ffa' ? `생존 ${aliveN}명` : `생존 ${teams.size}팀 · ${aliveN}명`;
     if (zoneTarget) info += ` · 구역 ${Math.round(zoneTarget * 2)}m`;
   } else if (target) info = `목표 ${target}킬`;
-  else if (capGoal) info = `🔥 우리 ${hillState?.[2] ?? 0} : ${hillState?.[3] ?? 0} 상대 · 목표 ${capGoal}점`;
+  else if (capGoal) info = `🔥 우리 ${hillState?.mine ?? 0} : ${hillState?.other ?? 0} 상대 · 목표 ${capGoal}점`;
   if (mode !== 'ffa' && rule !== 'survival' && !capGoal) {
     const kills = new Map();
     for (const p of roster.values()) kills.set(p.team, (kills.get(p.team) || 0) + p.score);
@@ -2100,7 +2141,7 @@ $('closeShop').addEventListener('click', () => {
 
 // ── 로비 ──
 const RULE_NAMES = { dm: '데스매치', score: '점수제 데스매치', survival: '서바이벌', hill: '모닥불 점령' };
-const MODE_NAMES = { ffa: '개인전', duo: '2인 팀전' };
+const MODE_NAMES = { ffa: '개인전', duo: '2인 팀전', squad: '3 대 3' };
 function enterLobby() {
   $('menu').style.display = '';
   party?.hideRoom();
@@ -2120,7 +2161,7 @@ function drawLobby() {
   setIcon($('avatar'), profile.icon || c.icon);
   $('lobbyCharName').textContent = profile.skin === 'default' ? c.name : `${c.name} · ${SKINS[profile.skin].name}`;
   srcText($('lobbySkill'), skillImg(c.skill), `${sk.name} · ${c.desc}`);
-  $('modeText').textContent = `${RULE_NAMES[menuRule]} · ${MODE_NAMES[menuMode]}`;
+  $('modeText').textContent = `${RULE_NAMES[menuRule]} · ${MODE_NAMES[modeFor(menuRule, menuMode)]}`;
   $('mapText').textContent = lobby.map ? `맵: ${MAPS[lobby.map].name}` : '맵: 순환';
   $('modeCard').style.setProperty('--map', `url(${mapImg(lobby.map)})`);
   $('netSolo').classList.toggle('on', !lobby.online);
@@ -2213,13 +2254,13 @@ function drawOnline(msg = '') {
   const box = $('onlineBox');
   box.hidden = !lobby.online;
   if (!lobby.online) return;
-  const key = `${menuRule}-${menuMode}`;
+  const key = `${menuRule}-${modeFor(menuRule, menuMode)}`;
   const total = roomCounts ? Object.values(roomCounts).reduce((a, b) => a + b, 0) : 0;
   $('onlineText').textContent =
     msg || (roomCounts ? `지금 접속 ${total}명 · 이 모드 ${roomCounts[key] ?? 0}명 (빈자리는 AI가 채워요)` : '');
   $('busiest').disabled = !roomCounts || total === 0;
   // 버튼마다 그 조합의 인원 표시
-  for (const [r, id] of Object.entries(RULE_BTNS)) $(id).dataset.n = roomCounts ? roomCounts[`${r}-${menuMode}`] ?? 0 : '';
+  for (const [r, id] of Object.entries(RULE_BTNS)) $(id).dataset.n = roomCounts ? roomCounts[`${r}-${modeFor(r, menuMode)}`] ?? 0 : '';
   for (const [m, id] of Object.entries(MODES)) $(id).dataset.n = roomCounts ? roomCounts[`${menuRule}-${m}`] ?? 0 : '';
 }
 $('busiest').addEventListener('click', () => {
@@ -2228,10 +2269,10 @@ $('busiest').addEventListener('click', () => {
   if (!best) return;
   const [r, m] = best.split('-');
   menuRule = r;
-  menuMode = m;
+  if (m !== 'squad') menuMode = m; // 3 대 3 은 규칙이 정한다
   try {
     localStorage.setItem('frustum.rule', r);
-    localStorage.setItem('frustum.mode', m);
+    localStorage.setItem('frustum.mode', menuMode);
   } catch {}
   drawPicks();
   drawLobby();
@@ -2324,14 +2365,15 @@ function drawBuffs() {
   if (alive && sim.dashT > 0) list.push(['dash', sim.dashT]);
   if (alive && buffs.shield > 0) list.push(['shield', buffs.shield]);
   if (alive && buffs.scan > 0) list.push(['scan', buffs.scan]);
-  const key = list.map(([t, r]) => t + Math.ceil(r)).join();
+  const key = list.map(([t, r]) => t + (t === 'vest' ? '' : Math.ceil(r))).join();
   if (key === buffKey) return;
   buffKey = key;
   $('buffs').replaceChildren(
     ...list.map(([t, r]) => {
       const el = document.createElement('div');
       el.className = 'buff ' + t;
-      srcText(el, BUFF_IMG[t], `${BUFF_NAMES[t] || ITEMS[t].name} ${Math.ceil(r)}`);
+      // 반사 조끼는 시간이 아니라 남은 횟수 (한 번 막으면 사라진다)
+      srcText(el, BUFF_IMG[t], t === 'vest' ? `${ITEMS.vest.name} 1회` : `${BUFF_NAMES[t] || ITEMS[t].name} ${Math.ceil(r)}`);
       return el;
     }),
   );
@@ -2606,13 +2648,21 @@ function frame(now) {
   }
 
   // 모닥불 점령: 차지한 편의 색으로 고리와 빛기둥을 칠한다 (쟁탈 중이면 깜빡인다)
-  if (hillFx.group.visible) {
-    const kind = hillKind();
-    const pulse = kind === 'fight' ? 0.5 + 0.5 * Math.sin(now * 0.012) : 0.5 + 0.5 * Math.sin(now * 0.003);
-    for (const m of [hillFx.ringMat, hillFx.fillMat, hillFx.beamMat]) m.color.setHex(HILL_COLORS[kind]);
-    hillFx.ringMat.opacity = 0.55 + 0.4 * pulse;
-    hillFx.fillMat.opacity = kind === 'none' ? 0.1 : 0.16 + 0.1 * pulse;
-    hillFx.beamMat.opacity = 0.3 + 0.25 * pulse;
+  if (capGoal && hillState) {
+    hillFx.forEach((f, i) => {
+      const h = hillState.hills[i];
+      if (!f.group.visible || !h) return;
+      const kind = hillKind(h);
+      const pulse = kind === 'fight' ? 0.5 + 0.5 * Math.sin(now * 0.012) : 0.5 + 0.5 * Math.sin(now * 0.003);
+      for (const m of [f.ringMat, f.beamMat, f.letter.material]) m.color.setHex(HILL_COLORS[kind]);
+      f.ringMat.opacity = 0.55 + 0.4 * pulse;
+      f.beamMat.opacity = 0.3 + 0.25 * pulse;
+      // 차지 진행도: 가운데서부터 차오른다 (우리 쪽이면 초록, 상대 쪽이면 빨강)
+      const k = Math.max(0.02, Math.min(1, Math.abs(h.prog)));
+      f.fill.scale.set(k, 1, k);
+      f.fillMat.color.setHex(h.prog >= 0 ? HILL_COLORS.mine : HILL_COLORS.enemy);
+      f.fillMat.opacity = Math.abs(h.prog) < 0.02 ? 0 : 0.14 + 0.12 * pulse;
+    });
   }
 
   // 독구름: 구역 크기를 부드럽게 따라가고, 안에 들어가 있으면 화면 경고 + 소리
@@ -2705,7 +2755,7 @@ function frame(now) {
     mapT = now;
     mapEnts.length = 0;
     for (const [id, e] of ents) mapEnts.push({ x: e.x, z: e.z, kind: kindOf(id) });
-    minimap.draw({ me: view, alive, ents: mapEnts, flares, items: itemsSeen.map(([, , x, z]) => ({ x, z })), zone: zoneTarget ? zoneNow : 0, fov: CFG.FOV, range: CFG.VIEW_RANGE, hill: hillFx.group.visible ? { ...hillOf(curMap), color: `#${HILL_COLORS[hillKind()].toString(16).padStart(6, '0')}` } : null });
+    minimap.draw({ me: view, alive, ents: mapEnts, flares, items: itemsSeen.map(([, , x, z]) => ({ x, z })), zone: zoneTarget ? zoneNow : 0, fov: CFG.FOV, range: CFG.VIEW_RANGE, hills: capGoal && hillState ? hillsOf(curMap).map((h, i) => ({ ...h, color: `#${HILL_COLORS[hillKind(hillState.hills[i])].toString(16).padStart(6, '0')}` })) : null });
   }
 
   // 스킬 버튼 쿨다운 (매 프레임)
@@ -2776,6 +2826,10 @@ let menuRule = pick(RULE_BTNS, params.get('rule'), stored('frustum.rule')) || 'd
 function drawPicks() {
   for (const [m, id] of Object.entries(MODES)) $(id).classList.toggle('on', menuMode === m);
   for (const [r, id] of Object.entries(RULE_BTNS)) $(id).classList.toggle('on', menuRule === r);
+  // 모닥불 점령은 늘 3 대 3: 인원 고르기 대신 안내 한 칸
+  const squad = modeFor(menuRule, menuMode) === 'squad';
+  $('modes').hidden = squad;
+  $('squadPick').hidden = !squad;
 }
 function bindPick(table, key, set) {
   for (const [v, id] of Object.entries(table)) {

@@ -1,11 +1,13 @@
 // 방 관리. 공개 방은 규칙 × 모드 조합마다 하나씩 항상 있고,
 // 친구끼리 쓰는 비공개 방은 방 코드로 만들어지며 사람이 모두 나가면 사라진다.
-import { RULES } from '../shared/config.js';
+import { RULES, modeFor } from '../shared/config.js';
 import { MAPS } from '../shared/map.js';
 import { Game } from './game.js';
 
 export const MAX_PRIVATE_ROOMS = 50;
 const MODES = ['ffa', 'duo'];
+// 공개 방: 규칙 × 인원 구성 (모닥불 점령은 3 대 3 하나)
+export const PUBLIC_ROOMS = Object.keys(RULES).flatMap((rule) => [...new Set(MODES.map((m) => modeFor(rule, m)))].map((mode) => [rule, mode]));
 
 // 방 코드: 영문 대문자와 숫자 4~6자. 그 밖의 값은 코드 없음으로 취급한다.
 export function roomCode(v) {
@@ -16,12 +18,10 @@ export function roomCode(v) {
 export class Rooms {
   constructor() {
     this.games = new Map(); // key → Game
-    for (const rule of Object.keys(RULES)) {
-      for (const mode of MODES) {
-        const g = new Game({ rule, mode });
-        g.balanceBots();
-        this.games.set(`${rule}-${mode}`, g);
-      }
+    for (const [rule, mode] of PUBLIC_ROOMS) {
+      const g = new Game({ rule, mode });
+      g.balanceBots();
+      this.games.set(`${rule}-${mode}`, g);
     }
     this.privateCount = 0;
   }
@@ -29,7 +29,7 @@ export class Rooms {
   // 들어갈 방을 찾거나 만든다. 비공개 방이 너무 많으면 null.
   find({ rule, mode, room, map }) {
     rule = Object.hasOwn(RULES, rule) ? rule : 'survival';
-    mode = MODES.includes(mode) ? mode : 'duo';
+    mode = modeFor(rule, mode);
     const code = roomCode(room);
     if (!code) return this.games.get(`${rule}-${mode}`);
     // 비공개 방은 코드만으로 찾는다: 먼저 만든 사람의 규칙/모드/맵을 따른다

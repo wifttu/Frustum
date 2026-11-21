@@ -2,11 +2,12 @@
 // 서버와는 main.js 의 Net 연결 하나로 주고받는다. 계정이 없어서 친구 목록은 기기에 저장한다.
 import { iconText, mapImg, setIcon } from './icons.js';
 const RULE_NAMES = { dm: '데스매치', score: '점수제', survival: '서바이벌', hill: '모닥불 점령' };
-const MODE_NAMES = { ffa: '개인전', duo: '2인 팀전' };
+const MODE_NAMES = { ffa: '개인전', duo: '2인 팀전', squad: '3 대 3' };
 const STATE_TEXT = { online: '접속 중', party: '방에 있음', game: '게임 중', off: '오프라인' };
 const SYS_TEXT = { join: '님이 들어왔어요', leave: '님이 나갔어요', kick: '님이 내보내졌어요' };
 const cleanCode = (v, n) => String(v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, n);
 import { tr } from './i18n.js';
+import { modeFor } from './shared/config.js';
 // 플레이어가 지은 이름: 번역하지 않는다
 const noTr = (e) => ((e.translate = false), e);
 const el = (tag, cls, text) => Object.assign(document.createElement(tag), cls ? { className: cls } : {}, text !== undefined ? { textContent: text } : {});
@@ -75,12 +76,14 @@ export function initParty(ctx) {
   function drawRoom() {
     if (!st || $('room').hidden) return;
     $('roomCode').textContent = `방 코드 ${st.code}  📋`;
-    const groups = st.set.mode === 'duo' ? [[0, 1], [2, 3], [4, 5], [6, 7]] : [[0, 1, 2, 3], [4, 5, 6, 7]];
-    $('roomSlots').className = st.set.mode;
+    // 자리: 2인 팀전 2칸 × 4팀, 3 대 3 은 3칸 × 2팀(모닥불 점령), 개인전 8칸
+    const mode = modeFor(st.set.rule, st.set.mode);
+    const groups = mode === 'duo' ? [[0, 1], [2, 3], [4, 5], [6, 7]] : mode === 'squad' ? [[0, 1, 2], [3, 4, 5]] : [[0, 1, 2, 3], [4, 5, 6, 7]];
+    $('roomSlots').className = mode;
     $('roomSlots').replaceChildren(
       ...groups.map((g, i) => {
         const box = el('div', 'group');
-        if (st.set.mode === 'duo') box.append(el('h4', '', `팀 ${i + 1}`));
+        if (mode !== 'ffa') box.append(el('h4', '', `팀 ${i + 1}`));
         const row = el('div', 'row');
         row.append(...g.map(slotCard));
         box.append(row);
@@ -89,7 +92,7 @@ export function initParty(ctx) {
     );
     // 설정 카드
     $('roomSetHint').textContent = isHost() ? '방장 · 눌러서 바꾸기 ›' : '방장이 정해요';
-    $('roomSetText').textContent = `${RULE_NAMES[st.set.rule]} · ${MODE_NAMES[st.set.mode]}`;
+    $('roomSetText').textContent = `${RULE_NAMES[st.set.rule]} · ${MODE_NAMES[mode]}`;
     $('roomSetSub').textContent = `맵: ${st.set.map ? MAPS[st.set.map].name : '순환'} · ${st.set.ai ? '빈자리 AI' : '사람만'}`;
     $('roomSet').style.setProperty('--map', `url(${mapImg(st.set.map)})`);
     // 큰 버튼: 방장은 시작, 나머지는 준비. 게임이 진행 중이면 참가.
@@ -323,7 +326,7 @@ export function initParty(ctx) {
     lastInvite = m;
     setIcon($('invIcon'), m.icon || '📨');
     $('invTitle').textContent = `${m.from}님의 초대`;
-    $('invSub').textContent = `${RULE_NAMES[m.set?.rule] || ''} · ${MODE_NAMES[m.set?.mode] || ''} · ${m.n}명 대기 중`;
+    $('invSub').textContent = `${RULE_NAMES[m.set?.rule] || ''} · ${MODE_NAMES[modeFor(m.set?.rule, m.set?.mode)] || ''} · ${m.n}명 대기 중`;
     $('invite').hidden = false;
     sfx.pickup();
     ctx.buzz(60);

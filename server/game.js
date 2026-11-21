@@ -1,6 +1,6 @@
 // 권위 서버 게임 로직. 네트워크와 분리되어 있어 테스트와 오프라인 모드에서 그대로 쓴다.
-import { CFG, EMOTE_GAP, EMOTES, FLARE_VIEW, SCAN_VIEW, ITEM_RULES, ITEM_TYPES, ITEMS, RULES, ZONE, zoneHalf } from '../shared/config.js';
-import { MAP_ROTATION, MAP_SIZE, MAPS, hillOf, isFree } from '../shared/map.js';
+import { CAPTURE, CFG, EMOTE_GAP, EMOTES, FLARE_VIEW, MODE_INFO, SCAN_VIEW, ITEM_RULES, ITEM_TYPES, ITEMS, RULES, ZONE, modeFor, zoneHalf } from '../shared/config.js';
+import { MAP_ROTATION, MAP_SIZE, MAPS, hillsOf, isFree } from '../shared/map.js';
 import { flareLanding, stepPlayer } from '../shared/sim.js';
 import { canSee, segmentBlocked, wrapAngle } from '../shared/vision.js';
 import { botThink } from './bots.js';
@@ -20,19 +20,18 @@ const q2 = (v) => Math.round(v * 100) / 100;
 
 export class Game {
   constructor(opts = {}) {
-    this.mode = opts.mode === 'ffa' ? 'ffa' : 'duo';
     this.rule = Object.hasOwn(RULES, opts.rule) ? opts.rule : 'survival';
+    this.mode = modeFor(this.rule, opts.mode); // 모닥불 점령은 늘 3 대 3 ('squad')
     const R = RULES[this.rule];
+    const M = MODE_INFO[this.mode];
     this.respawns = R.respawn;
     this.zoned = !!R.zone; // 독구름이 조여 오는 규칙인가
-    this.cfg = { ...CFG, TEAMS: this.mode === 'ffa' ? 0 : CFG.TEAMS, ROUND_TIME: R.time, ...opts };
+    this.cfg = { ...CFG, TEAMS: M.teams, MAX_PLAYERS: M.players, BOT_FILL: M.players, ROUND_TIME: R.time, ...opts };
     delete this.cfg.mode;
     delete this.cfg.rule;
     this.target = R.target ? (opts.TARGET ?? R.target[this.mode]) : 0; // 점수제 목표 킬
-    this.capGoal = R.hill ? (opts.CAP_GOAL ?? R.hill[this.mode]) : 0; // 모닥불 점령 목표 점수
+    this.capGoal = R.hill ? (opts.CAP_GOAL ?? R.hill) : 0; // 모닥불 점령 목표 점수
     this.capPts = new Map(); // 팀 → 모닥불 점수
-    this.hillOwner = 0; // 지금 모닥불을 차지한 팀 (0 = 없음)
-    this.hillFight = false; // 두 편 이상이 함께 있다 (쟁탈 중)
     this.roundT = 0; // 현재 라운드 경과 시간
     // 맵: 라운드마다 순서대로 바뀐다. walls 는 시야를 막고, solid(= walls + 물)는 이동을 막는다.
     const idx = MAP_ROTATION.indexOf(opts.map);
@@ -64,7 +63,8 @@ export class Game {
 
   setMap(id) {
     this.map = MAPS[id];
-    this.hill = hillOf(this.map); // 모닥불 점령에서 지킬 자리
+    // 모닥불 점령의 모닥불 A·B·C: owner 차지한 팀(0 없음), prog 차지 진행도(팀 1 쪽 +1, 팀 2 쪽 -1), fight 두 팀이 함께 있다
+    this.hills = hillsOf(this.map).map((h) => ({ ...h, owner: 0, prog: 0, fight: false }));
     this.walls = this.map.walls;
     this.water = this.map.water;
   }
@@ -181,12 +181,24 @@ export class Game {
     return [5, 5];
   }
 
+  // 한쪽(왼쪽 -1 / 오른쪽 +1) 끝 부분의 빈 지점
+  sidePoint(side) {
+    for (let i = 0; i < 200; i++) {
+      const x = side * (10 + Math.random() * (MAP_SIZE / 2 - 14));
+      const z = (Math.random() - 0.5) * (MAP_SIZE - 8);
+      if (isFree(x, z, 1, this.solid)) return [x, z];
+    }
+    return this.randomFreePoint();
+  }
+
   spawn(p) {
     // 적의 시야 밖이면서 다른 플레이어와 가장 멀리 떨어진 후보 지점을 고른다
     let pos = [0, 0];
     let bestScore = -Infinity;
+    // 모닥불 점령(3 대 3): 팀 1 은 왼쪽(모닥불 A 쪽), 팀 2 는 오른쪽(C 쪽)에서 태어난다
+    const side = this.capGoal && (p.team === 1 || p.team === 2) ? (p.team === 1 ? -1 : 1) : 0;
     for (let i = 0; i < 30; i++) {
-      const c = this.randomFreePoint();
+      const c = side ? this.sidePoint(side) : this.randomFreePoint();
       let minD = 40;
       let seen = false;
       for (const q of this.players.values()) {
@@ -510,27 +522,44 @@ export class Game {
     }
   }
 
-  // 모닥불 점령: 둘레 안에 살아 있는 편이 하나뿐이면 그 편이 1초에 1점 (둘 이상이면 쟁탈 중)
+  // 모닥불 점령 (3 대 3): 둘레 안에 한 팀만 있으면 차지해 간다(혼자 4초, 둘이면 1.5배, 셋이면 2배 빠르게).
+  // 상대 것이면 먼저 빼앗아(진행도가 0을 지나면 주인 없음) 우리 것으로. 차지한 모닥불은 비워 둬도 우리 것.
+  // 가진 모닥불 하나마다 1초에 1점, 목표 점수를 먼저 채우면 승리.
   stepHill() {
-    const h = this.hill;
-    const inside = [];
-    const teams = new Set();
-    for (const p of this.players.values()) {
-      if (!p.alive || p.dummy || Math.hypot(p.x - h.x, p.z - h.z) > h.r) continue;
-      inside.push(p);
-      teams.add(p.team);
+    for (const h of this.hills) {
+      const n = { 1: 0, 2: 0 };
+      const inside = [];
+      for (const p of this.players.values()) {
+        if (!p.alive || p.dummy || !(p.team === 1 || p.team === 2) || Math.hypot(p.x - h.x, p.z - h.z) > h.r) continue;
+        n[p.team]++;
+        inside.push(p);
+      }
+      h.fight = n[1] > 0 && n[2] > 0;
+      const who = h.fight ? 0 : n[1] ? 1 : n[2] ? 2 : 0;
+      if (who) {
+        const rate = (1 + 0.5 * (Math.min(n[who], 3) - 1)) / CAPTURE.TIME;
+        h.prog = Math.max(-1, Math.min(1, h.prog + (who === 1 ? 1 : -1) * rate * DT));
+        if (h.prog >= 1) h.owner = 1;
+        else if (h.prog <= -1) h.owner = 2;
+        else if ((h.owner === 1 && h.prog <= 0) || (h.owner === 2 && h.prog >= 0)) h.owner = 0; // 빼앗겼다
+        for (const p of inside) {
+          const before = Math.floor(p.cap);
+          p.cap += DT; // 개인 점령 시간 (순위표·시상대): 차지하거나 지키는 동안
+          if (Math.floor(p.cap) !== before) this.rosterDirty = true;
+        }
+      } else if (!h.fight) {
+        // 아무도 없으면 주인 쪽(주인이 없으면 0)으로 천천히 돌아간다
+        const home = h.owner === 1 ? 1 : h.owner === 2 ? -1 : 0;
+        h.prog += Math.max(-CAPTURE.DECAY * DT, Math.min(CAPTURE.DECAY * DT, home - h.prog));
+      }
     }
-    this.hillFight = teams.size > 1;
-    this.hillOwner = teams.size === 1 ? inside[0].team : 0;
-    if (!this.hillOwner || this.roundT < this.cfg.START_GRACE) return;
-    const pts = (this.capPts.get(this.hillOwner) || 0) + DT;
-    this.capPts.set(this.hillOwner, pts);
-    for (const p of inside) {
-      const before = Math.floor(p.cap);
-      p.cap += DT;
-      if (Math.floor(p.cap) !== before) this.rosterDirty = true; // 개인 점령 시간 (순위표·시상대)
+    for (const t of [1, 2]) {
+      const owned = this.hills.filter((h) => h.owner === t).length;
+      if (owned) this.capPts.set(t, (this.capPts.get(t) || 0) + owned * DT);
     }
-    if (pts >= this.capGoal - 1e-6) this.endRound(this.hillOwner);
+    const p1 = this.capPts.get(1) || 0;
+    const p2 = this.capPts.get(2) || 0;
+    if (Math.max(p1, p2) >= this.capGoal - 1e-6) this.endRound(p1 === p2 ? 0 : p1 > p2 ? 1 : 2);
   }
 
   // 시간 초과. 서바이벌: 생존자가 많은 팀 → 킬이 많은 팀. 데스매치: 킬이 많은 팀. 점령: 점수 → 킬. 동률이면 무승부(0)
@@ -590,8 +619,7 @@ export class Game {
     this.winner = null;
     this.flares.length = 0;
     this.capPts.clear();
-    this.hillOwner = 0;
-    this.hillFight = false;
+    for (const h of this.hills) Object.assign(h, { owner: 0, prog: 0, fight: false });
     if (!this.cfg.FIXED_MAP) {
       this.mapIdx = (this.mapIdx + 1) % MAP_ROTATION.length;
       this.setMap(MAP_ROTATION[this.mapIdx]);
@@ -633,7 +661,7 @@ export class Game {
       p.cd = 0;
       p.flareCd = 0;
     } else if (it.type === 'sneakers') p.speedT = ITEMS.sneakers.time;
-    else if (it.type === 'vest') p.vest = ITEMS.vest.time;
+    else if (it.type === 'vest') p.vest = 1; // 반사 조끼: 시간 제한 없이, 빛을 한 번 막으면 사라진다
     else if (it.type === 'cloak') p.cloakT = ITEMS.cloak.time;
     if (p.send) p.picked.push(it.type);
   }
@@ -683,7 +711,7 @@ export class Game {
       if (died) this.checkRoundEnd();
       if (this.endT > 0) return;
     }
-    if (this.capGoal) {
+    if (this.capGoal && !starting) {
       this.stepHill();
       if (this.endT > 0) return;
     }
@@ -730,7 +758,6 @@ export class Game {
 
     for (const p of this.players.values()) {
       p.cd = Math.max(0, p.cd - DT);
-      p.vest = Math.max(0, p.vest - DT);
       // 체력 회복: 한동안 맞지 않으면
       p.hurtT += DT;
       if (p.alive && !p.dummy && p.hurtT >= p.stats.regenDelay && p.hp < p.stats.maxHp) p.hp = Math.min(p.stats.maxHp, p.hp + p.stats.regen * DT);
@@ -866,12 +893,14 @@ export class Game {
     if (seenItems) for (const x of this.items) if (seenItems.has(x.id)) it.push([x.id, x.type, q2(x.x), q2(x.z)]);
     const pk = p.picked;
     p.picked = [];
-    // 모닥불 점령: [차지한 편(0 없음, 1 우리, 2 상대), 쟁탈 중, 우리 점수, 상대 중 최고 점수]
+    // 모닥불 점령: [우리 점수, 상대 점수, 그리고 모닥불마다 (차지한 편 0 없음·1 우리·2 상대, 우리 쪽 진행도 -1..1, 쟁탈 중)]
     let cp;
     if (this.capGoal) {
+      const sign = team === 2 ? -1 : 1;
       let top = 0;
       for (const [t, v] of this.capPts) if (t !== team) top = Math.max(top, v);
-      cp = [this.hillOwner ? (this.hillOwner === team ? 1 : 2) : 0, this.hillFight ? 1 : 0, Math.floor((this.capPts.get(team) || 0) + 1e-6), Math.floor(top + 1e-6)];
+      cp = [Math.floor((this.capPts.get(team) || 0) + 1e-6), Math.floor(top + 1e-6)];
+      for (const h of this.hills) cp.push(h.owner ? (h.owner === team ? 1 : 2) : 0, q2(h.prog * sign), h.fight ? 1 : 0);
     }
     // 반딧불은 지형처럼 공개 정보: 바뀌었을 때만 통째로 보낸다
     let ff;

@@ -218,3 +218,10 @@ test('빠른 매칭은 방을 떠나고 공개 방에 들어간다', () => {
   hub.disconnect(a);
   assert.equal(hub.rooms.find({ rule: 'dm', mode: 'ffa' }).humanCount, 0);
 });
+
+test('친선 방 3 대 3: 세 칸씩 한 팀, 모닥불 점령은 6자리', async () => {
+  const { teamOfSlot, slotsOf } = await import('../server/hub.js');
+  assert.deepEqual([0, 1, 2, 3, 4, 5].map((i) => teamOfSlot('squad', i)), [1, 1, 1, 2, 2, 2]);
+  assert.equal(slotsOf({ rule: 'hill', mode: 'ffa' }), 6);
+  assert.equal(slotsOf({ rule: 'dm', mode: 'duo' }), 8);
+});

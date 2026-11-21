@@ -16,7 +16,7 @@ function clean(e) {
   return {
     t: int(e.t, 0, 8.64e15),
     r: e.r,
-    m: e.m === 'ffa' ? 'ffa' : 'duo',
+    m: ['ffa', 'duo', 'squad'].includes(e.m) ? e.m : 'duo',
     map: Object.hasOwn(MAPS, e.map) ? e.map : '',
     w: e.w === 1 || e.w === -1 ? e.w : 0,
     pl: int(e.pl, 1, 99, 1),
