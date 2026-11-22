@@ -274,3 +274,15 @@ test('상점: 크리스탈로 코인 사기, 예전 맵 배경은 기본으로',
   assert.equal(normalizeProfile({ bg: 'camp' }).bg, '');
   assert.equal(normalizeProfile({ bg: 'rainbow' }).bg, 'rainbow');
 });
+
+test('알림 점: 시즌 의상은 랭크(프로필) 쪽, 일일 미션·업적은 미션 쪽', async () => {
+  const { missionClaimable, rankClaimable, hasClaimable } = await import('../shared/missions.js');
+  const now = new Date(2026, 10, 20);
+  const p = normalizeProfile({ owned: ['explorer'], rank: { season: '2026-11', rp: 600, best: 600 } });
+  assert.equal(rankClaimable(p), true, '골드에 닿아 희귀 의상을 받을 수 있다');
+  assert.equal(missionClaimable(p, now), false);
+  assert.equal(hasClaimable(p, now), true);
+  const q = normalizeProfile({ stats: { kills: 60 } });
+  assert.equal(missionClaimable(q, now), true, '업적 보상');
+  assert.equal(rankClaimable(q), false);
+});

@@ -1,6 +1,6 @@
 // 친선 게임 방, 친구(친구 코드·접속 상태·초대), 초대 알림.
 // 서버와는 main.js 의 Net 연결 하나로 주고받는다. 계정이 없어서 친구 목록은 기기에 저장한다.
-import { iconText, mapImg, setIcon } from './icons.js';
+import { charImg, imgEl, mapImg, setIcon, skinImg } from './icons.js';
 import { bgCss } from './backgrounds.js';
 const RULE_NAMES = { dm: '데스매치', score: '점수제', survival: '서바이벌', hill: '모닥불 점령' };
 const MODE_NAMES = { ffa: '개인전', duo: '2인 팀전', squad: '3 대 3' };
@@ -53,12 +53,14 @@ export function initParty(ctx) {
     const c = CHARACTERS[m.char] || CHARACTERS.explorer;
     if (m.sid === sid) card.classList.add('me');
     if (m.sid === st.host) card.classList.add('host');
-    const face = el('i', '', '');
-    setIcon(face, m.icon || c.icon);
-    face.style.background = bgCss(m.bg); // 그 사람이 고른 아이콘 배경 (없으면 기본)
-    const who = el('span', '', '');
-    iconText(who, c.icon, c.name);
-    card.append(face, noTr(el('b', '', m.name)), who);
+    // 크게: 지금 고른 캐릭터(입은 의상). 작게(왼쪽 위): 프로필 아이콘과 배경
+    const pic = el('i', 'pic', '');
+    pic.append(imgEl(m.skin && m.skin !== 'default' ? skinImg(m.skin) : charImg(CHARACTERS[m.char] ? m.char : 'explorer'), 'portrait'));
+    const ico = el('i', 'ico', '');
+    setIcon(ico, m.icon || c.icon);
+    ico.style.background = bgCss(m.bg); // 그 사람이 고른 아이콘 배경 (없으면 기본)
+    pic.title = c.name;
+    card.append(pic, ico, noTr(el('b', '', m.name)));
     const tag = m.sid === st.host ? '👑 방장' : m.inGame ? '🎮 게임 중' : m.ready ? '✅ 준비 완료' : '대기 중';
     card.append(el('em', m.ready || m.sid === st.host ? 'ok' : '', tag));
     const bubble = bubbles.get(m.sid);

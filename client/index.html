@@ -85,7 +85,7 @@
         <div>
           <input id="name" maxlength="12" placeholder="닉네임 입력" autocomplete="off" aria-label="닉네임" />
           <div id="rank"><b id="rankLv">모험가 Lv 1</b><div class="bar"><div id="rankFill"></div></div><small id="rankText"></small></div>
-          <button id="rankBadge" aria-label="랭크 보기"></button>
+          <div class="rankRow"><button id="rankBadge" aria-label="랭크 보기"></button><button id="openRecord" aria-label="최근 전적 보기">📊 전적</button></div>
         </div>
       </div>
       <div id="lobbyLogo">FRUSTUM<small>한밤의 캠핑장 · 손전등 술래잡기</small></div>
@@ -124,10 +124,20 @@
     <div id="missionPanel" class="sheet" hidden>
       <div class="panel">
         <button id="closeMissions" class="x" aria-label="닫기">✕</button>
-        <h2>미션 · 업적 · 랭크 · 전적</h2>
-        <div id="missionTabs" class="pick"><button data-tab="daily">일일 미션</button><button data-tab="ach">업적</button><button data-tab="rank">랭크</button><button data-tab="hist">최근 전적</button></div>
+        <h2>미션 · 업적</h2>
+        <div id="missionTabs" class="pick"><button data-tab="daily">일일 미션</button><button data-tab="ach">업적</button></div>
         <div id="missionBody"></div>
         <p id="missionNote" class="note"></p>
+      </div>
+    </div>
+
+    <div id="recordPanel" class="sheet" hidden>
+      <div class="panel">
+        <button id="closeRecord" class="x" aria-label="닫기">✕</button>
+        <h2>랭크 · 전적</h2>
+        <div id="recordTabs" class="pick"><button data-tab="rank">🏅 랭크</button><button data-tab="hist">📊 최근 전적</button></div>
+        <div id="recordBody"></div>
+        <p id="recordNote" class="note"></p>
       </div>
     </div>
 

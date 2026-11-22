@@ -12,7 +12,7 @@ import { initLang, locale, tr } from './i18n.js';
 import { decodeBackup, encodeBackup } from './shared/backup.js';
 import { addHistory, agoText, historySummary } from './shared/history.js';
 import {
-  ACHIEVEMENTS, DAILY_POOL, RANKS, achState, applyRank, claimAch, claimDaily as claimMission, ensureDaily, hasClaimable, rankDelta, rankOf as tierOf, record,
+  ACHIEVEMENTS, DAILY_POOL, RANKS, achState, applyRank, claimAch, claimDaily as claimMission, ensureDaily, missionClaimable, rankClaimable, rankDelta, rankOf as tierOf, record,
   seasonDaysLeft, seasonRollover, rankSkinList, ACH_SKIN_COINS,
 } from './shared/missions.js';
 import { CHARACTERS, CHAR_UP, ORBS, PROGRESS, SKILLS, UPGRADES, charOf, orbTier, statsOf, xpToNext } from './shared/progress.js';
@@ -826,7 +826,8 @@ function drawRankBadge() {
   const el = $('rankBadge');
   el.textContent = `🏅 ${r.name} ${profile.rank.rp}`;
   el.style.setProperty('--rc', r.color);
-  $('openMissions').classList.toggle('hasNew', hasClaimable(profile));
+  $('openMissions').classList.toggle('hasNew', missionClaimable(profile));
+  $('rankBadge').classList.toggle('hasNew', rankClaimable(profile)); // 받을 시즌 의상
 }
 function missionRow(icon, title, sub, n, goal, btn) {
   const row = document.createElement('div');
@@ -853,6 +854,7 @@ function claimed(coins, skin = null) {
   if (skin) toast('새 의상! 👘', skinLabel(skin) + (coins ? ` · 🪙 +${coins}` : ''), 'buff', skinImg(skin), 2600);
   else toast(`🪙 +${coins}`, '보상을 받았어요', 'buff');
   drawMissions();
+  drawRecord();
 }
 function claimAchievement(key) {
   const s = achState(profile, key);
@@ -885,7 +887,28 @@ function drawMissions() {
       else body.append(missionRow(s.a.icon, title, `${s.a.text(s.goal)} · ${Math.min(s.v, s.goal)} / ${s.goal}${giftText}`, s.v, s.goal, s.claimable ? { text: `🪙 ${s.coins}${gift} 받기`, cls: 'can', on: () => claimAchievement(key) } : { text: `🪙 ${s.coins}${gift}` }));
     }
     note.push('업적 2단계를 받으면 희귀 의상, 4단계를 받으면 영웅 의상도 함께 줘요. 이미 가진 의상이면 대신 코인을 더 줘요.');
-  } else if (missionTab === 'hist') {
+  }
+  if (prefs.cheat) note.unshift('🧪 치트 모드가 켜져 있으면 미션·업적·랭크가 오르지 않아요.');
+  $('missionNote').textContent = note.map((x) => tr(x.trim())).join(' '); // 문장마다 번역
+  drawRankBadge();
+}
+function openMissions(tab = missionTab) {
+  missionTab = tab;
+  drawMissions();
+  $('missionPanel').hidden = false;
+}
+$('openMissions').addEventListener('click', () => openMissions());
+$('closeMissions').addEventListener('click', () => ($('missionPanel').hidden = true));
+for (const b of $('missionTabs').children) b.addEventListener('click', () => openMissions(b.dataset.tab));
+
+// ── 랭크 · 전적 창 (프로필의 🏅 랭크 / 📊 전적 단추) ──
+let recordTab = 'rank';
+function drawRecord() {
+  for (const b of $('recordTabs').children) b.classList.toggle('on', b.dataset.tab === recordTab);
+  const body = $('recordBody');
+  body.replaceChildren();
+  const note = [];
+  if (recordTab === 'hist') {
     body.append(...historyRows());
     note.push('끝까지 한 판이 최근 10판까지 이 기기에 남아요. 순위는 판이 끝났을 때 순위표 기준이에요.');
   } else {
@@ -927,18 +950,18 @@ function drawMissions() {
     note.push('판이 끝날 때 순위로 점수가 오르내려요 (1등 +30 … 꼴등 -9, 잡은 수마다 +2). 혼자 하기(봇전)는 절반. 시즌은 한 달이고, 끝나면 등급 보상을 주고 점수가 절반이 돼요.');
   }
   if (prefs.cheat) note.unshift('🧪 치트 모드가 켜져 있으면 미션·업적·랭크가 오르지 않아요.');
-  $('missionNote').textContent = note.map((x) => tr(x.trim())).join(' '); // 문장마다 번역
+  $('recordNote').textContent = note.map((x) => tr(x.trim())).join(' '); // 문장마다 번역
   drawRankBadge();
 }
-function openMissions(tab = missionTab) {
-  missionTab = tab;
-  drawMissions();
-  $('missionPanel').hidden = false;
+function openRecord(tab = recordTab) {
+  recordTab = tab;
+  drawRecord();
+  $('recordPanel').hidden = false;
 }
-$('openMissions').addEventListener('click', () => openMissions());
-$('rankBadge').addEventListener('click', () => openMissions('rank'));
-$('closeMissions').addEventListener('click', () => ($('missionPanel').hidden = true));
-for (const b of $('missionTabs').children) b.addEventListener('click', () => openMissions(b.dataset.tab));
+$('rankBadge').addEventListener('click', () => openRecord('rank'));
+$('openRecord').addEventListener('click', () => openRecord('hist'));
+$('closeRecord').addEventListener('click', () => ($('recordPanel').hidden = true));
+for (const b of $('recordTabs').children) b.addEventListener('click', () => openRecord(b.dataset.tab));
 
 // ── 연습(튜토리얼) ──
 // 허수아비 발밑의 노란 고리 (어둠 속에서도 보인다)
@@ -2657,14 +2680,10 @@ for (const [m, id] of Object.entries({ '': 'mapAuto', camp: 'mapCamp', forest: '
   document.getElementById(id).style.setProperty('--map', `url(${mapImg(m)})`);
 }
 const MAP_BTNS = { '': 'mapAuto', camp: 'mapCamp', forest: 'mapForest', lake: 'mapLake', winter: 'mapWinter', beach: 'mapBeach', factory: 'mapFactory' };
-// 맵 고르기: 한 번 누르면 그 맵이 골라지고("한 번 더 누르면 완료"), 같은 맵을 한 번 더 누르면 창이 닫힌다
+// 맵 고르기: 한 번 누르면 그 맵이 골라지고(살짝 커진다), 같은 맵을 한 번 더 누르면 창이 닫힌다
 let mapPeek = null;
 function drawMapPeek() {
-  for (const [m, id] of Object.entries(MAP_BTNS)) {
-    const b = $(id);
-    b.classList.toggle('peek', mapPeek === m);
-    b.dataset.hint = tr('한 번 더 누르면 완료');
-  }
+  for (const [m, id] of Object.entries(MAP_BTNS)) $(id).classList.toggle('peek', mapPeek === m);
 }
 for (const [m, id] of Object.entries(MAP_BTNS)) {
   $(id).addEventListener('click', () => {

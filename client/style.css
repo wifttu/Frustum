@@ -563,11 +563,23 @@ body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
 #roomSlots .row { display: flex; gap: 6px; }
 #roomSlots.duo .row { flex-direction: column; }
 .slot {
-  position: relative; width: 92px; height: 86px; padding: 4px 3px; border-radius: 12px; border: 2px solid rgba(255, 255, 255, .25);
+  position: relative; width: 92px; height: 100px; padding: 4px 3px; border-radius: 12px; border: 2px solid rgba(255, 255, 255, .25);
   background: rgba(20, 30, 50, .85); color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0;
   line-height: 1.2;
 }
-#roomSlots.duo .slot { width: 112px; height: 76px; }
+#roomSlots.duo .slot { width: 112px; height: 96px; }
+/* 자리 카드: 가운데 크게 고른 캐릭터(의상) 그림, 왼쪽 위에 작게 프로필 아이콘 */
+.slot .pic {
+  flex: none; align-self: stretch; height: 58px; margin: -1px -1px 3px; border-radius: 9px; overflow: hidden; display: flex; align-items: flex-end; justify-content: center;
+  background: radial-gradient(ellipse at 50% 30%, #ffe6b0, #c8783a 75%); box-shadow: inset 0 -10px 14px rgba(0, 0, 0, .25);
+}
+.slot .pic .portrait { height: 122%; width: auto; max-width: none; margin-bottom: -16%; }
+#roomSlots.duo .slot .pic { height: 56px; }
+.slot .ico {
+  position: absolute; top: 4px; left: 4px; width: 22px; height: 22px; border-radius: 7px; overflow: hidden; display: flex; align-items: center; justify-content: center;
+  font-size: 13px; line-height: 1; background: linear-gradient(180deg, #ffd98a, #f0965a); border: 1px solid rgba(255, 255, 255, .85);
+}
+.slot .ico .ic { width: 112%; height: 112%; }
 .slot i { font-style: normal; font-size: 21px; line-height: 1.1; }
 .slot b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
 .slot span { font-size: 9.5px; color: #b9c8d6; white-space: nowrap; }
@@ -650,9 +662,10 @@ body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
 #invYes { padding: 9px 16px; background: linear-gradient(180deg, #ffe04d, #ffb21a); color: #3a2208; font-size: 15px; }
 #invNo { padding: 9px 10px; background: transparent; color: #9f98b4; font-size: 14px; }
 @media (max-height: 360px) {
-  .slot { height: 70px; }
-  #roomSlots.duo .slot { height: 64px; }
+  .slot { height: 82px; }
+  #roomSlots.duo .slot { height: 76px; }
   .slot i { font-size: 17px; }
+  .slot .pic, #roomSlots.duo .slot .pic { height: 42px; }
   #roomMain { padding: 10px; font-size: 19px; }
 }
 .roomRow input {
@@ -915,11 +928,6 @@ body.cheating #coins::after { content: ' 🧪'; }
 /* 한 번 누른 맵: 밝게 강조하고 "한 번 더 누르면 선택" */
 #maps button { position: relative; transition: transform .12s; }
 #maps button.peek { filter: none; transform: scale(1.05); border-color: #fff4d0; z-index: 1; box-shadow: 0 0 0 2px rgba(255, 244, 208, .45), 0 6px 18px rgba(0, 0, 0, .5); }
-#maps button.peek::before {
-  content: attr(data-hint); position: absolute; left: 50%; top: 6px; transform: translateX(-50%); white-space: nowrap;
-  padding: 2px 8px; border-radius: 999px; background: rgba(255, 210, 90, .95); color: #3a2208; font-size: 10.5px; font-weight: 900; text-shadow: none;
-  animation: pulse 1.2s ease-in-out infinite;
-}
 /* 로비·방 설정 카드: 오른쪽에 지금 맵 */
 #modeCard, #roomSet {
   padding-right: 118px;
@@ -1064,11 +1072,21 @@ body.tutorial #timeChip, body.tutorial #board, body.tutorial #score { display: n
   content: ''; position: absolute; top: 3px; right: 6px; width: 10px; height: 10px; border-radius: 50%; background: #ffd25a; box-shadow: 0 0 0 2px #8a2a22;
 }
 #rankBadge {
-  display: inline-flex; align-items: center; gap: 4px; margin-top: 3px; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor;
+  position: relative; display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor;
   background: rgba(0, 0, 0, .3); font-size: 11px; font-weight: 800; color: var(--rc, #c0875a); font-family: inherit;
 }
-#missionTabs { margin: 4px 0 8px; }
-#missionBody { display: flex; flex-direction: column; gap: 6px; max-height: max(160px, min(64vh, calc(100vh - 150px))); overflow-y: auto; }
+/* 프로필의 🏅 랭크 · 📊 전적 단추 (랭크 · 전적 창을 연다) */
+.rankRow { display: flex; gap: 5px; margin-top: 3px; }
+#openRecord {
+  padding: 2px 8px; border-radius: 999px; border: 1px solid rgba(160, 210, 255, .6); background: rgba(0, 0, 0, .3);
+  font-size: 11px; font-weight: 800; color: #bfe2ff; font-family: inherit;
+}
+#rankBadge:active, #openRecord:active { transform: scale(.95); }
+#rankBadge.hasNew::after { /* 받을 시즌 의상이 있으면 노란 점 */
+  content: ''; position: absolute; top: -3px; right: -3px; width: 9px; height: 9px; border-radius: 50%; background: #ffd25a; box-shadow: 0 0 0 2px #8a2a22;
+}
+#missionTabs, #recordTabs { margin: 4px 0 8px; }
+#missionBody, #recordBody { display: flex; flex-direction: column; gap: 6px; max-height: max(160px, min(64vh, calc(100vh - 150px))); overflow-y: auto; }
 .mrow { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; background: #221d36; border: 1px solid #332c4a; }
 .mrow > i { font-style: normal; font-size: 22px; flex: none; width: 28px; text-align: center; }
 .mrow .mtext { flex: 1; min-width: 0; }
@@ -1351,7 +1369,7 @@ body.lefty #emotePick { left: calc(144px + env(safe-area-inset-left)); }
 .sheet #iconGrid.bgs button.on { border-color: #ffd25a; box-shadow: 0 0 0 2px #ffd25a; background-image: linear-gradient(180deg, #ffd98a, #f0965a); }
 html[lang='en'] #iconGrid button[data-auto]::after { content: 'Auto'; }
 /* 방 화면·초대 알림: 고른 배경이 있으면 아이콘 뒤에 깐다 */
-.slot i[style*='background'], #invite i[style*='background'] {
+#invite i[style*='background'] {
   display: flex; align-items: center; justify-content: center; width: 1.7em; height: 1.7em; border-radius: 9px; overflow: hidden;
 }
 @media (max-height: 360px) {
