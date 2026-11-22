@@ -3,8 +3,8 @@
 //   세션: { id, send(obj), raw(string) } — 나머지 필드(prof, fc, party, game, player...)는 여기서 채운다.
 import { MODE_INFO, RULES, modeFor } from '../shared/config.js';
 import { MAPS } from '../shared/map.js';
-import { CHARACTERS, charOf, cheatOf } from '../shared/progress.js';
-import { FREE_ICONS, SKIN_ICONS, skinFor } from '../shared/shop.js';
+import { CHARACTERS, charOf, cheatOf, clvOf } from '../shared/progress.js';
+import { FREE_ICONS, PROFILE_BGS, SKIN_ICONS, skinFor } from '../shared/shop.js';
 import { Game } from './game.js';
 import { Rooms, roomCode } from './rooms.js';
 
@@ -78,7 +78,7 @@ class Party {
       set: this.set,
       playing: this.game ? this.game.humanCount : 0,
       members: [...this.members.values()].map((s) => ({
-        sid: s.id, name: s.prof.name, char: s.prof.char, skin: s.prof.skin, icon: s.prof.icon, fc: s.fc || '',
+        sid: s.id, name: s.prof.name, char: s.prof.char, skin: s.prof.skin, icon: s.prof.icon, bg: s.prof.bg || '', fc: s.fc || '',
         slot: s.slot, ready: !!s.ready, inGame: !!s.player,
       })),
     };
@@ -169,6 +169,8 @@ export class Hub {
     if (typeof m.s === 'string') s.prof.skin = m.s;
     s.prof.skin = skinFor(s.prof.char, s.prof.skin); // 그 캐릭터의 의상만
     if (typeof m.i === 'string') s.prof.icon = ICONS.has(m.i) ? m.i : '';
+    if (typeof m.b === 'string') s.prof.bg = Object.hasOwn(PROFILE_BGS, m.b) ? m.b : ''; // 아이콘 배경
+    if (m.cl !== undefined) s.prof.clv = clvOf(m.cl); // 지금 캐릭터의 강화 단계
     // 치트: 혼자(AI 상대)일 때만 게임에서 켜진다. 게임 중에 바꾸면 바로 반영한다.
     if (m.ch !== undefined) {
       s.prof.cheat = cheatOf(m.ch);
@@ -226,7 +228,7 @@ export class Hub {
     if (!to || to === s.fc || this.throttle(s, 'inv', 1500)) return;
     const targets = this.byFc.get(to);
     if (targets?.size) {
-      const msg = JSON.stringify({ t: 'inv', from: s.prof.name, icon: s.prof.icon, fc: s.fc, code: s.party.code, set: s.party.set, n: s.party.members.size });
+      const msg = JSON.stringify({ t: 'inv', from: s.prof.name, icon: s.prof.icon, bg: s.prof.bg || '', fc: s.fc, code: s.party.code, set: s.party.set, n: s.party.members.size });
       for (const x of targets) x.raw(msg);
     }
     s.send({ t: 'invr', to, ok: !!targets?.size });
@@ -381,7 +383,7 @@ export class Hub {
   // ── 게임 ──
   addToGame(s, g, team) {
     s.game = g;
-    s.player = g.addPlayer(s.prof.name, (msg) => s.raw(msg), false, s.prof.char, s.prof.skin, { team, fc: s.fc, cheat: s.prof.cheat });
+    s.player = g.addPlayer(s.prof.name, (msg) => s.raw(msg), false, s.prof.char, s.prof.skin, { team, fc: s.fc, cheat: s.prof.cheat, clv: s.prof.clv });
   }
 
   welcome(s) {

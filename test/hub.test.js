@@ -225,3 +225,24 @@ test('친선 방 3 대 3: 세 칸씩 한 팀, 모닥불 점령은 6자리', asyn
   assert.equal(slotsOf({ rule: 'hill', mode: 'ffa' }), 6);
   assert.equal(slotsOf({ rule: 'dm', mode: 'duo' }), 8);
 });
+
+test('프로필: 아이콘 배경은 방 사람들에게 보이고, 강화 단계는 게임 능력치에 들어간다', () => {
+  const hub = new Hub();
+  const a = session(hub, 'A');
+  const b = session(hub, 'B');
+  hub.handle(a, { t: 'hi', b: 'aurora', cl: 3 });
+  hub.handle(b, { t: 'hi', b: '__proto__', cl: 99 });
+  assert.equal(a.prof.bg, 'aurora');
+  assert.equal(b.prof.bg, '', '없는 배경');
+  assert.equal(b.prof.clv, 5, '최대 5단계');
+  hub.handle(a, { t: 'pcreate' });
+  hub.handle(b, { t: 'pjoin', code: a.got('p').code });
+  assert.deepEqual(b.got('p').members.map((m) => m.bg), ['aurora', '']);
+  // 빠른 매칭: 강화 단계만큼 체력이 많다
+  const c = session(hub, 'C');
+  const d = session(hub, 'D');
+  hub.handle(c, { t: 'j', r: 'dm', m: 'ffa', cl: 5 });
+  hub.handle(d, { t: 'j', r: 'dm', m: 'ffa', cl: 0 });
+  assert.ok(c.player && d.player);
+  assert.ok(c.player.stats.maxHp > d.player.stats.maxHp);
+});

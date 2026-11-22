@@ -15,7 +15,7 @@ import {
   ACHIEVEMENTS, DAILY_POOL, RANKS, achState, applyRank, claimAch, claimDaily as claimMission, ensureDaily, hasClaimable, rankDelta, rankOf as tierOf, record,
   seasonDaysLeft, seasonRollover, rankSkinList, ACH_SKIN_COINS,
 } from './shared/missions.js';
-import { CHARACTERS, ORBS, PROGRESS, SKILLS, UPGRADES, charOf, orbTier, statsOf, xpToNext } from './shared/progress.js';
+import { CHARACTERS, CHAR_UP, ORBS, PROGRESS, SKILLS, UPGRADES, charOf, orbTier, statsOf, xpToNext } from './shared/progress.js';
 import { Characters, DeathFx, growOf, merge } from './character.js';
 import { SkillFx } from './skillfx.js';
 import { LAYOUT as TUTOR_LAYOUT, TUTOR_REWARD, Tutorial } from './tutorial.js';
@@ -25,12 +25,17 @@ import { buildCampfire, buildDeco, buildFloorTexture, buildItemGeos, buildWalls,
 import { Showcase, radarOf } from './showcase.js';
 import { Podium } from './podium.js';
 import { LEGEND } from './legend.js';
+import { bgCss } from './backgrounds.js';
+import { PAYMENT_READY, purchase } from './pay.js';
 
 // 언어: 영어면 이 뒤로 화면에 들어가는 한국어를 영어로 바꿔 보여 준다 (client/i18n.js)
 initLang(prefs.lang);
 import { Net } from './net.js';
 import { initParty } from './party.js';
-import { DAILY, GACHA, SKINS, TIERS, claimDaily, claimRankSkin, dayKey, gacha, iconsFor, normalizeProfile, skinFor, skinsOf } from './shared/shop.js';
+import {
+  DAILY, GACHA, GEM_PACKS, LEGEND_PRICE, PROFILE_BGS, SKINS, TIERS, addGems, buyBg, buyLegend, canUseBg, claimDaily, claimRankSkin, dayKey, gacha, iconsFor,
+  normalizeProfile, skinFor, skinsOf, upgradeChar, upgradeCost,
+} from './shared/shop.js';
 
 const DT = 1 / CFG.TICK_RATE;
 const INTERP_MS = 110; // 원격 플레이어 보간 지연
@@ -637,13 +642,15 @@ async function connect(name, gameMode, gameRule) {
   }
   if (!(await net.open())) return;
   sendHello();
-  net.send({ t: 'j', n: name, m: gameMode, r: gameRule, c: profile.char, s: profile.skin, map: lobby.map, ch: cheatPayload() });
+  net.send({ t: 'j', n: name, m: gameMode, r: gameRule, c: profile.char, s: profile.skin, cl: charLv(), map: lobby.map, ch: cheatPayload() });
 }
 
 // 내 프로필을 서버에 알린다 (친구 접속 상태, 방 화면에 쓰인다)
 function sendHello() {
-  net.send({ t: 'hi', n: $('name').value.trim() || 'Player', c: profile.char, s: profile.skin, i: profile.icon, fc: profile.fc, ch: cheatPayload() });
+  net.send({ t: 'hi', n: $('name').value.trim() || 'Player', c: profile.char, s: profile.skin, cl: charLv(), i: profile.icon, b: profile.bg, fc: profile.fc, ch: cheatPayload() });
 }
+// 지금 캐릭터의 강화 단계 (상점 → 캐릭터 강화)
+const charLv = () => profile.clv[profile.char] || 0;
 
 // 치트 모드 (설정) → 서버/오프라인 게임에 보내는 값
 function cheatPayload() {
@@ -658,7 +665,7 @@ async function startOffline(name, gameMode, gameRule) {
   // HOLD_END: 결과 화면에서 다시하기를 누를 때까지 다음 판을 기다린다
   const game = new Game({ mode: gameMode, rule: gameRule, HOLD_END: true, ...(lobby.map ? { map: lobby.map, FIXED_MAP: true } : {}) });
   game.balanceBots();
-  const player = game.addPlayer(name, (msg) => onMessage(JSON.parse(msg)), false, profile.char, profile.skin, { cheat: cheatPayload() }); // 봇 한 자리를 이어받는다
+  const player = game.addPlayer(name, (msg) => onMessage(JSON.parse(msg)), false, profile.char, profile.skin, { cheat: cheatPayload(), clv: charLv() }); // 봇 한 자리를 이어받는다
   offline = { game, player };
   onMessage({ t: 'w', id: player.id, team: player.team, ...game.info() });
 }
@@ -1858,6 +1865,7 @@ function drawProfile() {
   $('rankFill').style.transform = `scaleX(${(r.xp / r.need).toFixed(3)})`;
   $('rankText').textContent = `${r.xp} / ${r.need}`;
   $('coins').textContent = `🪙 ${coinText()}`;
+  $('gems').textContent = `💎 ${profile.gems}`;
 }
 
 // 캐릭터 선택 화면: 3D 캐릭터를 넘겨 보며 능력을 확인하고, 코인으로 사거나 고른다
@@ -1926,6 +1934,7 @@ function skinHow(id) {
   const out = [];
   for (const a of Object.values(ACHIEVEMENTS)) for (const [t, sid] of Object.entries(a.skins || {})) if (sid === id) out.push(`업적 「${a.name}」 ${t}단계`);
   out.push(`시즌 ${RANK_FOR_TIER[SKINS[id].tier]}`, '뽑기');
+  if (SKINS[id].tier === 'legend') out.push(`상점 💎 ${LEGEND_PRICE}`);
   return out.join(' · ');
 }
 // 스킨 탭: 가운데 캐릭터의 의상들 (기본 + 그 캐릭터만의 의상 3벌)
@@ -2129,14 +2138,18 @@ function openShop(tab) {
   $('menu').style.display = 'none';
 }
 $('openChars').addEventListener('click', () => openShop('chars'));
-$('openShop').addEventListener('click', () => openShop('gacha'));
+$('openShop').addEventListener('click', () => openStore('gems'));
+$('gems').addEventListener('click', () => openStore('gems'));
 $('closeShop').addEventListener('click', () => {
   $('gachaResult').hidden = true;
   $('shop').hidden = true;
+  const back = storeBack; // 상점(💎)에서 미리보기·뽑기로 왔으면 상점으로 돌아간다
+  storeBack = null;
   if (party?.active) {
     if (net.ready) sendHello(); // 바꾼 캐릭터·의상을 방 사람들에게 알린다
     party.showRoom();
   } else enterLobby();
+  if (back) openStore(back);
 });
 
 // ── 로비 ──
@@ -2159,6 +2172,7 @@ function drawLobby() {
   const c = CHARACTERS[profile.char];
   const sk = SKILLS[c.skill];
   setIcon($('avatar'), profile.icon || c.icon);
+  $('avatar').style.background = bgCss(profile.bg); // 고른 배경 (없으면 기본 주황)
   $('lobbyCharName').textContent = profile.skin === 'default' ? c.name : `${c.name} · ${SKINS[profile.skin].name}`;
   srcText($('lobbySkill'), skillImg(c.skill), `${sk.name} · ${c.desc}`);
   $('modeText').textContent = `${RULE_NAMES[menuRule]} · ${MODE_NAMES[modeFor(menuRule, menuMode)]}`;
@@ -2169,9 +2183,16 @@ function drawLobby() {
   for (const [m, id] of Object.entries(MAP_BTNS)) $(id).classList.toggle('on', lobby.map === m);
   drawOnline();
 }
-// 프로필 아이콘 고르기
+// 프로필 아이콘 고르기: 아이콘 탭과 배경 탭. 위의 큰 칸에 둘을 합친 모습이 보인다.
+let iconTab = 'icon';
 function drawIcons() {
+  const face = profile.icon || CHARACTERS[profile.char].icon;
+  setIcon($('iconPreview'), face);
+  $('iconPreview').style.background = bgCss(profile.bg);
+  for (const b of $('iconTabs').children) b.classList.toggle('on', b.dataset.tab === iconTab);
   $('iconHint').textContent = '';
+  $('iconGrid').classList.toggle('bgs', iconTab === 'bg');
+  if (iconTab === 'bg') return drawBgs(face);
   $('iconGrid').replaceChildren(
     ...[{ icon: '', locked: false, how: '' }, ...iconsFor(profile)].map((x) => {
       const b = document.createElement('button');
@@ -2185,16 +2206,312 @@ function drawIcons() {
         sfx.choose();
         drawIcons();
         drawLobby();
+        if (net.ready) sendHello();
       });
       return b;
     }),
   );
 }
+// 배경: 기본 + 무료(밤하늘, 노을, 맵 6개) + 크리스탈 배경. 없는 크리스탈 배경을 누르면 상점의 배경 칸으로 간다.
+function drawBgs(face) {
+  $('iconGrid').replaceChildren(
+    ...['', ...Object.keys(PROFILE_BGS)].map((id) => {
+      const b = document.createElement('button');
+      const has = canUseBg(profile, id);
+      setIcon(b, face);
+      b.style.background = bgCss(id);
+      b.className = (profile.bg === id ? 'on' : '') + (has ? '' : ' locked');
+      const name = document.createElement('small');
+      name.textContent = id ? PROFILE_BGS[id].name : '기본';
+      b.append(name);
+      if (!has) {
+        const price = document.createElement('em');
+        price.textContent = `💎 ${PROFILE_BGS[id].gems}`;
+        b.append(price);
+      }
+      b.addEventListener('click', () => {
+        if (!has) {
+          $('iconPanel').hidden = true;
+          openStore('bg');
+          return;
+        }
+        profile.bg = id;
+        saveProfile();
+        sfx.choose();
+        drawIcons();
+        drawLobby();
+        if (net.ready) sendHello();
+      });
+      return b;
+    }),
+  );
+  $('iconHint').textContent = '💎 표시는 상점에서 크리스탈로 사는 배경이에요';
+}
+for (const b of $('iconTabs').children)
+  b.addEventListener('click', () => {
+    iconTab = b.dataset.tab;
+    sfx.firefly();
+    drawIcons();
+  });
 $('avatar').addEventListener('click', () => {
+  iconTab = 'icon';
   drawIcons();
   $('iconPanel').hidden = false;
 });
 $('closeIcons').addEventListener('click', () => ($('iconPanel').hidden = true));
+
+// ───────────────────────── 상점 (💎 크리스탈) ─────────────────────────
+// 💎 충전: 크리스탈은 진짜 돈으로 사는 재화 (client/pay.js — 아직 결제가 연결되지 않아 "결제 준비 중")
+// 👑 전설 의상 · 🖼️ 프로필 배경: 크리스탈로 산다. 잘못 눌러 쓰지 않게 한 번 더 눌러야 산다.
+// ⚡ 캐릭터 강화: 게임으로 버는 코인으로 한다 (돈을 내야만 세지는 게임이 되지 않게)
+// ✨ 뽑기: 코인 뽑기 화면(3D)으로 간다
+let storeTab = 'gems';
+let storeArm = null; // 한 번 눌러 둔 크리스탈 상품 (한 번 더 누르면 산다)
+let storeBack = null; // 상점에서 3D 화면(미리보기·뽑기)으로 갔으면 닫을 때 돌아올 탭
+const mk = (tag, cls = '', text = '') => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text) e.textContent = text;
+  return e;
+};
+const LEGEND_IDS = Object.keys(SKINS).filter((id) => SKINS[id].tier === 'legend');
+const PAID_BGS = Object.keys(PROFILE_BGS).filter((id) => PROFILE_BGS[id].gems);
+const upText = (lv) => `체력 +${Math.round(lv * CHAR_UP.HP * 100)}% · 피해 +${Math.round(lv * CHAR_UP.DMG * 100)}%`;
+function openStore(tab = 'gems') {
+  storeTab = tab;
+  storeArm = null;
+  $('storePanel').hidden = false;
+  drawStore();
+}
+function drawStore() {
+  $('storeGems').textContent = `💎 ${profile.gems}`;
+  $('storeCoins').textContent = `🪙 ${coinText()}`;
+  for (const b of $('storeTabs').children) b.classList.toggle('on', b.dataset.tab === storeTab);
+  $('storeBody').className = storeTab;
+  $('storeBody').replaceChildren(...STORE[storeTab]());
+  $('storeNote').textContent = STORE_NOTE[storeTab]();
+}
+const STORE = {
+  gems: () =>
+    GEM_PACKS.map((pk, i) => {
+      const b = mk('button', 'pack');
+      if (pk.tag) b.append(mk('em', '', pk.tag));
+      const gem = mk('i', '', '💎');
+      gem.style.fontSize = `${24 + i * 7}px`;
+      b.append(gem, mk('b', '', `💎 ${pk.gems}`), mk('small', '', pk.bonus ? `+${pk.bonus} 보너스` : '기본'), mk('span', '', `₩${pk.krw.toLocaleString('ko-KR')}`));
+      b.addEventListener('click', () => buyPack(pk));
+      return b;
+    }),
+  legend: () =>
+    LEGEND_IDS.map((id) => {
+      const s = SKINS[id];
+      const ch = s.char;
+      const has = profile.skins.includes(id);
+      const card = mk('div', 'lcard' + (has ? ' own' : ''));
+      const pic = mk('button', 'pic');
+      pic.append(imgEl(skinImg(id), 'portrait'), mk('em', '', '👁'));
+      pic.style.background = `radial-gradient(circle at 50% 35%, #fff6, ${hexCss(s.color)})`;
+      pic.setAttribute('aria-label', '3D로 미리 보기');
+      pic.addEventListener('click', () => previewSkin(id));
+      const hasChar = profile.owned.includes(ch);
+      const sub = hasChar ? CHARACTERS[ch].name : `${CHARACTERS[ch].name} · 🔒 캐릭터 필요`;
+      const act = mk('button');
+      if (!has) {
+        act.textContent = storeArm === id ? '한 번 더 누르면 구매' : `💎 ${LEGEND_PRICE}`;
+        act.className = storeArm === id ? 'arm' : profile.gems >= LEGEND_PRICE ? 'can' : '';
+        act.addEventListener('click', () => buyGemItem(id, LEGEND_PRICE, () => buyLegend(profile, id), () => gotLegend(id)));
+      } else if (profile.skinBy[ch] === id) {
+        act.textContent = '입는 중 ✓';
+        act.className = 'ok';
+      } else {
+        act.textContent = hasChar ? '입기' : '보유 ✓';
+        act.className = hasChar ? 'use' : 'ok';
+        if (hasChar) act.addEventListener('click', () => wearSkin(id));
+      }
+      card.append(pic, mk('b', '', s.name), mk('small', '', sub), mk('span', 'fx', `✨ ${s.fx}`), act);
+      return card;
+    }),
+  up: () =>
+    Object.keys(CHARACTERS).map((id) => {
+      const c = CHARACTERS[id];
+      const lv = profile.clv[id] || 0;
+      const own = profile.owned.includes(id);
+      const cost = upgradeCost(profile, id);
+      const row = mk('div', 'mrow urow' + (own ? '' : ' locked'));
+      const face = mk('i', 'face');
+      face.append(imgEl(charImg(id), 'portrait'));
+      const text = mk('div', 'mtext');
+      const title = mk('b', '', c.name);
+      title.append(mk('em', 'stars', '★'.repeat(lv) + '☆'.repeat(CHAR_UP.MAX - lv)));
+      const sub = lv ? `지금 ${upText(lv)}` : '강화 전';
+      text.append(title, mk('small', '', lv < CHAR_UP.MAX ? `${sub} → 다음 ${upText(lv + 1)}` : `${sub} (최대)`));
+      const b = mk('button');
+      if (!own) {
+        b.textContent = '🔒 미보유';
+        b.addEventListener('click', () => {
+          $('storePanel').hidden = true;
+          storeBack = 'up';
+          openShop('chars');
+          showcase.open(id);
+          drawShop();
+        });
+      } else if (cost === null) {
+        b.textContent = '최대 ★';
+        b.className = 'ok';
+        b.disabled = true;
+      } else {
+        b.textContent = `🪙 ${cost}`;
+        b.className = profile.coins >= cost ? 'can' : '';
+        b.addEventListener('click', () => doUpgrade(id));
+      }
+      row.append(face, text, b);
+      return row;
+    }),
+  bg: () =>
+    PAID_BGS.map((id) => {
+      const bg = PROFILE_BGS[id];
+      const has = profile.bgs.includes(id);
+      const card = mk('div', 'bgcard' + (has ? ' own' : ''));
+      const face = mk('i', 'face');
+      setIcon(face, profile.icon || CHARACTERS[profile.char].icon);
+      face.style.background = bgCss(id);
+      const act = mk('button');
+      if (!has) {
+        act.textContent = storeArm === id ? '한 번 더 누르면 구매' : `💎 ${bg.gems}`;
+        act.className = storeArm === id ? 'arm' : profile.gems >= bg.gems ? 'can' : '';
+        act.addEventListener('click', () => buyGemItem(id, bg.gems, () => buyBg(profile, id), () => useBg(id, true)));
+      } else if (profile.bg === id) {
+        act.textContent = '사용 중 ✓';
+        act.className = 'ok';
+      } else {
+        act.textContent = '사용하기';
+        act.className = 'use';
+        act.addEventListener('click', () => useBg(id));
+      }
+      card.append(face, mk('b', '', bg.name), act);
+      return card;
+    }),
+  gacha: () => [],
+};
+const STORE_NOTE = {
+  gems: () =>
+    [
+      PAYMENT_READY ? '' : '💳 결제 준비 중이에요. 실제 결제(카드·간편결제)는 아직 연결되지 않았어요.',
+      prefs.cheat ? '🧪 치트 모드: 누르면 시험용 크리스탈을 결제 없이 받아요.' : '설정에서 치트 모드를 켜면 시험용 크리스탈로 둘러볼 수 있어요.',
+    ]
+      .filter(Boolean)
+      .map(tr)
+      .join(' '),
+  legend: () => `전설 의상 한 벌 💎 ${LEGEND_PRICE} · 손전등 빛 색과 처치 효과가 바뀌어요 · 그림을 누르면 3D로 미리 봐요`,
+  up: () => `강화는 게임으로 버는 🪙 코인으로 해요 · 한 단계마다 ${upText(1)} · 최대 ${CHAR_UP.MAX}단계`,
+  bg: () => '프로필 아이콘 뒤에 깔리는 배경이에요 · 밤하늘, 노을, 맵 배경은 무료 · 아이콘을 눌러서 바꿔요',
+  gacha: () => '',
+};
+for (const b of $('storeTabs').children)
+  b.addEventListener('click', () => {
+    if (b.dataset.tab === 'gacha') {
+      // 코인 뽑기는 3D 화면에서 (닫으면 상점으로 돌아온다)
+      $('storePanel').hidden = true;
+      storeBack = storeTab;
+      openShop('gacha');
+      return;
+    }
+    storeTab = b.dataset.tab;
+    storeArm = null;
+    sfx.firefly();
+    drawStore();
+  });
+$('closeStore').addEventListener('click', () => ($('storePanel').hidden = true));
+function storeChanged() {
+  saveProfile();
+  drawProfile();
+  drawStore();
+  if (!$('menu').style.display) drawLobby();
+}
+// 💎 묶음: 결제 (치트 모드면 결제 없이 시험 지급)
+async function buyPack(pk) {
+  if (prefs.cheat) {
+    const n = addGems(profile, pk.id);
+    storeChanged();
+    sfx.pickup();
+    toast(`💎 +${n}`, '🧪 시험용 지급 (치트 모드 · 결제 없음)', 'buff');
+    return;
+  }
+  sfx.choose();
+  const r = await purchase(pk);
+  if (r.ok) {
+    const n = addGems(profile, pk.id);
+    storeChanged();
+    sfx.win();
+    toast(`💎 +${n}`, '결제가 끝났어요. 고마워요!', 'buff', '', 2400);
+  } else toast('결제 준비 중이에요', '실제 결제는 아직 연결되지 않았어요', '', '', 2200);
+}
+// 크리스탈 상품: 모자라면 충전 칸으로, 처음 누르면 확인, 한 번 더 누르면 산다
+function buyGemItem(id, price, buy, done) {
+  if (profile.gems < price) {
+    toast('크리스탈이 부족해요', `💎 ${price - profile.gems} 더 필요해요`, '', '', 1800);
+    storeTab = 'gems';
+    storeArm = null;
+    sfx.firefly();
+    drawStore();
+    return;
+  }
+  if (storeArm !== id) {
+    storeArm = id;
+    sfx.firefly();
+    drawStore();
+    return;
+  }
+  storeArm = null;
+  if (!buy()) return drawStore();
+  done();
+  storeChanged();
+  sfx.win();
+  buzz(80);
+}
+// 전설 의상을 샀다: 그 캐릭터가 있으면 바로 입힌다
+function gotLegend(id) {
+  if (profile.owned.includes(SKINS[id].char)) wearSkin(id, false);
+  toast('새 의상! 👘', skinLabel(id), 'buff', skinImg(id), 2600);
+}
+function wearSkin(id, sound = true) {
+  const ch = SKINS[id].char;
+  profile.skinBy[ch] = id;
+  if (profile.char === ch) profile.skin = id;
+  dressShowcase();
+  if (net.ready) sendHello();
+  if (!sound) return;
+  sfx.choose();
+  storeChanged();
+}
+function useBg(id, bought = false) {
+  profile.bg = id;
+  if (net.ready) sendHello();
+  if (bought) return toast('새 배경! 🖼️', PROFILE_BGS[id].name, 'buff', '', 2000);
+  sfx.choose();
+  storeChanged();
+}
+function doUpgrade(id) {
+  const lv = upgradeChar(profile, id);
+  if (!lv) return toast('코인이 부족해요', '게임을 하면 코인이 모여요', '', '', 1800);
+  storeChanged();
+  sfx.levelUp();
+  buzz(40);
+  toast(`⚡ ${CHARACTERS[id].name} ★${lv}`, upText(lv), 'buff', charImg(id), 2000);
+  if (net.ready && id === profile.char) sendHello();
+}
+// 전설 의상 그림 → 3D 의상 화면에서 미리 보기 (닫으면 상점으로)
+function previewSkin(id) {
+  const ch = SKINS[id].char;
+  $('storePanel').hidden = true;
+  storeBack = 'legend';
+  openShop('skins');
+  showcase.open(ch);
+  skinPeek = { char: ch, skin: id };
+  dressShowcase();
+  drawShop();
+  sfx.firefly();
+}
 
 // 온라인 서버 주소: 설정에서 붙여 넣고 연결을 확인한다
 function drawServer(msg = '') {
@@ -2230,10 +2547,28 @@ for (const [m, id] of Object.entries({ '': 'mapAuto', camp: 'mapCamp', forest: '
   document.getElementById(id).style.setProperty('--map', `url(${mapImg(m)})`);
 }
 const MAP_BTNS = { '': 'mapAuto', camp: 'mapCamp', forest: 'mapForest', lake: 'mapLake', winter: 'mapWinter', beach: 'mapBeach', factory: 'mapFactory' };
+// 맵 고르기: 한 번 누르면 미리보기(강조 + "한 번 더 누르면 선택"), 같은 맵을 한 번 더 누르면 선택
+let mapPeek = null;
+function drawMapPeek() {
+  for (const [m, id] of Object.entries(MAP_BTNS)) {
+    const b = $(id);
+    b.classList.toggle('peek', mapPeek === m && lobby.map !== m);
+    b.dataset.hint = tr('한 번 더 누르면 선택');
+  }
+}
 for (const [m, id] of Object.entries(MAP_BTNS)) {
   $(id).addEventListener('click', () => {
-    lobby.map = m;
-    drawLobby();
+    if (lobby.map === m) return; // 이미 고른 맵
+    if (mapPeek !== m) {
+      mapPeek = m;
+      sfx.firefly();
+    } else {
+      lobby.map = m;
+      mapPeek = null;
+      sfx.choose();
+      drawLobby();
+    }
+    drawMapPeek();
   });
 }
 // 온라인 방 현황: 규칙·인원 조합마다 접속 중인 사람 수. 사람이 모자란 자리는 AI 가 채운다.
@@ -2279,6 +2614,8 @@ $('busiest').addEventListener('click', () => {
   drawOnline();
 });
 $('modeCard').addEventListener('click', () => {
+  mapPeek = null;
+  drawMapPeek();
   $('modePanel').hidden = false;
   loadRooms();
 });

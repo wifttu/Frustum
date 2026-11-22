@@ -1,6 +1,6 @@
 // 상점 규칙: 스킨, 뽑기(등급·확률·천장), 출석 보상.
-// 화면과 분리된 순수 로직이라 테스트할 수 있다. 재화는 게임으로 버는 코인뿐이고 실제 결제는 없다.
-import { CHARACTERS } from './progress.js';
+// 화면과 분리된 순수 로직이라 테스트할 수 있다. 재화: 게임으로 버는 코인(🪙), 진짜 돈으로 사는 크리스탈(💎, client/pay.js — 아직 결제 연결 전).
+import { CHARACTERS, CHAR_UP, clvOf } from './progress.js';
 import { RANK_SKINS, normalizeProgress, rankSkinList } from './missions.js';
 import { normalizeHistory } from './history.js';
 
@@ -82,7 +82,7 @@ export const DAILY = Object.freeze({ BASE: 60, PER_STREAK: 15, MAX_STREAK: 7 });
 export const charTier = (id) => (CHARACTERS[id].price > 450 ? 'legend' : 'epic');
 
 export function newProfile() {
-  return normalizeProgress({ xp: 0, coins: 0, owned: ['explorer'], char: 'explorer', skins: ['default'], skin: 'default', pity: 0, daily: '', streak: 0, friends: [], recent: [], icon: '', fc: '', tutorial: 0, skinBy: {}, history: [] });
+  return normalizeProgress({ xp: 0, coins: 0, owned: ['explorer'], char: 'explorer', skins: ['default'], skin: 'default', pity: 0, daily: '', streak: 0, friends: [], recent: [], icon: '', fc: '', tutorial: 0, skinBy: {}, history: [], gems: 0, bg: '', bgs: [], clv: {} });
 }
 
 // 저장된 값을 안전하게 정리한다 (오래된 저장 데이터, 손상된 값 대비)
@@ -119,6 +119,13 @@ export function normalizeProfile(raw) {
   p.streak = Number.isInteger(p.streak) ? p.streak : 0;
   p.tutorial = p.tutorial ? 1 : 0; // 연습을 끝냈나 (보상은 한 번만)
   p.history = normalizeHistory(p.history); // 최근 전적 10판
+  // 상점: 크리스탈, 프로필 배경, 캐릭터 강화 단계
+  p.gems = Number.isFinite(p.gems) ? Math.max(0, Math.floor(p.gems)) : 0;
+  p.bgs = [...new Set(Array.isArray(p.bgs) ? p.bgs : [])].filter((id) => PROFILE_BGS[id]?.gems > 0);
+  if (!canUseBg(p, p.bg)) p.bg = '';
+  const cl = p.clv && typeof p.clv === 'object' ? p.clv : {};
+  p.clv = {};
+  for (const id of p.owned) if (clvOf(cl[id]) > 0) p.clv[id] = clvOf(cl[id]);
   // 친구/최근 함께한 플레이어: 이름 목록 (계정이 없어 기기에만 저장)
   // { name, fc } 목록. 예전 저장 형식(이름 문자열)도 받는다. 친구 코드가 같으면 하나로 합친다.
   const people = (v, max) => {
@@ -214,6 +221,63 @@ export function claimRankSkin(p, i) {
   }
   p.coins += GACHA.DUP[RANK_SKINS[i]];
   return { coins: GACHA.DUP[RANK_SKINS[i]] };
+}
+
+// ── 상점: 크리스탈(💎, 유료 재화) ──
+// 크리스탈은 결제로만 생긴다(결제 연결은 client/pay.js). 크리스탈로는 전설 의상과 고급 프로필 배경을 산다.
+// 캐릭터 강화는 코인(플레이로 얻는 재화)으로만 → 돈으로 강해지지 않는다.
+export const GEM_PACKS = Object.freeze([
+  { id: 'g60', gems: 60, bonus: 0, krw: 1200 },
+  { id: 'g300', gems: 300, bonus: 30, krw: 5900, tag: '인기' },
+  { id: 'g650', gems: 650, bonus: 100, krw: 11900 },
+  { id: 'g1400', gems: 1400, bonus: 300, krw: 24900, tag: '최고 혜택' },
+]);
+export const LEGEND_PRICE = 480; // 전설 의상 한 벌 (💎)
+// 프로필 아이콘 배경: gems 0 이면 누구나, 아니면 크리스탈로 산다. map: 그 맵의 미리보기 그림
+export const PROFILE_BGS = Object.freeze({
+  night: { name: '밤하늘', gems: 0 },
+  sunset: { name: '노을', gems: 0 },
+  camp: { name: '캠핑장', gems: 0, map: 'camp' },
+  forest: { name: '소나무 숲', gems: 0, map: 'forest' },
+  lake: { name: '호숫가', gems: 0, map: 'lake' },
+  winter: { name: '눈 덮인 마을', gems: 0, map: 'winter' },
+  beach: { name: '달빛 해변', gems: 0, map: 'beach' },
+  factory: { name: '버려진 공장', gems: 0, map: 'factory' },
+  aurora: { name: '오로라', gems: 120 },
+  galaxy: { name: '은하수', gems: 120 },
+  royal: { name: '황금빛', gems: 120 },
+  sakura: { name: '벚꽃 밤', gems: 120 },
+});
+export const canUseBg = (p, id) => id === '' || (Object.hasOwn(PROFILE_BGS, id) && (!PROFILE_BGS[id].gems || p.bgs.includes(id)));
+// 결제가 끝난 크리스탈 묶음을 넣는다 (보너스 포함)
+export function addGems(p, packId) {
+  const pack = GEM_PACKS.find((x) => x.id === packId);
+  if (!pack) return 0;
+  p.gems += pack.gems + pack.bonus;
+  return pack.gems + pack.bonus;
+}
+export function buyLegend(p, id) {
+  if (SKINS[id]?.tier !== 'legend' || p.skins.includes(id) || p.gems < LEGEND_PRICE) return false;
+  p.gems -= LEGEND_PRICE;
+  p.skins.push(id);
+  return true;
+}
+export function buyBg(p, id) {
+  const b = PROFILE_BGS[id];
+  if (!b?.gems || p.bgs.includes(id) || p.gems < b.gems) return false;
+  p.gems -= b.gems;
+  p.bgs.push(id);
+  return true;
+}
+// 캐릭터 강화 한 단계 (코인). 성공하면 새 단계, 아니면 0
+export const upgradeCost = (p, id) => CHAR_UP.COST[p.clv[id] || 0] ?? null;
+export function upgradeChar(p, id) {
+  if (!p.owned.includes(id)) return 0;
+  const lv = p.clv[id] || 0;
+  if (lv >= CHAR_UP.MAX || p.coins < CHAR_UP.COST[lv]) return 0;
+  p.coins -= CHAR_UP.COST[lv];
+  p.clv[id] = lv + 1;
+  return lv + 1;
 }
 
 export const dayKey = (d = new Date()) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
