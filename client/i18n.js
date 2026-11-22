@@ -79,8 +79,14 @@ function bySplit(s, depth) {
   for (let i = 0; i < parts.length; ) {
     let j = parts.length;
     for (; j > i + 1; j--) {
-      // 앞뒤 이모지·기호("✨ ")는 떼고 찾는다
-      const m = /^([^가-힣]*)([\s\S]*?)([^가-힣]*)$/.exec(parts.slice(i, j).join(' · '));
+      // 그대로 찾고, 없으면 앞뒤 이모지·기호("✨ ")를 떼고 찾는다 (끝이 숫자인 글 "… · 체력 115" 도 그대로 찾아야 한다)
+      const joined = parts.slice(i, j).join(' · ');
+      const whole = dict.get(joined);
+      if (whole !== undefined) {
+        out.push(whole);
+        break;
+      }
+      const m = /^([^가-힣]*)([\s\S]*?)([^가-힣]*)$/.exec(joined);
       const hit = dict.get(m[2]);
       if (hit !== undefined) {
         out.push(m[1] + hit + m[3]);

@@ -33,8 +33,8 @@ initLang(prefs.lang);
 import { Net } from './net.js';
 import { initParty } from './party.js';
 import {
-  DAILY, GACHA, GEM_PACKS, GEM_TRADES, LEGEND_PRICE, PROFILE_BGS, SKINS, TIERS, addGems, buyBg, buyLegend, canUseBg, charTier, claimDaily, claimRankSkin, dayKey,
-  gacha, iconsFor, normalizeProfile, skinFor, skinsOf, tradeGems, upgradeChar, upgradeCost,
+  COIN_PACKS, DAILY, GACHA, GEM_PACKS, LEGEND_PRICE, PROFILE_BGS, SKINS, TIERS, addGems, buyBg, buyLegend, canUseBg, claimDaily, claimRankSkin, dayKey,
+  buyCoins, gacha, iconsFor, normalizeProfile, skinFor, skinsOf, upgradeChar, upgradeCost,
 } from './shared/shop.js';
 
 const DT = 1 / CFG.TICK_RATE;
@@ -1920,21 +1920,18 @@ function drawShop() {
     ub.disabled = cost === null;
     ub.className = cost !== null && profile.coins >= cost ? 'can' : '';
   }
-  // 뽑기 탭: 좌우로 넘겨 보며 가졌는지, 어디서 얻는지
-  if (shopTab === 'gacha')
-    $('shopAbility').textContent = owned
-      ? '✓ 가진 캐릭터 · 의상이 3배 잘 나와요'
-      : `🔒 뽑기(${TIERS[charTier(id)].name}) 또는 🪙 ${c.price} 구매`;
   if (shopTab === 'skins') drawSkins(); // 스킨 탭: 위 정보 대신 그 캐릭터의 의상
 }
 // ── 상점 탭: 캐릭터 / 스킨 / 뽑기 ──
 let shopTab = 'chars';
+let gachaBusy = false; // 뽑기 병이 흔들리는 중 (결과를 보여 주기 전)
 function setShopTab(tab) {
   shopTab = tab;
   $('shop').dataset.tab = tab;
   for (const b of $('shopTabs').children) b.classList.toggle('on', b.dataset.tab === tab);
   // 스킨/뽑기 탭에서는 지금 쓰는 캐릭터를 가운데에 세운다 (스킨 탭에서도 좌우로 넘겨 다른 캐릭터의 의상을 본다)
   if (tab !== 'chars') showcase.open(profile.char);
+  showcase.gacha = tab === 'gacha'; // 뽑기 탭: 캐릭터 대신 반딧불 병
   skinPeek = null;
   skinArm = null;
   drawShop();
@@ -2040,16 +2037,29 @@ function drawGacha() {
   $('gachaPity').textContent = `영웅 이상 확정까지 ${GACHA.PITY - profile.pity}회 · 일반: 코인 / 희귀: 스킨 / 영웅·전설: 캐릭터, 스킨`;
   $('gacha1').textContent = `1회 🪙 ${GACHA.COST}`;
   $('gacha10').textContent = `10회 🪙 ${GACHA.COST10}`;
-  $('gacha1').disabled = profile.coins < GACHA.COST;
-  $('gacha10').disabled = profile.coins < GACHA.COST10;
+  $('gacha1').disabled = gachaBusy || profile.coins < GACHA.COST;
+  $('gacha10').disabled = gachaBusy || profile.coins < GACHA.COST10;
 }
+// 뽑기: 결과는 바로 저장하고, 병이 흔들리다 빛이 터진 뒤에 카드로 보여 준다
 function doGacha(n) {
+  if (gachaBusy) return;
   const results = gacha(profile, n);
   if (!results) return;
   saveProfile();
-  drawGacha();
   drawProfile();
   drawShop(); // 새로 얻은 캐릭터·의상
+  gachaBusy = true;
+  $('gacha1').disabled = $('gacha10').disabled = true;
+  showcase.burst();
+  sfx.firefly();
+  buzz(20);
+  setTimeout(() => {
+    gachaBusy = false;
+    drawGacha();
+    showGacha(results);
+  }, 950);
+}
+function showGacha(results) {
   // 결과 카드를 하나씩 뒤집어 보여준다
   $('gachaCards').replaceChildren(
     ...results.map((r, i) => {
@@ -2096,6 +2106,7 @@ $('daily').addEventListener('click', () => {
 });
 
 function shopMove(d) {
+  if (shopTab === 'gacha') return;
   const before = showcase.index;
   showcase.move(d);
   if (showcase.index !== before) {
@@ -2135,7 +2146,7 @@ addEventListener('keydown', (e) => {
   let drag = null; // { x0, pos0, lastX, lastT, v, moved, idx }
   const shopTarget = (e) => e.target === $('shop') || e.target.closest('#shopLocks');
   $('shop').addEventListener('pointerdown', (e) => {
-    if (!shopTarget(e)) return;
+    if (!shopTarget(e) || shopTab === 'gacha') return;
     drag = { x0: e.clientX, pos0: showcase.pos, lastX: e.clientX, lastT: performance.now(), v: 0, moved: false, idx: showcase.index };
     showcase.dragging = true;
     $('shop').setPointerCapture?.(e.pointerId);
@@ -2195,9 +2206,11 @@ function openShop(tab) {
 $('openChars').addEventListener('click', () => openShop('chars'));
 $('openShop').addEventListener('click', () => openStore('gems'));
 $('gems').addEventListener('click', () => openStore('gems'));
+$('coins').addEventListener('click', () => openStore('gems')); // 코인도 상점 충전 칸에서 크리스탈로 산다
 $('closeShop').addEventListener('click', () => {
   $('gachaResult').hidden = true;
   $('shop').hidden = true;
+  showcase.gacha = false;
   const back = storeBack; // 상점(💎)에서 미리보기·뽑기로 왔으면 상점으로 돌아간다
   storeBack = null;
   if (party?.active) {
@@ -2358,15 +2371,18 @@ const STORE = {
         return b;
       }),
     );
-    // 코인으로 바꾸기 (한 번 더 눌러야 바꾼다)
+    // 크리스탈로 코인 사기 (한 번 더 눌러야 산다)
     const trades = mk('div', 'trades');
     trades.append(
-      mk('h4', '', '🪙 코인으로 바꾸기'),
-      ...GEM_TRADES.map((t) => {
-        const b = mk('button', 'trade' + (storeArm === t.id ? ' arm' : profile.coins >= t.coins ? ' can' : ''));
-        if (storeArm === t.id) b.append(mk('b', '', '한 번 더 누르면 교환'));
-        else b.append(mk('b', '', `💎 ${t.gems}`), mk('span', '', `🪙 ${t.coins}`));
-        b.addEventListener('click', () => doTrade(t));
+      mk('h4', '', '🪙 크리스탈로 코인 사기'),
+      ...COIN_PACKS.map((k) => {
+        const b = mk('button', 'trade' + (storeArm === k.id ? ' arm' : profile.gems >= k.gems ? ' can' : ''));
+        if (storeArm === k.id) b.append(mk('b', '', '한 번 더 누르면 구매'));
+        else {
+          b.append(mk('b', '', `🪙 ${k.coins}`), mk('span', '', `💎 ${k.gems}`));
+          if (k.bonus) b.append(mk('em', '', `+${k.bonus}`));
+        }
+        b.addEventListener('click', () => doBuyCoins(k));
         return b;
       }),
     );
@@ -2516,24 +2532,29 @@ async function buyPack(pk) {
     toast(`💎 +${n}`, '결제가 끝났어요. 고마워요!', 'buff', '', 2400);
   } else toast('결제 준비 중이에요', '실제 결제는 아직 연결되지 않았어요', '', '', 2200);
 }
-// 코인 → 크리스탈: 처음 누르면 확인, 한 번 더 누르면 바꾼다
-function doTrade(t) {
-  if (profile.coins < t.coins) {
+// 크리스탈 → 코인: 처음 누르면 확인, 한 번 더 누르면 산다
+function doBuyCoins(k) {
+  if (profile.gems < k.gems) {
     storeArm = null;
     drawStore();
-    return toast('코인이 부족해요', '게임을 하면 코인이 모여요', '', '', 1800);
+    return toast('크리스탈이 부족해요', `💎 ${k.gems - profile.gems} 더 필요해요`, '', '', 1800);
   }
-  if (storeArm !== t.id) {
-    storeArm = t.id;
+  if (storeArm !== k.id) {
+    storeArm = k.id;
     sfx.firefly();
     return drawStore();
   }
   storeArm = null;
-  const n = tradeGems(profile, t.id);
+  const n = buyCoins(profile, k.id);
   if (!n) return drawStore();
+  // 코인 무한(치트)이 켜져 있으면 진짜 코인 쪽에 더한다
+  if (cheatCoinsOn() && prefs.realCoins !== null) {
+    prefs.realCoins += n;
+    savePrefs();
+  }
   storeChanged();
   sfx.pickup();
-  toast(`💎 +${n}`, `🪙 ${t.coins} → 💎 ${n}`, 'buff');
+  toast(`🪙 +${n}`, `💎 ${k.gems} → 🪙 ${n}`, 'buff');
 }
 // 크리스탈 상품: 모자라면 충전 칸으로, 처음 누르면 확인, 한 번 더 누르면 산다
 function buyGemItem(id, price, buy, done) {
@@ -2636,27 +2657,28 @@ for (const [m, id] of Object.entries({ '': 'mapAuto', camp: 'mapCamp', forest: '
   document.getElementById(id).style.setProperty('--map', `url(${mapImg(m)})`);
 }
 const MAP_BTNS = { '': 'mapAuto', camp: 'mapCamp', forest: 'mapForest', lake: 'mapLake', winter: 'mapWinter', beach: 'mapBeach', factory: 'mapFactory' };
-// 맵 고르기: 한 번 누르면 미리보기(강조 + "한 번 더 누르면 선택"), 같은 맵을 한 번 더 누르면 선택
+// 맵 고르기: 한 번 누르면 그 맵이 골라지고("한 번 더 누르면 완료"), 같은 맵을 한 번 더 누르면 창이 닫힌다
 let mapPeek = null;
 function drawMapPeek() {
   for (const [m, id] of Object.entries(MAP_BTNS)) {
     const b = $(id);
-    b.classList.toggle('peek', mapPeek === m && lobby.map !== m);
-    b.dataset.hint = tr('한 번 더 누르면 선택');
+    b.classList.toggle('peek', mapPeek === m);
+    b.dataset.hint = tr('한 번 더 누르면 완료');
   }
 }
 for (const [m, id] of Object.entries(MAP_BTNS)) {
   $(id).addEventListener('click', () => {
-    if (lobby.map === m) return; // 이미 고른 맵
-    if (mapPeek !== m) {
-      mapPeek = m;
-      sfx.firefly();
-    } else {
-      lobby.map = m;
+    if (mapPeek === m) {
+      // 두 번째: 고른 맵으로 창을 닫는다
       mapPeek = null;
-      sfx.choose();
-      drawLobby();
+      drawMapPeek();
+      $('closeModes').click();
+      return;
     }
+    lobby.map = m;
+    mapPeek = m;
+    sfx.choose();
+    drawLobby();
     drawMapPeek();
   });
 }
@@ -2723,6 +2745,8 @@ function openRoomSettings(set, done) {
   lobby.map = set.map;
   roomAi = set.ai;
   roomSettingsDone = done;
+  mapPeek = null;
+  drawMapPeek();
   drawPicks();
   drawLobby();
   drawAi();

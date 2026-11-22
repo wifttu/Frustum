@@ -233,11 +233,11 @@ export const GEM_PACKS = Object.freeze([
   { id: 'g1400', gems: 1400, bonus: 300, krw: 24900, tag: '최고 혜택' },
 ]);
 export const LEGEND_PRICE = 480; // 전설 의상 한 벌 (💎)
-// 코인(🪙)으로 크리스탈 바꾸기: 많이 바꿀수록 조금 싸다
-export const GEM_TRADES = Object.freeze([
-  { id: 'c10', gems: 10, coins: 100 },
-  { id: 'c50', gems: 50, coins: 480 },
-  { id: 'c120', gems: 120, coins: 1100 },
+// 크리스탈(💎)로 코인(🪙) 사기: 많이 살수록 보너스
+export const COIN_PACKS = Object.freeze([
+  { id: 'k20', gems: 20, coins: 200 },
+  { id: 'k100', gems: 100, coins: 1100, bonus: 100 },
+  { id: 'k300', gems: 300, coins: 3600, bonus: 600 },
 ]);
 // 프로필 아이콘 배경: gems 0 이면 누구나, 아니면 크리스탈로 산다. 그림은 client/backgrounds.js (CSS 로 그린다)
 export const PROFILE_BGS = Object.freeze({
@@ -275,13 +275,13 @@ export function buyBg(p, id) {
   p.bgs.push(id);
   return true;
 }
-// 코인 → 크리스탈. 바꾼 크리스탈 수 (코인이 모자라면 0)
-export function tradeGems(p, id) {
-  const t = GEM_TRADES.find((x) => x.id === id);
-  if (!t || p.coins < t.coins) return 0;
-  p.coins -= t.coins;
-  p.gems += t.gems;
-  return t.gems;
+// 크리스탈 → 코인. 받은 코인 수 (크리스탈이 모자라면 0)
+export function buyCoins(p, id) {
+  const k = COIN_PACKS.find((x) => x.id === id);
+  if (!k || p.gems < k.gems) return 0;
+  p.gems -= k.gems;
+  p.coins += k.coins;
+  return k.coins;
 }
 // 캐릭터 강화 한 단계 (코인). 성공하면 새 단계, 아니면 0
 export const upgradeCost = (p, id) => CHAR_UP.COST[p.clv[id] || 0] ?? null;

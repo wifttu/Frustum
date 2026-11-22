@@ -185,7 +185,7 @@ export const EN = {
   '순환': 'Rotation',
   '라운드마다 바뀜': 'Changes every round',
   '맵: 순환': 'Map: Rotation',
-  '한 번 더 누르면 선택': 'Tap again to select',
+  '한 번 더 누르면 완료': 'Tap again to finish',
   '빈자리': 'Empty seats',
   'AI로 채우기': 'Fill with AI',
   '8명이 되도록': 'Up to 8 players',
@@ -594,10 +594,9 @@ export const EN = {
   '체크무늬': 'Plaid',
   '무지개': 'Rainbow',
   '최대 강화': 'Max level',
-  '✓ 가진 캐릭터 · 의상이 3배 잘 나와요': '✓ Owned · its outfits drop 3× more often',
   '💳 결제로 사기': '💳 Buy with money',
-  '🪙 코인으로 바꾸기': '🪙 Trade coins',
-  '한 번 더 누르면 교환': 'Tap again to trade',
+  '🪙 크리스탈로 코인 사기': '🪙 Buy coins with crystals',
+  '코인 사기': 'Buy coins',
 };
 
 // 숫자·이름이 들어가는 글: [한국어 ({} 자리), 영어 ({0}, {1}… 자리)]
@@ -723,6 +722,5 @@ export const EN_PATTERNS = [
   ['⚡ {} ★{}', '⚡ {0} ★{1}'],
   ['상점 💎 {}', 'Shop 💎 {0}'],
   ['⚡ 강화 🪙 {}', '⚡ Upgrade 🪙 {0}'],
-  ['🔒 뽑기({}) 또는 🪙 {} 구매', '🔒 Gacha ({0}) or buy for 🪙 {1}'],
   ['💎 {} 크리스탈로 사기', 'Buy for 💎 {0}'],
 ];
