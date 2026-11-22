@@ -673,8 +673,8 @@ body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
 #shop { position: fixed; inset: 0; z-index: 10; touch-action: none; }
 #shop[hidden] { display: none; }
 #shop button { font-family: inherit; }
-#shopCoins {
-  position: absolute; top: calc(10px + env(safe-area-inset-top)); right: calc(72px + env(safe-area-inset-right));
+#shopWallet {
+  position: absolute; top: calc(10px + env(safe-area-inset-top)); right: calc(72px + env(safe-area-inset-right)); display: flex; align-items: center; gap: 6px;
 }
 #closeShop {
   position: absolute; top: calc(10px + env(safe-area-inset-top)); right: calc(12px + env(safe-area-inset-right));
@@ -710,8 +710,15 @@ body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
 #shop[data-tab='skins'] #skinRow { display: flex; }
 #shop[data-tab='gacha'] #gachaPanel { display: block; }
 #shop:not([data-tab='chars']) :is(#shopAct, #shopStats, #shopCount) { display: none; }
-#shop[data-tab='gacha'] .nav { display: none; }
-#shop[data-tab='gacha'] #shopHead { display: none; }
+/* 뽑기 탭에서도 캐릭터를 좌우로 넘긴다: 뽑기 창은 › 단추 안쪽으로, 위에는 이름과 가졌는지만 */
+#shop[data-tab='gacha'] #shopSkill { display: none; }
+#shop[data-tab='gacha'] #gachaPanel {
+  right: calc(68px + env(safe-area-inset-right)); width: min(300px, 40vw); top: auto; bottom: calc(12px + env(safe-area-inset-bottom)); transform: none;
+}
+/* 스킨 탭: 잠긴 전설 의상을 보고 있으면 💎 크리스탈로 사기 */
+#shop[data-tab='skins'] #shopAct.gem { display: block; }
+#shopAct.gem { background: linear-gradient(180deg, #8fdcff, #3fa6e8); color: #06243a; box-shadow: 0 4px 0 #1d5f8a, 0 8px 18px rgba(0, 0, 0, .4); }
+#shopAct.gem.arm { background: linear-gradient(180deg, #ff9a6a, #e0502a); color: #fff; box-shadow: 0 4px 0 #8a2a14; animation: pulse 1s ease-in-out infinite; font-size: 16px; }
 
 /* 스킨 고르기 */
 #skinRow {
@@ -1251,12 +1258,12 @@ body.lefty #emotePick { left: calc(144px + env(safe-area-inset-left)); }
 
 /* ───────── 상점 (💎 크리스탈) ───────── */
 /* 로비 오른쪽 위 크리스탈: 누르면 충전 */
-#gems {
+#gems, #shopGems {
   min-width: 70px; padding: 7px 12px; border-radius: 999px; text-align: center; font-size: 15px; font-weight: 900; font-family: inherit;
   background: rgba(20, 24, 50, .88); color: #9fe0ff; border: 2px solid rgba(120, 210, 255, .65); box-shadow: 0 4px 14px rgba(0, 0, 0, .4);
 }
-#gems::after { content: '+'; display: inline-block; margin-left: 6px; width: 17px; height: 17px; line-height: 16px; border-radius: 50%; background: #3fb8ff; color: #062a40; font-size: 14px; }
-#gems:active { transform: scale(.95); }
+#gems::after, #shopGems::after { content: '+'; display: inline-block; margin-left: 6px; width: 17px; height: 17px; line-height: 16px; border-radius: 50%; background: #3fb8ff; color: #062a40; font-size: 14px; }
+#gems:active, #shopGems:active { transform: scale(.95); }
 #storePanel .panel { width: min(720px, 100%); }
 #storePanel .wallet { position: absolute; top: 12px; left: 14px; z-index: 2; display: flex; gap: 6px; }
 #storePanel .wallet b {
@@ -1268,7 +1275,6 @@ body.lefty #emotePick { left: calc(144px + env(safe-area-inset-left)); }
 #storeTabs button { font-size: 13px; padding: 8px 2px; white-space: nowrap; }
 #storeTabs button[data-tab='gacha'] { flex: .8; border-style: dashed; }
 #storeBody { max-height: max(150px, calc(100vh - 168px)); overflow-y: auto; padding: 8px 2px 2px; }
-#storeBody.gems { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 #storeBody.legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 8px; }
 #storeBody.up { display: flex; flex-direction: column; gap: 6px; }
 #storeBody.bg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
@@ -1291,7 +1297,7 @@ body.lefty #emotePick { left: calc(144px + env(safe-area-inset-left)); }
   background: linear-gradient(180deg, #ffd27a, #e8a548); color: #3a2208; box-shadow: 0 3px 0 #8a5a20;
 }
 /* 상점 단추: 살 수 있음(금빛), 확인(한 번 더), 가짐(초록), 쓰기 */
-#storeBody button:not(.pack):not(.pic) {
+#storeBody button:where(:not(.pack):not(.pic)) {
   border: 0; border-radius: 10px; padding: 7px 8px; font-family: inherit; font-weight: 900; font-size: 13px;
   background: rgba(255, 214, 160, .12); color: #e2cba6;
 }
@@ -1369,3 +1375,30 @@ html[lang='en'] #iconGrid button[data-auto]::after { content: 'Auto'; }
   #lobbyLogo { left: calc(50% - 12px); font-size: 16px; letter-spacing: 4px; margin-right: -4px; }
   #lobbyLogo small { display: none; }
 }
+
+/* 3D 캐릭터 화면: 💎 잔액, 캐릭터 강화 카드 (가진 캐릭터만, 오른쪽 아래 버튼 위) */
+#shopUp {
+  position: absolute; right: calc(16px + env(safe-area-inset-right)); bottom: calc(76px + env(safe-area-inset-bottom)); width: 190px;
+  display: flex; flex-direction: column; gap: 3px; padding: 8px 10px 10px; border-radius: 14px; text-align: center;
+  background: rgba(20, 16, 30, .78); border: 1px solid rgba(255, 210, 90, .4); box-shadow: 0 6px 16px rgba(0, 0, 0, .4);
+}
+#shopUp[hidden] { display: none; }
+#shopUp b { font-size: 12.5px; color: #fff; }
+#shopUp em { font-style: normal; color: #ffd25a; letter-spacing: 1px; }
+#shopUp small { font-size: 11px; color: #d8d2e4; }
+#shopUpBtn {
+  margin-top: 3px; padding: 8px 6px; border: 0; border-radius: 10px; font-size: 14px; font-weight: 900; background: #4a4652; color: #b9b2c4;
+}
+#shopUpBtn.can { background: linear-gradient(180deg, #ffc94d, #f08a2c); color: #3a2208; box-shadow: 0 3px 0 #a85a14; }
+#shopUpBtn:active { transform: translateY(2px); }
+@media (max-height: 360px) { #shopUp { bottom: calc(70px + env(safe-area-inset-bottom)); padding: 6px 8px 8px; } }
+/* 상점 충전 탭: 결제 묶음 + 코인으로 바꾸기 */
+#storeBody.gems { display: flex; flex-direction: column; gap: 6px; }
+#storeBody h4 { margin: 0; font-size: 12px; color: #f0d9b0; }
+#storeBody .packs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding-top: 6px; }
+#storeBody .packs .pack { padding-top: 10px; }
+#storeBody .trades { display: grid; grid-template-columns: auto repeat(3, 1fr); align-items: center; gap: 8px; margin-top: 2px; }
+#storeBody button.trade { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 6px 8px; }
+#storeBody button.trade b { font-size: 14px; color: inherit; }
+#storeBody button.trade span { padding: 2px 8px; border-radius: 999px; font-size: 12px; background: rgba(0, 0, 0, .25); }
+#storeBody button.trade.arm b { font-size: 12px; }
