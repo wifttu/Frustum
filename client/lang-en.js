@@ -568,8 +568,8 @@ export const EN = {
   '💳 결제 준비 중이에요. 실제 결제(카드·간편결제)는 아직 연결되지 않았어요.': "💳 Payments are coming soon. Real payments (card, mobile pay) aren't connected yet.",
   '🧪 치트 모드: 누르면 시험용 크리스탈을 결제 없이 받아요.': '🧪 Cheat mode: tap to get test crystals without paying.',
   '설정에서 치트 모드를 켜면 시험용 크리스탈로 둘러볼 수 있어요.': 'Turn on cheat mode in Settings to try it with test crystals.',
-  '프로필 아이콘 뒤에 깔리는 배경이에요 · 밤하늘, 노을, 맵 배경은 무료 · 아이콘을 눌러서 바꿔요':
-    'Backgrounds behind your profile icon · night sky, sunset and map backgrounds are free · tap your icon to change it',
+  '프로필 아이콘 뒤에 깔리는 배경이에요 · 밤하늘, 노을, 모닥불 등 8장은 무료 · 아이콘을 눌러서 바꿔요':
+    'Backgrounds behind your profile icon · 8 of them, like night sky, sunset and campfire, are free · tap your icon to change it',
   '🧪 시험용 지급 (치트 모드 · 결제 없음)': '🧪 Test grant (cheat mode · no payment)',
   '결제가 끝났어요. 고마워요!': 'Payment complete. Thank you!',
   '결제 준비 중이에요': 'Payments coming soon',
@@ -587,6 +587,17 @@ export const EN = {
   '은하수': 'Milky Way',
   '황금빛': 'Golden',
   '벚꽃 밤': 'Cherry blossom night',
+  '모닥불': 'Campfire',
+  '반딧불': 'Fireflies',
+  '눈송이': 'Snowflakes',
+  '파도': 'Waves',
+  '체크무늬': 'Plaid',
+  '무지개': 'Rainbow',
+  '최대 강화': 'Max level',
+  '✓ 가진 캐릭터 · 의상이 3배 잘 나와요': '✓ Owned · its outfits drop 3× more often',
+  '💳 결제로 사기': '💳 Buy with money',
+  '🪙 코인으로 바꾸기': '🪙 Trade coins',
+  '한 번 더 누르면 교환': 'Tap again to trade',
 };
 
 // 숫자·이름이 들어가는 글: [한국어 ({} 자리), 영어 ({0}, {1}… 자리)]
@@ -711,4 +722,7 @@ export const EN_PATTERNS = [
   ['💎 {} 더 필요해요', 'Need 💎 {0} more'],
   ['⚡ {} ★{}', '⚡ {0} ★{1}'],
   ['상점 💎 {}', 'Shop 💎 {0}'],
+  ['⚡ 강화 🪙 {}', '⚡ Upgrade 🪙 {0}'],
+  ['🔒 뽑기({}) 또는 🪙 {} 구매', '🔒 Gacha ({0}) or buy for 🪙 {1}'],
+  ['💎 {} 크리스탈로 사기', 'Buy for 💎 {0}'],
 ];

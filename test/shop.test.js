@@ -212,7 +212,8 @@ test('상점: 크리스탈 묶음 → 전설 의상·프로필 배경 (크리스
   assert.equal(buyLegend(p, 'bear_knight'), false, '이미 가진 의상');
   assert.equal(p.coins, 5000, '코인은 그대로');
   // 배경: 무료는 그냥 쓰고, 크리스탈 배경은 사야 쓴다
-  assert.ok(canUseBg(p, 'night') && canUseBg(p, 'camp') && canUseBg(p, ''));
+  assert.ok(canUseBg(p, 'night') && canUseBg(p, 'fire') && canUseBg(p, ''));
+  assert.ok(!canUseBg(p, 'camp'), '맵 배경은 없어졌다');
   assert.ok(!canUseBg(p, 'aurora'));
   assert.equal(buyBg(p, 'night'), false, '무료 배경은 사지 않는다');
   const g = p.gems;
@@ -255,4 +256,20 @@ test('상점: 캐릭터 강화는 코인으로, 가진 캐릭터만, 최대 5단
   assert.ok(b.maxHp > a.maxHp && b.damage > a.damage);
   assert.ok(Math.abs(b.damage / a.damage - (1 + 5 * CHAR_UP.DMG)) < 1e-9);
   assert.deepEqual(statsOf({}, cfg, 'explorer', 1, 99), statsOf({}, cfg, 'explorer', 1, 5), '5단계보다 세지지 않는다');
+});
+
+test('상점: 코인으로 크리스탈 바꾸기, 예전 맵 배경은 기본으로', async () => {
+  const { GEM_TRADES, PROFILE_BGS, tradeGems } = await import('../shared/shop.js');
+  const p = normalizeProfile({ coins: 1200, gems: 5 });
+  assert.equal(tradeGems(p, 'nope'), 0);
+  const big = GEM_TRADES.at(-1);
+  assert.equal(tradeGems(p, big.id), big.gems);
+  assert.equal(p.gems, 5 + big.gems);
+  assert.equal(p.coins, 1200 - big.coins);
+  assert.equal(tradeGems(p, big.id), 0, '코인이 모자라면');
+  for (const t of GEM_TRADES) assert.ok(t.coins / t.gems <= 10, '크리스탈 1개에 코인 10 이하');
+  // 맵 그림 배경은 없어졌다 → 저장된 값은 기본 배경으로
+  assert.ok(Object.values(PROFILE_BGS).every((b) => !b.map));
+  assert.equal(normalizeProfile({ bg: 'camp' }).bg, '');
+  assert.equal(normalizeProfile({ bg: 'rainbow' }).bg, 'rainbow');
 });

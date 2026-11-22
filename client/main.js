@@ -33,8 +33,8 @@ initLang(prefs.lang);
 import { Net } from './net.js';
 import { initParty } from './party.js';
 import {
-  DAILY, GACHA, GEM_PACKS, LEGEND_PRICE, PROFILE_BGS, SKINS, TIERS, addGems, buyBg, buyLegend, canUseBg, claimDaily, claimRankSkin, dayKey, gacha, iconsFor,
-  normalizeProfile, skinFor, skinsOf, upgradeChar, upgradeCost,
+  DAILY, GACHA, GEM_PACKS, GEM_TRADES, LEGEND_PRICE, PROFILE_BGS, SKINS, TIERS, addGems, buyBg, buyLegend, canUseBg, charTier, claimDaily, claimRankSkin, dayKey,
+  gacha, iconsFor, normalizeProfile, skinFor, skinsOf, tradeGems, upgradeChar, upgradeCost,
 } from './shared/shop.js';
 
 const DT = 1 / CFG.TICK_RATE;
@@ -1876,12 +1876,15 @@ const lockEls = CHAR_IDS.map(() => {
   el.textContent = '🔒';
   return $('shopLocks').appendChild(el);
 });
+// 강화 효과 글 ("체력 +6% · 피해 +4%")
+const upText = (lv) => `체력 +${Math.round(lv * CHAR_UP.HP * 100)}% · 피해 +${Math.round(lv * CHAR_UP.DMG * 100)}%`;
 function drawShop() {
   dressShowcase();
   const id = showcase.current;
   const c = CHARACTERS[id];
   const owned = profile.owned.includes(id);
   $('shopCoins').textContent = `🪙 ${coinText()}`;
+  $('shopGems').textContent = `💎 ${profile.gems}`;
   $('shopName').textContent = c.name;
   const sk = SKILLS[c.skill];
   iconText($('shopAbility'), c.icon, c.desc);
@@ -1905,6 +1908,23 @@ function drawShop() {
     btn.className = 'buy';
     btn.disabled = profile.coins < c.price;
   }
+  // 강화 (가진 캐릭터만, 코인)
+  $('shopUp').hidden = shopTab !== 'chars' || !owned;
+  if (owned) {
+    const lv = profile.clv[id] || 0;
+    const cost = upgradeCost(profile, id);
+    $('shopStars').textContent = '★'.repeat(lv) + '☆'.repeat(CHAR_UP.MAX - lv);
+    $('shopUpText').textContent = lv ? upText(lv) : '강화 전';
+    const ub = $('shopUpBtn');
+    ub.textContent = cost === null ? '최대 강화' : `⚡ 강화 🪙 ${cost}`;
+    ub.disabled = cost === null;
+    ub.className = cost !== null && profile.coins >= cost ? 'can' : '';
+  }
+  // 뽑기 탭: 좌우로 넘겨 보며 가졌는지, 어디서 얻는지
+  if (shopTab === 'gacha')
+    $('shopAbility').textContent = owned
+      ? '✓ 가진 캐릭터 · 의상이 3배 잘 나와요'
+      : `🔒 뽑기(${TIERS[charTier(id)].name}) 또는 🪙 ${c.price} 구매`;
   if (shopTab === 'skins') drawSkins(); // 스킨 탭: 위 정보 대신 그 캐릭터의 의상
 }
 // ── 상점 탭: 캐릭터 / 스킨 / 뽑기 ──
@@ -1916,6 +1936,7 @@ function setShopTab(tab) {
   // 스킨/뽑기 탭에서는 지금 쓰는 캐릭터를 가운데에 세운다 (스킨 탭에서도 좌우로 넘겨 다른 캐릭터의 의상을 본다)
   if (tab !== 'chars') showcase.open(profile.char);
   skinPeek = null;
+  skinArm = null;
   drawShop();
   if (tab === 'gacha') drawGacha();
 }
@@ -1924,6 +1945,7 @@ for (const b of $('shopTabs').children) b.addEventListener('click', () => setSho
 // 캐릭터마다 입은 의상 (스킨 탭에서 눌러 본 의상은 미리보기로 입혀 보여 준다)
 const wornBy = (id) => profile.skinBy[id] || 'default';
 let skinPeek = null; // { char, skin }
+let skinArm = null; // 크리스탈로 사려고 한 번 누른 의상 (한 번 더 누르면 산다)
 const shownSkin = (id) => (skinPeek && skinPeek.char === id ? skinPeek.skin : wornBy(id));
 const dressShowcase = () => showcase.setSkins(shownSkin);
 const hexCss = (n) => `#${n.toString(16).padStart(6, '0')}`;
@@ -1966,6 +1988,7 @@ function drawSkins() {
       b.addEventListener('click', () => {
         // 가진 의상은 입고, 없는 의상은 미리보기만
         skinPeek = { char: id, skin: sid };
+        skinArm = null;
         if (owned) {
           if (sid === 'default') delete profile.skinBy[id];
           else profile.skinBy[id] = sid;
@@ -1979,6 +2002,34 @@ function drawSkins() {
       return b;
     }),
   );
+  // 잠긴 전설 의상을 보고 있으면: 💎 크리스탈로 사기
+  const act = $('shopAct');
+  const buyable = !has(shown) && sk.tier === 'legend';
+  act.disabled = false;
+  act.className = buyable ? 'gem' + (skinArm === shown ? ' arm' : '') : '';
+  if (buyable) act.textContent = skinArm === shown ? '한 번 더 누르면 구매' : `💎 ${LEGEND_PRICE} 크리스탈로 사기`;
+}
+function buySkinHere(sid) {
+  if (profile.gems < LEGEND_PRICE) {
+    toast('크리스탈이 부족해요', `💎 ${LEGEND_PRICE - profile.gems} 더 필요해요`, '', '', 1800);
+    skinArm = null;
+    openStore('gems');
+    return;
+  }
+  if (skinArm !== sid) {
+    skinArm = sid;
+    sfx.firefly();
+    drawShop();
+    return;
+  }
+  skinArm = null;
+  if (!buyLegend(profile, sid)) return drawShop();
+  gotLegend(sid);
+  saveProfile();
+  drawProfile();
+  drawShop();
+  sfx.win();
+  buzz(80);
 }
 
 function drawGacha() {
@@ -1998,6 +2049,7 @@ function doGacha(n) {
   saveProfile();
   drawGacha();
   drawProfile();
+  drawShop(); // 새로 얻은 캐릭터·의상
   // 결과 카드를 하나씩 뒤집어 보여준다
   $('gachaCards').replaceChildren(
     ...results.map((r, i) => {
@@ -2044,10 +2096,10 @@ $('daily').addEventListener('click', () => {
 });
 
 function shopMove(d) {
-  if (shopTab === 'gacha') return;
   const before = showcase.index;
   showcase.move(d);
   if (showcase.index !== before) {
+    skinArm = null;
     sfx.firefly();
     drawShop();
   }
@@ -2055,6 +2107,7 @@ function shopMove(d) {
 $('shopAct').addEventListener('click', () => {
   const id = showcase.current;
   const c = CHARACTERS[id];
+  if (shopTab === 'skins') return buySkinHere(shownSkin(id)); // 스킨 탭: 크리스탈로 사기
   if (!profile.owned.includes(id)) {
     if (profile.coins < c.price) return;
     profile.coins -= c.price;
@@ -2067,6 +2120,8 @@ $('shopAct').addEventListener('click', () => {
   drawShop();
   drawProfile();
 });
+$('shopUpBtn').addEventListener('click', () => doUpgrade(showcase.current));
+$('shopGems').addEventListener('click', () => openStore('gems'));
 $('shopPrev').addEventListener('click', () => shopMove(-1));
 $('shopNext').addEventListener('click', () => shopMove(1));
 addEventListener('keydown', (e) => {
@@ -2080,7 +2135,7 @@ addEventListener('keydown', (e) => {
   let drag = null; // { x0, pos0, lastX, lastT, v, moved, idx }
   const shopTarget = (e) => e.target === $('shop') || e.target.closest('#shopLocks');
   $('shop').addEventListener('pointerdown', (e) => {
-    if (!shopTarget(e) || shopTab === 'gacha') return;
+    if (!shopTarget(e)) return;
     drag = { x0: e.clientX, pos0: showcase.pos, lastX: e.clientX, lastT: performance.now(), v: 0, moved: false, idx: showcase.index };
     showcase.dragging = true;
     $('shop').setPointerCapture?.(e.pointerId);
@@ -2192,7 +2247,7 @@ function drawIcons() {
   for (const b of $('iconTabs').children) b.classList.toggle('on', b.dataset.tab === iconTab);
   $('iconHint').textContent = '';
   $('iconGrid').classList.toggle('bgs', iconTab === 'bg');
-  if (iconTab === 'bg') return drawBgs(face);
+  if (iconTab === 'bg') return drawBgs();
   $('iconGrid').replaceChildren(
     ...[{ icon: '', locked: false, how: '' }, ...iconsFor(profile)].map((x) => {
       const b = document.createElement('button');
@@ -2212,13 +2267,12 @@ function drawIcons() {
     }),
   );
 }
-// 배경: 기본 + 무료(밤하늘, 노을, 맵 6개) + 크리스탈 배경. 없는 크리스탈 배경을 누르면 상점의 배경 칸으로 간다.
-function drawBgs(face) {
+// 배경: 기본 + 무료 8장 + 크리스탈 배경 (칸에는 배경만 보인다). 없는 크리스탈 배경을 누르면 상점의 배경 칸으로 간다.
+function drawBgs() {
   $('iconGrid').replaceChildren(
     ...['', ...Object.keys(PROFILE_BGS)].map((id) => {
       const b = document.createElement('button');
       const has = canUseBg(profile, id);
-      setIcon(b, face);
       b.style.background = bgCss(id);
       b.className = (profile.bg === id ? 'on' : '') + (has ? '' : ' locked');
       const name = document.createElement('small');
@@ -2276,7 +2330,6 @@ const mk = (tag, cls = '', text = '') => {
 };
 const LEGEND_IDS = Object.keys(SKINS).filter((id) => SKINS[id].tier === 'legend');
 const PAID_BGS = Object.keys(PROFILE_BGS).filter((id) => PROFILE_BGS[id].gems);
-const upText = (lv) => `체력 +${Math.round(lv * CHAR_UP.HP * 100)}% · 피해 +${Math.round(lv * CHAR_UP.DMG * 100)}%`;
 function openStore(tab = 'gems') {
   storeTab = tab;
   storeArm = null;
@@ -2292,16 +2345,33 @@ function drawStore() {
   $('storeNote').textContent = STORE_NOTE[storeTab]();
 }
 const STORE = {
-  gems: () =>
-    GEM_PACKS.map((pk, i) => {
-      const b = mk('button', 'pack');
-      if (pk.tag) b.append(mk('em', '', pk.tag));
-      const gem = mk('i', '', '💎');
-      gem.style.fontSize = `${24 + i * 7}px`;
-      b.append(gem, mk('b', '', `💎 ${pk.gems}`), mk('small', '', pk.bonus ? `+${pk.bonus} 보너스` : '기본'), mk('span', '', `₩${pk.krw.toLocaleString('ko-KR')}`));
-      b.addEventListener('click', () => buyPack(pk));
-      return b;
-    }),
+  gems: () => {
+    const packs = mk('div', 'packs');
+    packs.append(
+      ...GEM_PACKS.map((pk, i) => {
+        const b = mk('button', 'pack');
+        if (pk.tag) b.append(mk('em', '', pk.tag));
+        const gem = mk('i', '', '💎');
+        gem.style.fontSize = `${22 + i * 5}px`;
+        b.append(gem, mk('b', '', `💎 ${pk.gems}`), mk('small', '', pk.bonus ? `+${pk.bonus} 보너스` : '기본'), mk('span', '', `₩${pk.krw.toLocaleString('ko-KR')}`));
+        b.addEventListener('click', () => buyPack(pk));
+        return b;
+      }),
+    );
+    // 코인으로 바꾸기 (한 번 더 눌러야 바꾼다)
+    const trades = mk('div', 'trades');
+    trades.append(
+      mk('h4', '', '🪙 코인으로 바꾸기'),
+      ...GEM_TRADES.map((t) => {
+        const b = mk('button', 'trade' + (storeArm === t.id ? ' arm' : profile.coins >= t.coins ? ' can' : ''));
+        if (storeArm === t.id) b.append(mk('b', '', '한 번 더 누르면 교환'));
+        else b.append(mk('b', '', `💎 ${t.gems}`), mk('span', '', `🪙 ${t.coins}`));
+        b.addEventListener('click', () => doTrade(t));
+        return b;
+      }),
+    );
+    return [mk('h4', '', '💳 결제로 사기'), packs, trades];
+  },
   legend: () =>
     LEGEND_IDS.map((id) => {
       const s = SKINS[id];
@@ -2373,8 +2443,7 @@ const STORE = {
       const has = profile.bgs.includes(id);
       const card = mk('div', 'bgcard' + (has ? ' own' : ''));
       const face = mk('i', 'face');
-      setIcon(face, profile.icon || CHARACTERS[profile.char].icon);
-      face.style.background = bgCss(id);
+      face.style.background = bgCss(id); // 배경만 (캐릭터 없이)
       const act = mk('button');
       if (!has) {
         act.textContent = storeArm === id ? '한 번 더 누르면 구매' : `💎 ${bg.gems}`;
@@ -2404,7 +2473,7 @@ const STORE_NOTE = {
       .join(' '),
   legend: () => `전설 의상 한 벌 💎 ${LEGEND_PRICE} · 손전등 빛 색과 처치 효과가 바뀌어요 · 그림을 누르면 3D로 미리 봐요`,
   up: () => `강화는 게임으로 버는 🪙 코인으로 해요 · 한 단계마다 ${upText(1)} · 최대 ${CHAR_UP.MAX}단계`,
-  bg: () => '프로필 아이콘 뒤에 깔리는 배경이에요 · 밤하늘, 노을, 맵 배경은 무료 · 아이콘을 눌러서 바꿔요',
+  bg: () => '프로필 아이콘 뒤에 깔리는 배경이에요 · 밤하늘, 노을, 모닥불 등 8장은 무료 · 아이콘을 눌러서 바꿔요',
   gacha: () => '',
 };
 for (const b of $('storeTabs').children)
@@ -2427,6 +2496,7 @@ function storeChanged() {
   drawProfile();
   drawStore();
   if (!$('menu').style.display) drawLobby();
+  if (!$('shop').hidden) drawShop(); // 3D 캐릭터 화면 위에서 연 상점
 }
 // 💎 묶음: 결제 (치트 모드면 결제 없이 시험 지급)
 async function buyPack(pk) {
@@ -2445,6 +2515,25 @@ async function buyPack(pk) {
     sfx.win();
     toast(`💎 +${n}`, '결제가 끝났어요. 고마워요!', 'buff', '', 2400);
   } else toast('결제 준비 중이에요', '실제 결제는 아직 연결되지 않았어요', '', '', 2200);
+}
+// 코인 → 크리스탈: 처음 누르면 확인, 한 번 더 누르면 바꾼다
+function doTrade(t) {
+  if (profile.coins < t.coins) {
+    storeArm = null;
+    drawStore();
+    return toast('코인이 부족해요', '게임을 하면 코인이 모여요', '', '', 1800);
+  }
+  if (storeArm !== t.id) {
+    storeArm = t.id;
+    sfx.firefly();
+    return drawStore();
+  }
+  storeArm = null;
+  const n = tradeGems(profile, t.id);
+  if (!n) return drawStore();
+  storeChanged();
+  sfx.pickup();
+  toast(`💎 +${n}`, `🪙 ${t.coins} → 💎 ${n}`, 'buff');
 }
 // 크리스탈 상품: 모자라면 충전 칸으로, 처음 누르면 확인, 한 번 더 누르면 산다
 function buyGemItem(id, price, buy, done) {

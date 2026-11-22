@@ -233,16 +233,22 @@ export const GEM_PACKS = Object.freeze([
   { id: 'g1400', gems: 1400, bonus: 300, krw: 24900, tag: '최고 혜택' },
 ]);
 export const LEGEND_PRICE = 480; // 전설 의상 한 벌 (💎)
-// 프로필 아이콘 배경: gems 0 이면 누구나, 아니면 크리스탈로 산다. map: 그 맵의 미리보기 그림
+// 코인(🪙)으로 크리스탈 바꾸기: 많이 바꿀수록 조금 싸다
+export const GEM_TRADES = Object.freeze([
+  { id: 'c10', gems: 10, coins: 100 },
+  { id: 'c50', gems: 50, coins: 480 },
+  { id: 'c120', gems: 120, coins: 1100 },
+]);
+// 프로필 아이콘 배경: gems 0 이면 누구나, 아니면 크리스탈로 산다. 그림은 client/backgrounds.js (CSS 로 그린다)
 export const PROFILE_BGS = Object.freeze({
   night: { name: '밤하늘', gems: 0 },
   sunset: { name: '노을', gems: 0 },
-  camp: { name: '캠핑장', gems: 0, map: 'camp' },
-  forest: { name: '소나무 숲', gems: 0, map: 'forest' },
-  lake: { name: '호숫가', gems: 0, map: 'lake' },
-  winter: { name: '눈 덮인 마을', gems: 0, map: 'winter' },
-  beach: { name: '달빛 해변', gems: 0, map: 'beach' },
-  factory: { name: '버려진 공장', gems: 0, map: 'factory' },
+  fire: { name: '모닥불', gems: 0 },
+  firefly: { name: '반딧불', gems: 0 },
+  snow: { name: '눈송이', gems: 0 },
+  wave: { name: '파도', gems: 0 },
+  plaid: { name: '체크무늬', gems: 0 },
+  rainbow: { name: '무지개', gems: 0 },
   aurora: { name: '오로라', gems: 120 },
   galaxy: { name: '은하수', gems: 120 },
   royal: { name: '황금빛', gems: 120 },
@@ -268,6 +274,14 @@ export function buyBg(p, id) {
   p.gems -= b.gems;
   p.bgs.push(id);
   return true;
+}
+// 코인 → 크리스탈. 바꾼 크리스탈 수 (코인이 모자라면 0)
+export function tradeGems(p, id) {
+  const t = GEM_TRADES.find((x) => x.id === id);
+  if (!t || p.coins < t.coins) return 0;
+  p.coins -= t.coins;
+  p.gems += t.gems;
+  return t.gems;
 }
 // 캐릭터 강화 한 단계 (코인). 성공하면 새 단계, 아니면 0
 export const upgradeCost = (p, id) => CHAR_UP.COST[p.clv[id] || 0] ?? null;
