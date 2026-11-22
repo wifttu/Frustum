@@ -7,7 +7,7 @@ import { EN, EN_PATTERNS } from '../client/lang-en.js';
 import { CHARACTERS, SKILLS, UPGRADES } from '../shared/progress.js';
 import { ITEMS } from '../shared/config.js';
 import { MAPS } from '../shared/map.js';
-import { SKINS, TIERS } from '../shared/shop.js';
+import { GEM_PACKS, PROFILE_BGS, SKINS, TIERS } from '../shared/shop.js';
 import { ACHIEVEMENTS, DAILY_POOL, RANKS } from '../shared/missions.js';
 
 const KO = /[가-힣]/;
@@ -24,6 +24,8 @@ test('영어 사전: 게임 데이터의 이름과 설명이 모두 있다', () 
   for (const d of Object.values(DAILY_POOL)) need.push(d.text);
   for (const a of Object.values(ACHIEVEMENTS)) need.push(a.name);
   for (const r of RANKS) need.push(r.name);
+  for (const b of Object.values(PROFILE_BGS)) need.push(b.name);
+  for (const pk of GEM_PACKS) need.push(pk.tag);
   const missing = need.filter((s) => s && KO.test(s) && !Object.hasOwn(EN, s));
   assert.deepEqual(missing, []);
 });

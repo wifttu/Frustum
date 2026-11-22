@@ -89,7 +89,7 @@
         </div>
       </div>
       <div id="lobbyLogo">FRUSTUM<small>한밤의 캠핑장 · 손전등 술래잡기</small></div>
-      <div id="lobbyRight"><em id="coins">🪙 0</em><button id="openSettings" aria-label="설정">⚙️</button></div>
+      <div id="lobbyRight"><button id="gems" aria-label="크리스탈 충전">💎 0</button><em id="coins">🪙 0</em><button id="openSettings" aria-label="설정">⚙️</button></div>
       <div id="lobbySide">
         <button id="openChars"><i>🧢</i><span>캐릭터</span></button>
         <button id="openShop"><i>🛍️</i><span>상점</span></button>
@@ -174,8 +174,26 @@
       <div class="panel">
         <button id="closeIcons" class="x" aria-label="닫기">✕</button>
         <h2>프로필 아이콘</h2>
+        <div class="iconTop"><i id="iconPreview"></i><div id="iconTabs" class="pick"><button data-tab="icon">아이콘</button><button data-tab="bg">배경</button></div></div>
         <div id="iconGrid"></div>
         <div id="iconHint" class="note"></div>
+      </div>
+    </div>
+
+    <div id="storePanel" class="sheet" hidden>
+      <div class="panel">
+        <button id="closeStore" class="x" aria-label="닫기">✕</button>
+        <div class="wallet"><b id="storeGems">💎 0</b><b id="storeCoins">🪙 0</b></div>
+        <h2>상점</h2>
+        <div id="storeTabs" class="pick">
+          <button data-tab="gems">💎 충전</button>
+          <button data-tab="legend">👑 전설 의상</button>
+          <button data-tab="up">⚡ 캐릭터 강화</button>
+          <button data-tab="bg">🖼️ 프로필 배경</button>
+          <button data-tab="gacha">✨ 뽑기 ›</button>
+        </div>
+        <div id="storeBody"></div>
+        <p id="storeNote" class="note"></p>
       </div>
     </div>
 

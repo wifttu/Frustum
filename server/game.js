@@ -5,7 +5,7 @@ import { flareLanding, stepPlayer } from '../shared/sim.js';
 import { canSee, segmentBlocked, wrapAngle } from '../shared/vision.js';
 import { botThink } from './bots.js';
 import { skinFor, skinsOf } from '../shared/shop.js';
-import { CHARACTER_KEYS, CHEAT, ORBS, PROGRESS, SKILLS, UPGRADES, charOf, cheatOf, randomOrb, rollChoices, statsOf, xpToNext } from '../shared/progress.js';
+import { CHARACTER_KEYS, CHEAT, ORBS, PROGRESS, SKILLS, UPGRADES, charOf, cheatOf, clvOf, randomOrb, rollChoices, statsOf, xpToNext } from '../shared/progress.js';
 
 // 봇 의상: 30% 확률로 그 캐릭터의 의상 하나
 const botSkin = (char) => {
@@ -110,6 +110,7 @@ export class Game {
       queue: [], budget: 0, ack: 0, lastSeq: 0, ai: {},
       fc: typeof opts.fc === 'string' ? opts.fc : '',
       cheat: isBot ? null : cheatOf(opts.cheat),
+      clv: isBot ? 0 : clvOf(opts.clv), // 캐릭터 강화 단계 (상점에서 코인으로)
     };
     const forced = opts.team !== undefined;
     let bots = isBot ? [] : [...this.players.values()].filter((q) => q.isBot);
@@ -369,7 +370,7 @@ export class Game {
 
   // ── 성장 ──
   applyStats(p) {
-    p.stats = statsOf(p.ups, this.cfg, p.char, p.level);
+    p.stats = statsOf(p.ups, this.cfg, p.char, p.level, p.clv);
     if (p.dummy) p.stats.maxHp = PROGRESS.BASE_DAMAGE * 2; // 연습용 허수아비: 손전등 딱 2방
     if (p.turret) p.stats.damage = 25; // 연습용 경비 허수아비: 약하게
     const ch = this.cheatOn(p);

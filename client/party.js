@@ -1,6 +1,7 @@
 // 친선 게임 방, 친구(친구 코드·접속 상태·초대), 초대 알림.
 // 서버와는 main.js 의 Net 연결 하나로 주고받는다. 계정이 없어서 친구 목록은 기기에 저장한다.
 import { iconText, mapImg, setIcon } from './icons.js';
+import { bgCss } from './backgrounds.js';
 const RULE_NAMES = { dm: '데스매치', score: '점수제', survival: '서바이벌', hill: '모닥불 점령' };
 const MODE_NAMES = { ffa: '개인전', duo: '2인 팀전', squad: '3 대 3' };
 const STATE_TEXT = { online: '접속 중', party: '방에 있음', game: '게임 중', off: '오프라인' };
@@ -54,6 +55,7 @@ export function initParty(ctx) {
     if (m.sid === st.host) card.classList.add('host');
     const face = el('i', '', '');
     setIcon(face, m.icon || c.icon);
+    face.style.background = bgCss(m.bg); // 그 사람이 고른 아이콘 배경 (없으면 기본)
     const who = el('span', '', '');
     iconText(who, c.icon, c.name);
     card.append(face, noTr(el('b', '', m.name)), who);
@@ -325,6 +327,7 @@ export function initParty(ctx) {
   function showInvite(m) {
     lastInvite = m;
     setIcon($('invIcon'), m.icon || '📨');
+    $('invIcon').style.background = bgCss(m.bg);
     $('invTitle').textContent = `${m.from}님의 초대`;
     $('invSub').textContent = `${RULE_NAMES[m.set?.rule] || ''} · ${MODE_NAMES[modeFor(m.set?.rule, m.set?.mode)] || ''} · ${m.n}명 대기 중`;
     $('invite').hidden = false;

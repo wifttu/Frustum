@@ -94,13 +94,19 @@ export const CHARACTER_KEYS = Object.keys(CHARACTERS);
 export const charOf = (id) => (Object.hasOwn(CHARACTERS, id) ? id : 'explorer');
 
 // 강화 단계(ups: {키: 단계}) → 실제 수치
-export function statsOf(ups, cfg, charId = 'explorer', level = 1) {
+// 캐릭터 강화(상점): 코인으로 캐릭터마다 단계를 올린다 (최대 5단계). 단계마다 최대 체력 +3%, 손전등 피해 +2%.
+// 유료 재화(크리스탈)로는 살 수 없다 → 돈으로 강해지지 않는다.
+export const CHAR_UP = Object.freeze({ MAX: 5, COST: [300, 600, 1000, 1500, 2200], HP: 0.03, DMG: 0.02 });
+export const clvOf = (v) => Math.max(0, Math.min(CHAR_UP.MAX, Math.floor(Number(v) || 0)));
+
+export function statsOf(ups, cfg, charId = 'explorer', level = 1, clv = 0) {
   const u = (k) => ups[k] || 0;
   const c = CHARACTERS[charOf(charId)];
   const lv = Math.max(0, level - 1);
+  const cl = clvOf(clv);
   return {
-    maxHp: PROGRESS.BASE_HP + (c.hp || 0) + u('hp') * 30 + lv * PROGRESS.HP_PER_LEVEL,
-    damage: PROGRESS.BASE_DAMAGE * (1 + (c.dmg || 0) + u('dmg') * 0.2 + lv * PROGRESS.DMG_PER_LEVEL),
+    maxHp: Math.round((PROGRESS.BASE_HP + (c.hp || 0) + u('hp') * 30 + lv * PROGRESS.HP_PER_LEVEL) * (1 + cl * CHAR_UP.HP)),
+    damage: PROGRESS.BASE_DAMAGE * (1 + (c.dmg || 0) + u('dmg') * 0.2 + lv * PROGRESS.DMG_PER_LEVEL) * (1 + cl * CHAR_UP.DMG),
     range: cfg.ATTACK_RANGE + (c.range || 0) + u('range'),
     arc: cfg.ATTACK_ARC + (((c.arc || 0) + u('arc') * 10) * Math.PI) / 180,
     cooldown: cfg.ATTACK_COOLDOWN * (1 - (c.cd || 0)) * Math.pow(0.82, u('cd')),
