@@ -1,4 +1,5 @@
 // 판이 끝나면: 1~3등이 입은 의상 그대로 시상대에 올라 승리 포즈를 한다.
+// 팀전(2인 팀전, 3 대 3)에서 이긴 팀이 있으면 등수 단 대신 넓은 우승 단 하나에 이긴 팀이 나란히 서서 함께 기뻐한다.
 // 게임과 같은 렌더러(WebGL 컨텍스트 하나)를 쓰고, 보이는 동안에는 게임 장면 대신 이 장면을 그린다.
 import * as THREE from 'three';
 
@@ -9,6 +10,8 @@ const SPOTS = [
   { x: 1.8, h: 0.42, top: 0xf0a878, side: 0x9a5a34, n: '3' },
 ];
 const ENTER = [0.75, 0.4, 0.1]; // 등장 순서: 3등 → 2등 → 1등 (초)
+const TEAM_GAP = 1.4; // 우승 단 위 팀원 사이 간격
+const TEAM_H = 0.95; // 우승 단 높이 (1등 단과 같다)
 const CONFETTI = 90;
 const lerp = (a, b, t) => a + (b - a) * t;
 
@@ -81,7 +84,8 @@ export class Podium {
     );
     this.scene.add(stars);
 
-    // 단상: 옆면 + 윗판 + 앞면 숫자
+    // 단상: 옆면 + 윗판 + 앞면 숫자 (개인 순위용 1·2·3등 단)
+    this.rankStand = new THREE.Group();
     for (const s of SPOTS) {
       const side = new THREE.Mesh(new THREE.BoxGeometry(1.6, s.h, 1.3).translate(s.x, s.h / 2, 0), new THREE.MeshLambertMaterial({ color: s.side }));
       const top = new THREE.Mesh(new THREE.BoxGeometry(1.68, 0.09, 1.38).translate(s.x, s.h, 0), new THREE.MeshLambertMaterial({ color: s.top }));
@@ -89,8 +93,21 @@ export class Podium {
         new THREE.PlaneGeometry(0.5, 0.5).translate(s.x, Math.max(0.24, s.h * 0.48), 0.66),
         new THREE.MeshBasicMaterial({ map: numberTexture(s.n, `#${s.side.toString(16).padStart(6, '0')}`), transparent: true }),
       );
-      this.scene.add(side, top, num);
+      this.rankStand.add(side, top, num);
     }
+    this.scene.add(this.rankStand);
+    // 팀 우승 단: 팀원 수에 맞춰 넓이를 바꾸는 금빛 단 하나 (앞면에 별)
+    const gold = SPOTS[0];
+    this.teamStand = new THREE.Group();
+    this.teamSide = new THREE.Mesh(new THREE.BoxGeometry(1, TEAM_H, 1.3).translate(0, TEAM_H / 2, 0), new THREE.MeshLambertMaterial({ color: gold.side }));
+    this.teamTop = new THREE.Mesh(new THREE.BoxGeometry(1, 0.09, 1.38).translate(0, TEAM_H, 0), new THREE.MeshLambertMaterial({ color: gold.top }));
+    const star = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.56, 0.56).translate(0, TEAM_H * 0.48, 0.66),
+      new THREE.MeshBasicMaterial({ map: numberTexture('★', `#${gold.side.toString(16).padStart(6, '0')}`), transparent: true }),
+    );
+    this.teamStand.add(this.teamSide, this.teamTop, star);
+    this.teamStand.visible = false;
+    this.scene.add(this.teamStand);
     // 앞쪽 모닥불 두 개 (빛나는 불꽃)
     const stone = new THREE.MeshLambertMaterial({ color: 0x6a6670 });
     const fire = new THREE.MeshBasicMaterial({ color: 0xffa03a });
@@ -127,14 +144,25 @@ export class Podium {
   }
 
   // list: [{ char, skin }] 1등부터 최대 3명
-  open(list) {
+  // team: true 면 list 는 이긴 팀원들 (최대 3명) → 우승 단 하나에 같은 높이로 나란히
+  open(list, team = false) {
     this.close();
+    const n = Math.min(3, list.length);
+    this.team = team;
+    this.rankStand.visible = !team;
+    this.teamStand.visible = team;
+    if (team) {
+      const w = n * TEAM_GAP + 0.3;
+      this.teamSide.scale.x = w;
+      this.teamTop.scale.x = w + 0.08;
+    }
     this.slots = list.slice(0, 3).map((p, rank) => {
       const mesh = this.chars.make('self', p.char, true, p.skin);
-      const s = SPOTS[rank];
-      mesh.position.set(s.x, s.h + 0.045, 0);
-      mesh.rotation.y = -s.x * 0.12; // 가운데를 살짝 바라본다
-      mesh.userData.spawn = -ENTER[rank] * 4; // 차례로 톡 튀어나온다
+      const x = team ? (rank - (n - 1) / 2) * TEAM_GAP : SPOTS[rank].x;
+      const h = team ? TEAM_H : SPOTS[rank].h;
+      mesh.position.set(x, h + 0.045, 0);
+      mesh.rotation.y = -x * 0.12; // 가운데를 살짝 바라본다
+      mesh.userData.spawn = -(team ? 0.1 + rank * 0.12 : ENTER[rank]) * 4; // 차례로 톡 튀어나온다 (팀은 거의 함께)
       this.scene.add(mesh);
       return { mesh, rank };
     });
@@ -179,9 +207,9 @@ export class Podium {
       const u = mesh.userData;
       const live = u.spawn > 0.6;
       if (!live) continue;
-      const tt = this.t * 1 + rank;
-      if (rank === 0) {
-        // 1등: 두 팔을 번쩍 들고 깡충깡충
+      const tt = this.t * 1 + rank * (this.team ? 0.37 : 1);
+      if (rank === 0 || this.team) {
+        // 1등(팀전은 이긴 팀 모두): 두 팔을 번쩍 들고 깡충깡충
         const hop = Math.max(0, Math.sin(tt * 5.2));
         u.pose.position.y += hop * 0.22;
         u.armL.rotation.x = -2.75 + Math.sin(tt * 10.4) * 0.12;

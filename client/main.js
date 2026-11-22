@@ -364,11 +364,15 @@ const chars = new Characters(mask);
 // 판이 끝나면 1~3등이 입은 의상 그대로 시상대에 오른다
 const podium = new Podium(chars);
 let podiumTimer = 0;
+let winTeam = 0; // 이번 판 이긴 팀 (0 = 무승부)
 function openPodium() {
   if (!myId || tutor || roundEnd <= 0) return;
-  const top = [...roster.entries()].sort((a, b) => pointsOf(b[1]) - pointsOf(a[1])).slice(0, 3);
+  const byPoints = (a, b) => pointsOf(b[1]) - pointsOf(a[1]);
+  // 팀전에서 이긴 팀이 있으면: 이긴 팀원이 우승 단에 나란히. 아니면 개인 1~3등.
+  const team = mode !== 'ffa' && !!winTeam;
+  const top = (team ? [...roster.entries()].filter(([, p]) => p.team === winTeam) : [...roster.entries()]).sort(byPoints).slice(0, 3);
   if (!top.length) return;
-  podium.open(top.map(([, p]) => ({ char: charOf(p.char), skin: skinFor(charOf(p.char), p.skin) })));
+  podium.open(top.map(([, p]) => ({ char: charOf(p.char), skin: skinFor(charOf(p.char), p.skin) })), team);
   const tags = $('podiumTags').children;
   for (let i = 0; i < 3; i++) {
     const el = tags[i];
@@ -376,7 +380,7 @@ function openPodium() {
     el.hidden = !row;
     if (!row) continue;
     const [id, p] = row;
-    el.className = `r${i}` + (id === myId ? ' me' : '');
+    el.className = (team ? 'r0 team' : `r${i}`) + (id === myId ? ' me' : '');
     el.replaceChildren(Object.assign(document.createElement('span'), { textContent: p.name, translate: false }), Object.assign(document.createElement('small'), { textContent: capGoal ? `🔥${p.cap}초 · ${p.score}킬` : `${p.score}킬 · Lv${p.level}` }));
     el.style.opacity = '0';
   }
@@ -1153,6 +1157,7 @@ function onMessage(m) {
     }
   } else if (m.t === 'e') {
     const won = m.w === myTeam;
+    winTeam = m.w || 0;
     holdEnd = !!m.h;
     roundEnd = holdEnd ? Infinity : m.s;
     againState = { n: 0, of: m.hn || 1, mine: false };
@@ -2855,7 +2860,8 @@ function drawResults() {
     ...rows.map(([id, p], i) => {
       const row = document.createElement('div');
       row.className = id === myId ? 'me' : p.team === myTeam ? 'ally' : 'enemy';
-      [i + 1, `Lv${p.level} ${p.name}`, capGoal ? `🔥${p.cap}초 · ${p.score}킬` : `${p.score}킬`].forEach((text, k) => {
+      // 모닥불 점령은 점수 칸이 길어서 이름 앞 레벨을 뺀다
+      [i + 1, capGoal ? p.name : `Lv${p.level} ${p.name}`, capGoal ? `🔥${p.cap}초 · ${p.score}킬` : `${p.score}킬`].forEach((text, k) => {
         const cell = document.createElement('span');
         cell.textContent = text;
         if (k === 1) cell.translate = false; // 플레이어 이름
