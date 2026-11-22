@@ -258,16 +258,17 @@ test('상점: 캐릭터 강화는 코인으로, 가진 캐릭터만, 최대 5단
   assert.deepEqual(statsOf({}, cfg, 'explorer', 1, 99), statsOf({}, cfg, 'explorer', 1, 5), '5단계보다 세지지 않는다');
 });
 
-test('상점: 코인으로 크리스탈 바꾸기, 예전 맵 배경은 기본으로', async () => {
-  const { GEM_TRADES, PROFILE_BGS, tradeGems } = await import('../shared/shop.js');
-  const p = normalizeProfile({ coins: 1200, gems: 5 });
-  assert.equal(tradeGems(p, 'nope'), 0);
-  const big = GEM_TRADES.at(-1);
-  assert.equal(tradeGems(p, big.id), big.gems);
-  assert.equal(p.gems, 5 + big.gems);
-  assert.equal(p.coins, 1200 - big.coins);
-  assert.equal(tradeGems(p, big.id), 0, '코인이 모자라면');
-  for (const t of GEM_TRADES) assert.ok(t.coins / t.gems <= 10, '크리스탈 1개에 코인 10 이하');
+test('상점: 크리스탈로 코인 사기, 예전 맵 배경은 기본으로', async () => {
+  const { COIN_PACKS, PROFILE_BGS, buyCoins } = await import('../shared/shop.js');
+  const p = normalizeProfile({ coins: 50, gems: 320 });
+  assert.equal(buyCoins(p, 'nope'), 0);
+  const big = COIN_PACKS.at(-1);
+  assert.equal(buyCoins(p, big.id), big.coins);
+  assert.equal(p.coins, 50 + big.coins);
+  assert.equal(p.gems, 320 - big.gems);
+  assert.equal(buyCoins(p, big.id), 0, '크리스탈이 모자라면');
+  // 많이 살수록 크리스탈 1개당 코인이 많다
+  for (let i = 1; i < COIN_PACKS.length; i++) assert.ok(COIN_PACKS[i].coins / COIN_PACKS[i].gems > COIN_PACKS[i - 1].coins / COIN_PACKS[i - 1].gems);
   // 맵 그림 배경은 없어졌다 → 저장된 값은 기본 배경으로
   assert.ok(Object.values(PROFILE_BGS).every((b) => !b.map));
   assert.equal(normalizeProfile({ bg: 'camp' }).bg, '');

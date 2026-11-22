@@ -710,11 +710,8 @@ body.lefty #flare { right: auto; left: calc(36px + env(safe-area-inset-left)); }
 #shop[data-tab='skins'] #skinRow { display: flex; }
 #shop[data-tab='gacha'] #gachaPanel { display: block; }
 #shop:not([data-tab='chars']) :is(#shopAct, #shopStats, #shopCount) { display: none; }
-/* 뽑기 탭에서도 캐릭터를 좌우로 넘긴다: 뽑기 창은 › 단추 안쪽으로, 위에는 이름과 가졌는지만 */
-#shop[data-tab='gacha'] #shopSkill { display: none; }
-#shop[data-tab='gacha'] #gachaPanel {
-  right: calc(68px + env(safe-area-inset-right)); width: min(300px, 40vw); top: auto; bottom: calc(12px + env(safe-area-inset-bottom)); transform: none;
-}
+/* 뽑기 탭: 캐릭터 대신 반딧불 병 장면 (넘기기 단추·이름 없음) */
+#shop[data-tab='gacha'] :is(.nav, #shopHead) { display: none; }
 /* 스킨 탭: 잠긴 전설 의상을 보고 있으면 💎 크리스탈로 사기 */
 #shop[data-tab='skins'] #shopAct.gem { display: block; }
 #shopAct.gem { background: linear-gradient(180deg, #8fdcff, #3fa6e8); color: #06243a; box-shadow: 0 4px 0 #1d5f8a, 0 8px 18px rgba(0, 0, 0, .4); }
@@ -1401,4 +1398,9 @@ html[lang='en'] #iconGrid button[data-auto]::after { content: 'Auto'; }
 #storeBody button.trade { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 6px 8px; }
 #storeBody button.trade b { font-size: 14px; color: inherit; }
 #storeBody button.trade span { padding: 2px 8px; border-radius: 999px; font-size: 12px; background: rgba(0, 0, 0, .25); }
+#storeBody button.trade { position: relative; }
+#storeBody button.trade em { position: absolute; top: -7px; right: 6px; padding: 0 6px; border-radius: 999px; font-style: normal; font-size: 10px; background: #e0442a; color: #fff; }
+#storeBody.gems button.trade.can { background: linear-gradient(180deg, #ffd27a, #e8a548); color: #3a2208; box-shadow: 0 3px 0 #8a5a20; }
+#coins { font-family: inherit; }
+#coins:active { transform: scale(.95); }
 #storeBody button.trade.arm b { font-size: 12px; }
