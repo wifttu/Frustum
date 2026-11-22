@@ -111,11 +111,16 @@ export function claimAch(p, key) {
 }
 // 받을 것이 있나 (로비 빨간 점)
 export function hasClaimable(p, now = new Date()) {
+  return missionClaimable(p, now) || rankClaimable(p);
+}
+// 미션 창(일일 미션·업적)에 받을 보상이 있나
+export function missionClaimable(p, now = new Date()) {
   const m = ensureDaily(p, now);
   if (m.list.some((it) => !it.got && it.n >= (DAILY_POOL[it.id]?.goal ?? Infinity))) return true;
-  if (rankSkinList(p).some((r) => r.claimable)) return true;
   return Object.keys(ACHIEVEMENTS).some((k) => achState(p, k).claimable);
 }
+// 랭크 창에 받을 시즌 의상이 있나
+export const rankClaimable = (p) => rankSkinList(p).some((r) => r.claimable);
 
 // ── 랭크: 판이 끝날 때의 순위로 점수가 오르내린다. 시즌은 한 달 ──
 export const RANKS = Object.freeze([
